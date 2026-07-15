@@ -2,8 +2,11 @@ package com.note.handwrite.viewmodel
 
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.note.handwrite.data.InputSettingsRepository
 import com.note.handwrite.model.BackgroundType
 import com.note.handwrite.model.NoteOperation
+import com.note.handwrite.model.InputMode
 import com.note.handwrite.model.RemovedStroke
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.Tool
@@ -11,8 +14,13 @@ import com.note.handwrite.ui.theme.PenBlack
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 
-class NoteViewModel : ViewModel() {
+class NoteViewModel(
+    private val inputSettingsRepository: InputSettingsRepository? = null
+) : ViewModel() {
     private val _strokes = MutableStateFlow<List<Stroke>>(emptyList())
     val strokes: StateFlow<List<Stroke>> = _strokes.asStateFlow()
 
@@ -31,7 +39,15 @@ class NoteViewModel : ViewModel() {
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
 
+    private val _inputMode = MutableStateFlow(InputMode.SPEN)
+    val inputMode: StateFlow<InputMode> = _inputMode.asStateFlow()
+
     private val undoHistory = mutableListOf<NoteOperation>()
+    private val activeEraseEntries = mutableListOf<RemovedStroke>()
+
+    init {
+        inputSettingsRepository?.inputMode?.onEach { _inputMode.value = it }?.launchIn(viewModelScope)
+    }
 
     fun addStroke(stroke: Stroke) {
         updateStrokes(_strokes.value + stroke, NoteOperation.StrokeAdded(stroke))
@@ -48,6 +64,32 @@ class NoteViewModel : ViewModel() {
             _strokes.value.filter { it !in removedIdentities },
             NoteOperation.StrokesRemoved(removed)
         )
+    }
+
+    fun beginErase() {
+        activeEraseEntries.clear()
+    }
+
+    fun eraseStrokes(strokes: List<Stroke>) {
+        if (strokes.isEmpty()) return
+        val removed = _strokes.value.mapIndexedNotNull { index, candidate ->
+            if (strokes.any { it === candidate }) RemovedStroke(index, candidate) else null
+        }
+        if (removed.isEmpty()) return
+        activeEraseEntries += removed.filter { entry ->
+            activeEraseEntries.none { it.stroke === entry.stroke }
+        }
+        val removedIdentities = removed.map { it.stroke }.toSet()
+        _strokes.value = _strokes.value.filter { it !in removedIdentities }
+    }
+
+    fun endErase() {
+        if (activeEraseEntries.isNotEmpty()) {
+            undoHistory += NoteOperation.StrokesRemoved(activeEraseEntries.sortedBy { it.index })
+            if (undoHistory.size > 100) undoHistory.removeAt(0)
+            _canUndo.value = true
+        }
+        activeEraseEntries.clear()
     }
 
     fun undo() {
@@ -88,6 +130,13 @@ class NoteViewModel : ViewModel() {
 
     fun switchBackground(type: BackgroundType) {
         _backgroundType.value = type
+    }
+
+    fun setInputMode(mode: InputMode) {
+        _inputMode.value = mode
+        viewModelScope.launch {
+            inputSettingsRepository?.setInputMode(mode)
+        }
     }
 
     private fun updateStrokes(strokes: List<Stroke>, operation: NoteOperation) {
