@@ -109,6 +109,7 @@ private class DrawingInputState {
     var activePointerId = MotionEvent.INVALID_POINTER_ID
     var pointerDown = false
     var temporaryEraser = false
+    var stylusButtonDown = false
     var originalTool = Tool.PEN
 }
 
@@ -135,8 +136,16 @@ private fun handleMotionEvent(
         event.source and InputDevice.SOURCE_STYLUS == InputDevice.SOURCE_STYLUS
     val acceptsInput = !useSpenMode || isStylus
     val isPrimaryButton = event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY != 0
+    val wasPrimaryButtonDown = state.stylusButtonDown
+    val buttonPressed = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS &&
+        event.actionButton == MotionEvent.BUTTON_STYLUS_PRIMARY
+    val buttonReleased = event.actionMasked == MotionEvent.ACTION_BUTTON_RELEASE &&
+        event.actionButton == MotionEvent.BUTTON_STYLUS_PRIMARY
 
-    if (isStylus && isPrimaryButton && !state.pointerDown && event.actionMasked != MotionEvent.ACTION_UP) {
+    // Some S Pen firmware reports hover button release only through buttonState changes.
+    if (isStylus && !state.pointerDown &&
+        (buttonPressed || (!wasPrimaryButtonDown && isPrimaryButton))
+    ) {
         if (!state.temporaryEraser) {
             state.originalTool = currentTool
             state.temporaryEraser = true
@@ -144,11 +153,17 @@ private fun handleMotionEvent(
         }
     }
 
-    if (event.actionMasked == MotionEvent.ACTION_BUTTON_RELEASE &&
-        isStylus && event.actionButton == MotionEvent.BUTTON_STYLUS_PRIMARY && !state.pointerDown
+    if (isStylus && !state.pointerDown &&
+        (buttonReleased || (wasPrimaryButtonDown && !isPrimaryButton))
     ) {
         state.temporaryEraser = false
         onTemporaryEraserChanged(false)
+    }
+
+    state.stylusButtonDown = when {
+        buttonReleased -> false
+        isStylus -> isPrimaryButton
+        else -> state.stylusButtonDown
     }
 
     if (!acceptsInput) return false
@@ -219,6 +234,7 @@ private fun handleMotionEvent(
             erasedDuringGesture.clear()
             state.pointerDown = false
             state.activePointerId = MotionEvent.INVALID_POINTER_ID
+            state.stylusButtonDown = false
             if (state.temporaryEraser) {
                 state.temporaryEraser = false
                 onTemporaryEraserChanged(false)
