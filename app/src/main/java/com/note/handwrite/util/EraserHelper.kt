@@ -3,18 +3,21 @@ package com.note.handwrite.util
 import com.note.handwrite.model.Stroke
 import kotlin.math.hypot
 
-fun findHitStroke(
+fun findHitStrokes(
     strokes: List<Stroke>,
     touchX: Float,
     touchY: Float,
-    tolerance: Float = 0.02f
-): Stroke? {
-    for (stroke in strokes.asReversed()) {
+    canvasWidth: Float,
+    canvasHeight: Float,
+    tolerancePx: Float
+): List<Stroke> {
+    return strokes.filter { stroke ->
         for (point in stroke.points) {
-            val distance = hypot(point.x - touchX, point.y - touchY)
-            val strokeTolerance = tolerance + stroke.width / 1000f
-            if (distance <= strokeTolerance) return stroke
+            val pointX = point.x * canvasWidth
+            val pointY = point.y * canvasHeight
+            val distance = hypot(pointX - touchX, pointY - touchY)
+            if (distance <= tolerancePx + stroke.width / 2f) return@filter true
         }
+        false
     }
-    return null
 }
