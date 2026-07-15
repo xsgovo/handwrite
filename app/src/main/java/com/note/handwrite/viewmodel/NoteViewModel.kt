@@ -47,7 +47,13 @@ class NoteViewModel(
     private var eraseBaseline: List<Stroke> = emptyList()
 
     init {
-        inputSettingsRepository?.inputMode?.onEach { _inputMode.value = it }?.launchIn(viewModelScope)
+        inputSettingsRepository?.settings?.onEach { settings ->
+            _inputMode.value = settings.inputMode
+            _currentTool.value = settings.tool
+            _currentColor.value = settings.color
+            _currentWidth.value = settings.width
+            _backgroundType.value = settings.background
+        }?.launchIn(viewModelScope)
     }
 
     fun addStroke(stroke: Stroke) {
@@ -123,18 +129,22 @@ class NoteViewModel(
 
     fun switchTool(tool: Tool) {
         _currentTool.value = tool
+        viewModelScope.launch { inputSettingsRepository?.setTool(tool) }
     }
 
     fun switchColor(color: Color) {
         _currentColor.value = color
+        viewModelScope.launch { inputSettingsRepository?.setColor(color) }
     }
 
     fun switchWidth(width: Float) {
         _currentWidth.value = width
+        viewModelScope.launch { inputSettingsRepository?.setWidth(width) }
     }
 
     fun switchBackground(type: BackgroundType) {
         _backgroundType.value = type
+        viewModelScope.launch { inputSettingsRepository?.setBackground(type) }
     }
 
     fun setInputMode(mode: InputMode) {
