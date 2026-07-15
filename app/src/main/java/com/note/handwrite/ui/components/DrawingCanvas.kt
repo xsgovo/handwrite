@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -35,7 +36,7 @@ fun DrawingCanvas(
     backgroundType: BackgroundType,
     onStrokeComplete: (Stroke) -> Unit,
     onStrokeTapped: (Stroke) -> Unit,
-    onCanvasSizeChanged: (Int) -> Unit = {},
+    onCanvasSizeChanged: (Size) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val currentPoints = remember { mutableStateListOf<NormalizedPoint>() }
@@ -48,7 +49,7 @@ fun DrawingCanvas(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .onSizeChanged { onCanvasSizeChanged(it.width) }
+            .onSizeChanged { onCanvasSizeChanged(Size(it.width.toFloat(), it.height.toFloat())) }
             .pointerInput(currentTool) {
                 if (currentTool == Tool.PEN) {
                     detectDragGestures(
