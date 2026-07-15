@@ -79,8 +79,10 @@ fun NoteScreen(viewModel: NoteViewModel) {
             currentWidth = currentWidth,
             currentTool = currentTool,
             backgroundType = backgroundType,
+            useSpenMode = false,
             onStrokeComplete = viewModel::addStroke,
-            onStrokeTapped = viewModel::removeStroke,
+            onStrokesErased = viewModel::removeStrokes,
+            onTemporaryEraserChanged = {},
             onCanvasSizeChanged = { canvasSize = it },
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         )
