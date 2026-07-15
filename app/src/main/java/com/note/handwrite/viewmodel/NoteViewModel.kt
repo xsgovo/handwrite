@@ -44,6 +44,7 @@ class NoteViewModel(
 
     private val undoHistory = mutableListOf<NoteOperation>()
     private val activeEraseEntries = mutableListOf<RemovedStroke>()
+    private var eraseBaseline: List<Stroke> = emptyList()
 
     init {
         inputSettingsRepository?.inputMode?.onEach { _inputMode.value = it }?.launchIn(viewModelScope)
@@ -68,11 +69,12 @@ class NoteViewModel(
 
     fun beginErase() {
         activeEraseEntries.clear()
+        eraseBaseline = _strokes.value
     }
 
     fun eraseStrokes(strokes: List<Stroke>) {
         if (strokes.isEmpty()) return
-        val removed = _strokes.value.mapIndexedNotNull { index, candidate ->
+        val removed = eraseBaseline.mapIndexedNotNull { index, candidate ->
             if (strokes.any { it === candidate }) RemovedStroke(index, candidate) else null
         }
         if (removed.isEmpty()) return
@@ -90,6 +92,7 @@ class NoteViewModel(
             _canUndo.value = true
         }
         activeEraseEntries.clear()
+        eraseBaseline = emptyList()
     }
 
     fun undo() {
@@ -114,6 +117,8 @@ class NoteViewModel(
         _strokes.value = emptyList()
         undoHistory.clear()
         _canUndo.value = false
+        activeEraseEntries.clear()
+        eraseBaseline = emptyList()
     }
 
     fun switchTool(tool: Tool) {
