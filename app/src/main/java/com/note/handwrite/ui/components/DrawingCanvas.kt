@@ -41,6 +41,8 @@ fun DrawingCanvas(
     backgroundType: BackgroundType,
     useSpenMode: Boolean,
     onStrokeComplete: (Stroke) -> Unit,
+    onEraseStart: () -> Unit,
+    onEraseEnd: () -> Unit,
     onStrokesErased: (List<Stroke>) -> Unit,
     onTemporaryEraserChanged: (Boolean) -> Unit,
     onCanvasSizeChanged: (Size) -> Unit = {},
@@ -54,6 +56,8 @@ fun DrawingCanvas(
     val latestTool by rememberUpdatedState(currentTool)
     val latestSpenMode by rememberUpdatedState(useSpenMode)
     val latestOnStrokeComplete by rememberUpdatedState(onStrokeComplete)
+    val latestOnEraseStart by rememberUpdatedState(onEraseStart)
+    val latestOnEraseEnd by rememberUpdatedState(onEraseEnd)
     val latestOnStrokesErased by rememberUpdatedState(onStrokesErased)
     val latestOnTemporaryEraserChanged by rememberUpdatedState(onTemporaryEraserChanged)
     val input = remember { DrawingInputState() }
@@ -82,6 +86,8 @@ fun DrawingCanvas(
                     canvasHeight = canvasSize.height,
                     density = density,
                     onStrokeComplete = latestOnStrokeComplete,
+                    onEraseStart = latestOnEraseStart,
+                    onEraseEnd = latestOnEraseEnd,
                     onStrokesErased = latestOnStrokesErased,
                     onTemporaryEraserChanged = latestOnTemporaryEraserChanged
                 )
@@ -120,6 +126,8 @@ private fun handleMotionEvent(
     canvasHeight: Float,
     density: Float,
     onStrokeComplete: (Stroke) -> Unit,
+    onEraseStart: () -> Unit,
+    onEraseEnd: () -> Unit,
     onStrokesErased: (List<Stroke>) -> Unit,
     onTemporaryEraserChanged: (Boolean) -> Unit
 ): Boolean {
@@ -151,7 +159,8 @@ private fun handleMotionEvent(
             state.activePointerId = event.getPointerId(event.actionIndex)
             currentPoints.clear()
             erasedDuringGesture.clear()
-                    addPoint(event.x, event.y, canvasWidth, canvasHeight, currentPoints)
+            if (state.temporaryEraser || currentTool == Tool.ERASER) onEraseStart()
+            addPoint(event.x, event.y, canvasWidth, canvasHeight, currentPoints)
         }
 
         MotionEvent.ACTION_MOVE -> {
@@ -173,7 +182,8 @@ private fun handleMotionEvent(
                     canvasHeight,
                     density,
                     currentPoints,
-                    erasedDuringGesture
+                    erasedDuringGesture,
+                    onStrokesErased
                 )
             }
             processPoint(
@@ -190,7 +200,8 @@ private fun handleMotionEvent(
                 canvasHeight,
                 density,
                 currentPoints,
-                erasedDuringGesture
+                erasedDuringGesture,
+                onStrokesErased
             )
         }
 
@@ -198,7 +209,7 @@ private fun handleMotionEvent(
             if (state.pointerDown) {
                 val erasing = state.temporaryEraser || currentTool == Tool.ERASER
                 if (erasing) {
-                    onStrokesErased(erasedDuringGesture.toList())
+                    onEraseEnd()
                 } else if (currentPoints.isNotEmpty()) {
                     onStrokeComplete(Stroke(currentPoints.toList(), currentColor, currentWidth))
                 }
@@ -231,7 +242,8 @@ private fun processPoint(
     canvasHeight: Float,
     density: Float,
     currentPoints: MutableList<NormalizedPoint>,
-    erasedDuringGesture: MutableList<Stroke>
+    erasedDuringGesture: MutableList<Stroke>,
+    onStrokesErased: (List<Stroke>) -> Unit
 ) {
     val erasing = state.temporaryEraser || currentTool == Tool.ERASER
     if (erasing) {
@@ -243,7 +255,12 @@ private fun processPoint(
             canvasWidth.coerceAtLeast(1f),
             canvasHeight.coerceAtLeast(1f),
             tolerance
-        ).forEach { stroke -> if (!erasedDuringGesture.contains(stroke)) erasedDuringGesture += stroke }
+        ).forEach { stroke ->
+            if (!erasedDuringGesture.contains(stroke)) {
+                erasedDuringGesture += stroke
+                onStrokesErased(listOf(stroke))
+            }
+        }
     } else {
         val point = NormalizedPoint(
             (x / canvasWidth.coerceAtLeast(1f)).coerceIn(0f, 1f),

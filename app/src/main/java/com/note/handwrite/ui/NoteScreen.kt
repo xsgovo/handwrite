@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import com.note.handwrite.model.Tool
 import com.note.handwrite.ui.components.ClearConfirmDialog
 import com.note.handwrite.ui.components.DrawingCanvas
 import com.note.handwrite.ui.components.TopToolbar
@@ -26,7 +27,10 @@ import com.note.handwrite.viewmodel.NoteViewModel
 import kotlinx.coroutines.launch
 
 @Composable
-fun NoteScreen(viewModel: NoteViewModel) {
+fun NoteScreen(
+    viewModel: NoteViewModel,
+    onOpenSettings: () -> Unit
+) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
@@ -35,8 +39,11 @@ fun NoteScreen(viewModel: NoteViewModel) {
     val currentColor by viewModel.currentColor.collectAsState()
     val currentWidth by viewModel.currentWidth.collectAsState()
     val backgroundType by viewModel.backgroundType.collectAsState()
+    val canUndo by viewModel.canUndo.collectAsState()
+    val inputMode by viewModel.inputMode.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
+    var temporaryEraser by remember { mutableStateOf(false) }
     var canvasSize by remember { mutableStateOf(Size.Zero) }
 
     Scaffold(
@@ -47,7 +54,8 @@ fun NoteScreen(viewModel: NoteViewModel) {
                 currentColor = currentColor,
                 currentWidth = currentWidth,
                 currentBackground = backgroundType,
-                canUndo = strokes.isNotEmpty(),
+                canUndo = canUndo,
+                temporaryEraser = temporaryEraser,
                 onToolChange = viewModel::switchTool,
                 onColorChange = viewModel::switchColor,
                 onWidthChange = viewModel::switchWidth,
@@ -69,7 +77,8 @@ fun NoteScreen(viewModel: NoteViewModel) {
                             duration = if (success) SnackbarDuration.Short else SnackbarDuration.Long
                         )
                     }
-                }
+                },
+                onOpenSettings = onOpenSettings
             )
         }
     ) { paddingValues ->
@@ -79,10 +88,12 @@ fun NoteScreen(viewModel: NoteViewModel) {
             currentWidth = currentWidth,
             currentTool = currentTool,
             backgroundType = backgroundType,
-            useSpenMode = false,
+            useSpenMode = inputMode.name == "SPEN",
             onStrokeComplete = viewModel::addStroke,
-            onStrokesErased = viewModel::removeStrokes,
-            onTemporaryEraserChanged = {},
+            onEraseStart = viewModel::beginErase,
+            onEraseEnd = viewModel::endErase,
+            onStrokesErased = viewModel::eraseStrokes,
+            onTemporaryEraserChanged = { temporaryEraser = it },
             onCanvasSizeChanged = { canvasSize = it },
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         )
