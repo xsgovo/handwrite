@@ -134,7 +134,6 @@ private fun handleMotionEvent(
 ): Boolean {
     val isStylus = event.getToolType(event.actionIndex) == MotionEvent.TOOL_TYPE_STYLUS ||
         event.source and InputDevice.SOURCE_STYLUS == InputDevice.SOURCE_STYLUS
-    val acceptsInput = !useSpenMode || isStylus
     val isPrimaryButton = event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY != 0
     val wasPrimaryButtonDown = state.stylusButtonDown
     val buttonPressed = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS &&
@@ -166,16 +165,34 @@ private fun handleMotionEvent(
         else -> state.stylusButtonDown
     }
 
-    if (!acceptsInput) return false
-
     when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
+            // Keep ownership of the gesture stream even when a finger is ignored in S Pen mode.
+            if (useSpenMode && !isStylus) return true
             state.pointerDown = true
             state.activePointerId = event.getPointerId(event.actionIndex)
             currentPoints.clear()
             erasedDuringGesture.clear()
             if (state.temporaryEraser || currentTool == Tool.ERASER) onEraseStart()
             addPoint(event.x, event.y, canvasWidth, canvasHeight, currentPoints)
+        }
+
+        MotionEvent.ACTION_POINTER_DOWN -> {
+            // A finger may already be down. Start a new active stroke when the S Pen joins.
+            if (useSpenMode && isStylus && !state.pointerDown) {
+                state.pointerDown = true
+                state.activePointerId = event.getPointerId(event.actionIndex)
+                currentPoints.clear()
+                erasedDuringGesture.clear()
+                if (state.temporaryEraser || currentTool == Tool.ERASER) onEraseStart()
+                addPoint(
+                    event.getX(event.actionIndex),
+                    event.getY(event.actionIndex),
+                    canvasWidth,
+                    canvasHeight,
+                    currentPoints
+                )
+            }
         }
 
         MotionEvent.ACTION_MOVE -> {
@@ -220,28 +237,67 @@ private fun handleMotionEvent(
             )
         }
 
+        MotionEvent.ACTION_POINTER_UP -> {
+            if (state.pointerDown && event.getPointerId(event.actionIndex) == state.activePointerId) {
+                finishStroke(
+                    state,
+                    currentTool,
+                    currentColor,
+                    currentWidth,
+                    currentPoints,
+                    erasedDuringGesture,
+                    onStrokeComplete,
+                    onEraseEnd,
+                    onTemporaryEraserChanged
+                )
+            }
+        }
+
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
             if (state.pointerDown) {
-                val erasing = state.temporaryEraser || currentTool == Tool.ERASER
-                if (erasing) {
-                    onEraseEnd()
-                } else if (currentPoints.isNotEmpty()) {
-                    onStrokeComplete(Stroke(currentPoints.toList(), currentColor, currentWidth))
-                }
-            }
-            // The caller replaces the temporary color/width after this helper returns.
-            currentPoints.clear()
-            erasedDuringGesture.clear()
-            state.pointerDown = false
-            state.activePointerId = MotionEvent.INVALID_POINTER_ID
-            state.stylusButtonDown = false
-            if (state.temporaryEraser) {
-                state.temporaryEraser = false
-                onTemporaryEraserChanged(false)
+                finishStroke(
+                    state,
+                    currentTool,
+                    currentColor,
+                    currentWidth,
+                    currentPoints,
+                    erasedDuringGesture,
+                    onStrokeComplete,
+                    onEraseEnd,
+                    onTemporaryEraserChanged
+                )
             }
         }
     }
     return true
+}
+
+private fun finishStroke(
+    state: DrawingInputState,
+    currentTool: Tool,
+    currentColor: Color,
+    currentWidth: Float,
+    currentPoints: MutableList<NormalizedPoint>,
+    erasedDuringGesture: MutableList<Stroke>,
+    onStrokeComplete: (Stroke) -> Unit,
+    onEraseEnd: () -> Unit,
+    onTemporaryEraserChanged: (Boolean) -> Unit
+) {
+    val erasing = state.temporaryEraser || currentTool == Tool.ERASER
+    if (erasing) {
+        onEraseEnd()
+    } else if (currentPoints.isNotEmpty()) {
+        onStrokeComplete(Stroke(currentPoints.toList(), currentColor, currentWidth))
+    }
+    currentPoints.clear()
+    erasedDuringGesture.clear()
+    state.pointerDown = false
+    state.activePointerId = MotionEvent.INVALID_POINTER_ID
+    state.stylusButtonDown = false
+    if (state.temporaryEraser) {
+        state.temporaryEraser = false
+        onTemporaryEraserChanged(false)
+    }
 }
 
 private fun processPoint(
