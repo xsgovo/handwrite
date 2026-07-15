@@ -26,7 +26,14 @@ fun WidthPicker(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
     ) {
-        listOf(4f to 28.dp, 8f to 32.dp, 14f to 36.dp).forEach { (width, buttonSize) ->
+        listOf(
+            2f to 26.dp,
+            4f to 28.dp,
+            6f to 30.dp,
+            8f to 32.dp,
+            12f to 36.dp,
+            16f to 40.dp
+        ).forEach { (width, buttonSize) ->
             val selected = width == currentWidth
             Box(
                 contentAlignment = Alignment.Center,
