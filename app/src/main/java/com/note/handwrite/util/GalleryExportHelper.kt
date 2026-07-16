@@ -17,22 +17,17 @@ import androidx.compose.ui.graphics.Color
 import com.note.handwrite.model.BackgroundType
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.CanvasPoint
+import com.note.handwrite.model.NotePage
 import java.io.File
 import java.io.FileOutputStream
-import androidx.compose.ui.geometry.Offset
 
 fun saveNoteToGallery(
     context: Context,
     strokes: List<Stroke>,
     backgroundType: BackgroundType,
-    canvasWidth: Int,
-    canvasHeight: Int,
-    zoomPercent: Float,
-    pan: Offset,
-    density: Float
+    canvasWidth: Int = NotePage.EXPORT_WIDTH,
+    canvasHeight: Int = NotePage.EXPORT_HEIGHT
 ): Uri? {
-    if (canvasWidth <= 0 || canvasHeight <= 0) return null
-
     val values = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, "note_${System.currentTimeMillis()}.png")
         put(MediaStore.Images.Media.MIME_TYPE, "image/png")
@@ -53,10 +48,7 @@ fun saveNoteToGallery(
             strokes = strokes,
             backgroundType = backgroundType,
             width = canvasWidth,
-            height = canvasHeight,
-            zoomPercent = zoomPercent,
-            pan = pan,
-            density = density
+            height = canvasHeight
         )
         resolver.openOutputStream(uri)?.use { output ->
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
@@ -95,23 +87,15 @@ fun shareNoteDirectly(
     context: Context,
     strokes: List<Stroke>,
     backgroundType: BackgroundType,
-    canvasWidth: Int,
-    canvasHeight: Int,
-    zoomPercent: Float,
-    pan: Offset,
-    density: Float
+    canvasWidth: Int = NotePage.EXPORT_WIDTH,
+    canvasHeight: Int = NotePage.EXPORT_HEIGHT
 ): Boolean {
-    if (canvasWidth <= 0 || canvasHeight <= 0) return false
-
     return try {
         val bitmap = renderNoteBitmap(
             strokes,
             backgroundType,
             canvasWidth,
-            canvasHeight,
-            zoomPercent,
-            pan,
-            density
+            canvasHeight
         )
         val file = File(context.cacheDir, "shared_note_${System.currentTimeMillis()}.png")
         FileOutputStream(file).use { output ->
@@ -145,26 +129,20 @@ private fun renderNoteBitmap(
     strokes: List<Stroke>,
     backgroundType: BackgroundType,
     width: Int,
-    height: Int,
-    zoomPercent: Float,
-    pan: Offset,
-    density: Float
+    height: Int
 ): Bitmap {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(bitmap)
     val transform = CanvasTransform(
-        sourceWidth = width.toFloat(),
-        sourceHeight = height.toFloat(),
+        sourceWidth = NotePage.WIDTH,
+        sourceHeight = NotePage.HEIGHT,
         targetWidth = width.toFloat(),
-        targetHeight = height.toFloat(),
-        zoomPercent = zoomPercent,
-        panX = pan.x,
-        panY = pan.y
+        targetHeight = height.toFloat()
     )
     canvas.drawColor(android.graphics.Color.WHITE)
     drawBackgroundOnAndroidCanvas(
         canvas, backgroundType, width, height,
-        transform.sourceWidth.toInt(), transform.sourceHeight.toInt(), transform, density
+        NotePage.WIDTH.toInt(), NotePage.HEIGHT.toInt(), transform
     )
 
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -174,21 +152,20 @@ private fun renderNoteBitmap(
     }
     strokes.forEach { stroke ->
         paint.color = stroke.color.toAndroidColor()
-        paint.strokeWidth = stroke.width * density * transform.scale
-        canvas.drawPath(
-            buildAndroidPath(stroke.points.map(transform::map)),
-            paint
-        )
-        if (stroke.points.size == 1) {
-            val point = stroke.points.first()
-            paint.style = Paint.Style.FILL
-            canvas.drawCircle(
-                transform.map(point).x,
-                transform.map(point).y,
-                stroke.width * density * transform.scale / 2f,
-                paint
-            )
-            paint.style = Paint.Style.STROKE
+        paint.strokeWidth = stroke.width * transform.scale
+        stroke.paths().forEach { points ->
+            canvas.drawPath(buildAndroidPath(points.map(transform::map)), paint)
+            if (points.size == 1) {
+                val point = points.first()
+                paint.style = Paint.Style.FILL
+                canvas.drawCircle(
+                    transform.map(point).x,
+                    transform.map(point).y,
+                    stroke.width * transform.scale / 2f,
+                    paint
+                )
+                paint.style = Paint.Style.STROKE
+            }
         }
     }
     return bitmap
@@ -208,39 +185,37 @@ private fun drawBackgroundOnAndroidCanvas(
     height: Int,
     logicalWidth: Int,
     logicalHeight: Int,
-    transform: CanvasTransform,
-    density: Float
+    transform: CanvasTransform
 ) {
-    val spacing = 40f * density
     val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFE0E0E0.toInt()
-        strokeWidth = density * transform.scale
+        strokeWidth = NotePage.BACKGROUND_LINE_WIDTH_MM * NotePage.LOGICAL_UNITS_PER_MM * transform.scale
     }
     when (type) {
         BackgroundType.PLAIN -> Unit
         BackgroundType.LINED -> {
-            var y = spacing
+            var y = NotePage.LINE_SPACING
             while (y < logicalHeight) {
                 val start = transform.map(CanvasPoint(0f, y))
                 val end = transform.map(CanvasPoint(logicalWidth.toFloat(), y))
                 canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
-                y += spacing
+                y += NotePage.LINE_SPACING
             }
         }
         BackgroundType.GRID -> {
-            var x = spacing
+            var x = NotePage.GRID_SPACING
             while (x < logicalWidth) {
                 val start = transform.map(CanvasPoint(x, 0f))
                 val end = transform.map(CanvasPoint(x, logicalHeight.toFloat()))
                 canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
-                x += spacing
+                x += NotePage.GRID_SPACING
             }
-            var y = spacing
+            var y = NotePage.GRID_SPACING
             while (y < logicalHeight) {
                 val start = transform.map(CanvasPoint(0f, y))
                 val end = transform.map(CanvasPoint(logicalWidth.toFloat(), y))
                 canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
-                y += spacing
+                y += NotePage.GRID_SPACING
             }
         }
     }
