@@ -14,10 +14,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import androidx.compose.ui.geometry.Offset
 import com.note.handwrite.ui.components.ClearConfirmDialog
 import com.note.handwrite.ui.components.DrawingCanvas
@@ -33,34 +37,39 @@ fun NoteScreen(
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
     val strokes by viewModel.strokes.collectAsState()
     val currentTool by viewModel.currentTool.collectAsState()
     val currentColor by viewModel.currentColor.collectAsState()
     val currentWidth by viewModel.currentWidth.collectAsState()
+    val currentWidthStep by viewModel.currentWidthStep.collectAsState()
     val backgroundType by viewModel.backgroundType.collectAsState()
     val canUndo by viewModel.canUndo.collectAsState()
     val inputMode by viewModel.inputMode.collectAsState()
     val zoomPercent by viewModel.zoomPercent.collectAsState()
+    val orientation = LocalConfiguration.current.orientation
     val snackbarHostState = remember { SnackbarHostState() }
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
     var temporaryEraser by remember { mutableStateOf(false) }
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(orientation) {
+        pan = Offset.Zero
+        viewModel.resetZoom()
+    }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopToolbar(
                 currentTool = currentTool,
                 currentColor = currentColor,
-                currentWidth = currentWidth,
+                currentWidthStep = currentWidthStep,
                 currentBackground = backgroundType,
                 canUndo = canUndo,
                 temporaryEraser = temporaryEraser,
                 onToolChange = viewModel::switchTool,
                 onColorChange = viewModel::switchColor,
-                onWidthChange = viewModel::switchWidth,
+                onWidthChange = viewModel::switchWidthStep,
                 zoomPercent = zoomPercent,
                 onZoomDecrease = { pan = Offset.Zero; viewModel.decreaseZoom() },
                 onZoomIncrease = { viewModel.increaseZoom() },
@@ -72,12 +81,7 @@ fun NoteScreen(
                         val success = shareNoteDirectly(
                             context = context,
                             strokes = strokes,
-                            backgroundType = backgroundType,
-                            canvasWidth = canvasSize.width.toInt(),
-                            canvasHeight = canvasSize.height.toInt(),
-                            zoomPercent = zoomPercent.toFloat(),
-                            pan = pan,
-                            density = density
+                            backgroundType = backgroundType
                         )
                         if (!success) {
                             snackbarHostState.showSnackbar(
@@ -92,12 +96,7 @@ fun NoteScreen(
                         val uri = saveNoteToGallery(
                             context = context,
                             strokes = strokes,
-                            backgroundType = backgroundType,
-                            canvasWidth = canvasSize.width.toInt(),
-                            canvasHeight = canvasSize.height.toInt(),
-                            zoomPercent = zoomPercent.toFloat(),
-                            pan = pan,
-                            density = density
+                            backgroundType = backgroundType
                         )
                         snackbarHostState.showSnackbar(
                             message = if (uri != null) "已保存到相册" else "保存失败，请重试",
@@ -127,6 +126,13 @@ fun NoteScreen(
             onEraseEnd = viewModel::endErase,
             onStrokesErased = viewModel::eraseStrokes,
             onTemporaryEraserChanged = { temporaryEraser = it },
+            onGestureActiveChanged = { active ->
+                (context as? Activity)?.requestedOrientation = if (active) {
+                    ActivityInfo.SCREEN_ORIENTATION_LOCKED
+                } else {
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+            },
             onCanvasSizeChanged = {
                 if (canvasSize != Size.Zero && canvasSize != it) pan = Offset.Zero
                 canvasSize = it

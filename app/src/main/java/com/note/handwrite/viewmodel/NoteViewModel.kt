@@ -10,6 +10,7 @@ import com.note.handwrite.model.InputMode
 import com.note.handwrite.model.RemovedStroke
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.Tool
+import com.note.handwrite.model.NotePage
 import com.note.handwrite.ui.theme.PenBlack
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +31,10 @@ class NoteViewModel(
     private val _currentColor = MutableStateFlow(PenBlack)
     val currentColor: StateFlow<Color> = _currentColor.asStateFlow()
 
-    private val _currentWidth = MutableStateFlow(8f)
+    private val _currentWidthStep = MutableStateFlow(50)
+    val currentWidthStep: StateFlow<Int> = _currentWidthStep.asStateFlow()
+
+    private val _currentWidth = MutableStateFlow(NotePage.widthForStep(50))
     val currentWidth: StateFlow<Float> = _currentWidth.asStateFlow()
 
     private val _backgroundType = MutableStateFlow(BackgroundType.PLAIN)
@@ -54,7 +58,8 @@ class NoteViewModel(
             _inputMode.value = settings.inputMode
             _currentTool.value = settings.tool
             _currentColor.value = settings.color
-            _currentWidth.value = settings.width
+            _currentWidthStep.value = settings.widthStep
+            _currentWidth.value = NotePage.widthForStep(settings.widthStep)
             _backgroundType.value = settings.background
         }?.launchIn(viewModelScope)
     }
@@ -140,9 +145,11 @@ class NoteViewModel(
         viewModelScope.launch { inputSettingsRepository?.setColor(color) }
     }
 
-    fun switchWidth(width: Float) {
-        _currentWidth.value = width
-        viewModelScope.launch { inputSettingsRepository?.setWidth(width) }
+    fun switchWidthStep(step: Int) {
+        val clampedStep = step.coerceIn(1, 100)
+        _currentWidthStep.value = clampedStep
+        _currentWidth.value = NotePage.widthForStep(clampedStep)
+        viewModelScope.launch { inputSettingsRepository?.setWidthStep(clampedStep) }
     }
 
     fun switchBackground(type: BackgroundType) {
@@ -167,6 +174,10 @@ class NoteViewModel(
 
     fun setZoomPercent(percent: Float) {
         _zoomPercent.value = percent.toInt().coerceIn(100, 400)
+    }
+
+    fun resetZoom() {
+        _zoomPercent.value = 100
     }
 
     private fun updateStrokes(strokes: List<Stroke>, operation: NoteOperation) {

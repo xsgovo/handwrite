@@ -22,8 +22,10 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.drawscope.clipRect
 import com.note.handwrite.model.BackgroundType
 import com.note.handwrite.model.CanvasPoint
+import com.note.handwrite.model.NotePage
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.Tool
 import com.note.handwrite.util.CanvasTransform
@@ -50,6 +52,7 @@ fun DrawingCanvas(
     onEraseEnd: () -> Unit,
     onStrokesErased: (List<Stroke>) -> Unit,
     onTemporaryEraserChanged: (Boolean) -> Unit,
+    onGestureActiveChanged: (Boolean) -> Unit,
     onCanvasSizeChanged: (Size) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -66,12 +69,13 @@ fun DrawingCanvas(
     val latestOnEraseEnd by rememberUpdatedState(onEraseEnd)
     val latestOnStrokesErased by rememberUpdatedState(onStrokesErased)
     val latestOnTemporaryEraserChanged by rememberUpdatedState(onTemporaryEraserChanged)
+    val latestOnGestureActiveChanged by rememberUpdatedState(onGestureActiveChanged)
     val input = remember { DrawingInputState() }
     val density = LocalDensity.current.density
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     val transform = CanvasTransform(
-        sourceWidth = canvasSize.width,
-        sourceHeight = canvasSize.height,
+        sourceWidth = NotePage.WIDTH,
+        sourceHeight = NotePage.HEIGHT,
         targetWidth = canvasSize.width,
         targetHeight = canvasSize.height,
         zoomPercent = zoomPercent,
@@ -104,19 +108,27 @@ fun DrawingCanvas(
                     onEraseStart = latestOnEraseStart,
                     onEraseEnd = latestOnEraseEnd,
                     onStrokesErased = latestOnStrokesErased,
-                    onTemporaryEraserChanged = latestOnTemporaryEraserChanged
+                    onTemporaryEraserChanged = latestOnTemporaryEraserChanged,
+                    onGestureActiveChanged = latestOnGestureActiveChanged
                 )
             }
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawBackground(backgroundType, transform)
-            strokes.filterNot { erasedDuringGesture.contains(it) }.forEach { stroke ->
-                drawStroke(stroke.points, stroke.color, stroke.width, transform)
-            }
-            if (input.gesture == Gesture.DRAW && currentPoints.isNotEmpty() &&
-                !input.isErasing(currentTool)
-            ) {
-                drawStroke(currentPoints, currentColor, currentWidth, transform)
+            val pageStart = transform.map(CanvasPoint(0f, 0f))
+            val pageEnd = transform.map(CanvasPoint(NotePage.WIDTH, NotePage.HEIGHT))
+            clipRect(pageStart.x, pageStart.y, pageEnd.x, pageEnd.y) {
+                strokes.filterNot { erasedDuringGesture.contains(it) }.forEach { stroke ->
+                    drawStroke(stroke, transform)
+                }
+                if (input.gesture == Gesture.DRAW && currentPoints.isNotEmpty() &&
+                    !input.isErasing(currentTool)
+                ) {
+                    drawStroke(
+                        Stroke(currentPoints, currentColor, currentWidth, breakIndices = input.segmentBreaks),
+                        transform
+                    )
+                }
             }
         }
     }
@@ -136,6 +148,9 @@ private class DrawingInputState {
     var initialMidpoint = Offset.Zero
     var initialDistance = 0f
     var focalPoint = CanvasPoint(0f, 0f)
+    var lastDrawPoint: CanvasPoint? = null
+    var startsNewSegment = false
+    val segmentBreaks = mutableSetOf<Int>()
 
     fun isErasing(currentTool: Tool): Boolean = temporaryEraser || currentTool == Tool.ERASER
     fun hasStylus(): Boolean = pointerTools.values.any { it == MotionEvent.TOOL_TYPE_STYLUS }
@@ -158,7 +173,8 @@ private fun handleMotionEvent(
     onEraseStart: () -> Unit,
     onEraseEnd: () -> Unit,
     onStrokesErased: (List<Stroke>) -> Unit,
-    onTemporaryEraserChanged: (Boolean) -> Unit
+    onTemporaryEraserChanged: (Boolean) -> Unit,
+    onGestureActiveChanged: (Boolean) -> Unit
 ): Boolean {
     val actionIndex = event.actionIndex.coerceIn(0, (event.pointerCount - 1).coerceAtLeast(0))
     val actionTool = event.getToolType(actionIndex)
@@ -191,6 +207,7 @@ private fun handleMotionEvent(
 
     when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
+            onGestureActiveChanged(true)
             state.pointers.clear()
             state.pointerTools.clear()
             rememberPointer(event, 0, state)
@@ -221,7 +238,7 @@ private fun handleMotionEvent(
                     state.gesture = Gesture.DRAW
                     state.drawPointerId = stylusId
                     val index = event.findPointerIndex(stylusId)
-                    if (index >= 0) addPoint(event.getX(index), event.getY(index), transform, currentPoints)
+                    if (index >= 0) startDrawSegment(state, event.getX(index), event.getY(index), transform, currentPoints)
                     if (state.isErasing(currentTool)) onEraseStart()
                 }
             } else if (event.pointerCount >= 2) {
@@ -289,6 +306,7 @@ private fun handleMotionEvent(
                     onTemporaryEraserChanged(false)
                 }
             }
+            onGestureActiveChanged(false)
         }
     }
     return true
@@ -309,7 +327,10 @@ private fun startDrawing(
     currentPoints.clear()
     erasedDuringGesture.clear()
     if (state.isErasing(currentTool)) onEraseStart()
-    addPoint(x, y, transform, currentPoints)
+    state.lastDrawPoint = null
+    state.startsNewSegment = false
+    state.segmentBreaks.clear()
+    startDrawSegment(state, x, y, transform, currentPoints)
 }
 
 private fun startTransform(state: DrawingInputState, transform: CanvasTransform) {
@@ -393,8 +414,14 @@ private fun processPoint(
     erasedDuringGesture: MutableList<Stroke>,
     onStrokesErased: (List<Stroke>) -> Unit
 ) {
+    val point = transform.inverseUnclamped(CanvasPoint(x, y))
     if (state.isErasing(currentTool)) {
-        findHitStrokesInViewport(strokes, x, y, 24f * density, transform::map, transform.scale)
+        if (!point.isOnPage()) return
+        findHitStrokesInViewport(
+            strokes, x, y,
+            NotePage.ERASER_HIT_RADIUS_MM * NotePage.LOGICAL_UNITS_PER_MM * transform.scale,
+            transform::map, transform.scale
+        )
             .forEach { stroke ->
                 if (!erasedDuringGesture.contains(stroke)) {
                     erasedDuringGesture += stroke
@@ -402,8 +429,25 @@ private fun processPoint(
                 }
             }
     } else {
-        val point = transform.inverse(CanvasPoint(x, y))
-        if (currentPoints.lastOrNull() != point) currentPoints += point
+        val previous = state.lastDrawPoint
+        state.lastDrawPoint = point
+        val clipped = previous?.clipToPage(point)
+        when {
+            previous == null && point.isOnPage() -> currentPoints += point
+            clipped == null -> state.startsNewSegment = currentPoints.isNotEmpty()
+            else -> {
+                val (start, end) = clipped
+                if (state.startsNewSegment) {
+                    state.startsNewSegment = false
+                    currentPoints += start
+                    // Mark the start of a disconnected page-internal segment.
+                    state.segmentBreaks += currentPoints.lastIndex
+                } else if (currentPoints.lastOrNull() != start) {
+                    currentPoints += start
+                }
+                if (currentPoints.lastOrNull() != end) currentPoints += end
+            }
+        }
     }
 }
 
@@ -419,9 +463,13 @@ private fun finishDrawing(
     onTemporaryEraserChanged: (Boolean) -> Unit
 ) {
     if (state.isErasing(currentTool)) onEraseEnd()
-    else if (currentPoints.isNotEmpty()) onStrokeComplete(Stroke(currentPoints.toList(), currentColor, currentWidth))
+    else if (currentPoints.isNotEmpty()) onStrokeComplete(
+        Stroke(currentPoints.toList(), currentColor, currentWidth, breakIndices = state.segmentBreaks.toSet())
+    )
     state.gesture = Gesture.NONE
     state.drawPointerId = MotionEvent.INVALID_POINTER_ID
+    state.lastDrawPoint = null
+    state.segmentBreaks.clear()
     currentPoints.clear()
     erasedDuringGesture.clear()
     state.pointers.clear()
@@ -443,6 +491,8 @@ private fun cancelGesture(
     if (state.gesture == Gesture.DRAW && state.isErasing(currentTool)) onEraseEnd()
     state.gesture = Gesture.NONE
     state.drawPointerId = MotionEvent.INVALID_POINTER_ID
+    state.lastDrawPoint = null
+    state.segmentBreaks.clear()
     currentPoints.clear()
     erasedDuringGesture.clear()
 }
@@ -471,28 +521,58 @@ private fun Offset.toCanvasPoint(): CanvasPoint = CanvasPoint(x, y)
 
 private fun Pair<Float, Float>.toOffset(): Offset = Offset(first, second)
 
-private fun addPoint(x: Float, y: Float, transform: CanvasTransform, points: MutableList<CanvasPoint>) {
-    points += transform.inverse(CanvasPoint(x, y))
+private fun startDrawSegment(
+    state: DrawingInputState,
+    x: Float,
+    y: Float,
+    transform: CanvasTransform,
+    points: MutableList<CanvasPoint>
+) {
+    val point = transform.inverseUnclamped(CanvasPoint(x, y))
+    state.lastDrawPoint = point
+    if (point.isOnPage()) points += point
+}
+
+private fun CanvasPoint.isOnPage(): Boolean =
+    x in 0f..NotePage.WIDTH && y in 0f..NotePage.HEIGHT
+
+private fun CanvasPoint.clipToPage(end: CanvasPoint): Pair<CanvasPoint, CanvasPoint>? {
+    var t0 = 0f
+    var t1 = 1f
+    val dx = end.x - x
+    val dy = end.y - y
+    fun clip(p: Float, q: Float): Boolean {
+        if (p == 0f) return q >= 0f
+        val r = q / p
+        return if (p < 0f) {
+            if (r > t1) false else { if (r > t0) t0 = r; true }
+        } else {
+            if (r < t0) false else { if (r < t1) t1 = r; true }
+        }
+    }
+    if (!clip(-dx, x) || !clip(dx, NotePage.WIDTH - x) ||
+        !clip(-dy, y) || !clip(dy, NotePage.HEIGHT - y)) return null
+    fun at(t: Float) = CanvasPoint(x + dx * t, y + dy * t)
+    return at(t0) to at(t1)
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
-    points: List<CanvasPoint>,
-    color: Color,
-    width: Float,
+    stroke: Stroke,
     transform: CanvasTransform
 ) {
-    val path = buildSmoothPath(points.map(transform::map))
-    drawPath(
-        path = path,
-        color = color,
-        style = androidx.compose.ui.graphics.drawscope.Stroke(
-            width * density * transform.scale,
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round
+    stroke.paths().forEach { points ->
+        drawPath(
+            buildSmoothPath(points.map(transform::map)),
+            stroke.color,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = stroke.width * transform.scale,
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round
+            )
         )
-    )
-    if (points.size == 1) {
-        val mapped = transform.map(points.first())
-        drawCircle(color, width * density * transform.scale / 2f, Offset(mapped.x, mapped.y))
+        if (points.size == 1) {
+            val mapped = transform.map(points.first())
+            drawCircle(stroke.color, stroke.width * transform.scale / 2f, Offset(mapped.x, mapped.y))
+        }
     }
 }

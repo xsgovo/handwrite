@@ -37,6 +37,14 @@ data class CanvasTransform(
     }
 
     fun inverse(point: CanvasPoint): CanvasPoint {
+        val source = inverseUnclamped(point)
+        return CanvasPoint(
+            source.x.coerceIn(0f, sourceWidth),
+            source.y.coerceIn(0f, sourceHeight)
+        )
+    }
+
+    fun inverseUnclamped(point: CanvasPoint): CanvasPoint {
         val rotated = CanvasPoint(
             (point.x - offsetX) / scale,
             (point.y - offsetY) / scale
@@ -47,10 +55,7 @@ data class CanvasTransform(
             3 -> CanvasPoint(sourceWidth - rotated.y, rotated.x)
             else -> rotated
         }
-        return CanvasPoint(
-            source.x.coerceIn(0f, sourceWidth),
-            source.y.coerceIn(0f, sourceHeight)
-        )
+        return source
     }
 
     fun clampPan(x: Float, y: Float): Pair<Float, Float> {
