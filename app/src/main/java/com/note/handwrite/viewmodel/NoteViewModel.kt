@@ -52,6 +52,7 @@ class NoteViewModel(
     private val undoHistory = mutableListOf<NoteOperation>()
     private val activeEraseEntries = mutableListOf<RemovedStroke>()
     private var eraseBaseline: List<Stroke> = emptyList()
+    private var lastOrientation: Int? = null
 
     init {
         inputSettingsRepository?.settings?.onEach { settings ->
@@ -176,8 +177,15 @@ class NoteViewModel(
         _zoomPercent.value = percent.toInt().coerceIn(100, 400)
     }
 
-    fun resetZoom() {
-        _zoomPercent.value = 100
+    fun resetZoom(percent: Int = 100) {
+        _zoomPercent.value = percent.coerceIn(100, 400)
+    }
+
+    fun resetZoomForOrientation(orientation: Int) {
+        val portraitToLandscape = lastOrientation == android.content.res.Configuration.ORIENTATION_PORTRAIT &&
+            orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        resetZoom(if (portraitToLandscape) 200 else 100)
+        lastOrientation = orientation
     }
 
     private fun updateStrokes(strokes: List<Stroke>, operation: NoteOperation) {

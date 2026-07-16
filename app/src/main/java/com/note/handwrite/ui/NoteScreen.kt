@@ -55,7 +55,7 @@ fun NoteScreen(
     var pan by remember { mutableStateOf(Offset.Zero) }
     LaunchedEffect(orientation) {
         pan = Offset.Zero
-        viewModel.resetZoom()
+        viewModel.resetZoomForOrientation(orientation)
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
