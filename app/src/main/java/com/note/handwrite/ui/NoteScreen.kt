@@ -18,11 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import com.note.handwrite.model.Tool
 import com.note.handwrite.ui.components.ClearConfirmDialog
 import com.note.handwrite.ui.components.DrawingCanvas
 import com.note.handwrite.ui.components.TopToolbar
-import com.note.handwrite.util.exportToClipboard
+import com.note.handwrite.util.saveNoteToGallery
+import com.note.handwrite.util.shareImage
 import com.note.handwrite.viewmodel.NoteViewModel
 import kotlinx.coroutines.launch
 
@@ -64,7 +64,7 @@ fun NoteScreen(
                 onClear = { showClearDialog = true },
                 onExport = {
                     scope.launch {
-                        val success = exportToClipboard(
+                        val uri = saveNoteToGallery(
                             context = context,
                             strokes = strokes,
                             backgroundType = backgroundType,
@@ -72,10 +72,18 @@ fun NoteScreen(
                             canvasHeight = canvasSize.height.toInt(),
                             density = density
                         )
-                        snackbarHostState.showSnackbar(
-                            message = if (success) "已复制到剪贴板，可粘贴使用" else "导出失败，请重试",
-                            duration = if (success) SnackbarDuration.Short else SnackbarDuration.Long
-                        )
+                        if (uri != null) {
+                            snackbarHostState.showSnackbar(
+                                message = "已保存到相册",
+                                duration = SnackbarDuration.Short
+                            )
+                            shareImage(context, uri)
+                        } else {
+                            snackbarHostState.showSnackbar(
+                                message = "保存失败，请重试",
+                                duration = SnackbarDuration.Long
+                            )
+                        }
                     }
                 },
                 onOpenSettings = onOpenSettings
