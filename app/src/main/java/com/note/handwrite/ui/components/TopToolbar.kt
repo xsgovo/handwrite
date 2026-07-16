@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -53,6 +55,9 @@ fun TopToolbar(
     onToolChange: (Tool) -> Unit,
     onColorChange: (Color) -> Unit,
     onWidthChange: (Float) -> Unit,
+    zoomPercent: Int,
+    onZoomDecrease: () -> Unit,
+    onZoomIncrease: () -> Unit,
     onBackgroundChange: (BackgroundType) -> Unit,
     onUndo: () -> Unit,
     onClear: () -> Unit,
@@ -105,6 +110,17 @@ fun TopToolbar(
             )
             ColorPicker(currentColor, onColorChange)
             WidthPicker(currentWidth, onWidthChange)
+            IconButton(onClick = onZoomDecrease, enabled = zoomPercent > 100) {
+                Icon(Icons.Default.Remove, contentDescription = "缩小")
+            }
+            Text(
+                text = "${zoomPercent}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            IconButton(onClick = onZoomIncrease, enabled = zoomPercent < 400) {
+                Icon(Icons.Default.Add, contentDescription = "放大")
+            }
             IconButton(onClick = onUndo, enabled = canUndo) {
                 Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "撤销")
             }

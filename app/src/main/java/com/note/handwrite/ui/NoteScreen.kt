@@ -9,6 +9,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -18,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
+import android.view.Surface
 import com.note.handwrite.ui.components.ClearConfirmDialog
 import com.note.handwrite.ui.components.DrawingCanvas
 import com.note.handwrite.ui.components.TopToolbar
@@ -42,10 +45,17 @@ fun NoteScreen(
     val canUndo by viewModel.canUndo.collectAsState()
     val inputMode by viewModel.inputMode.collectAsState()
     val logicalCanvasSize by viewModel.documentSize.collectAsState()
+    val zoomPercent by viewModel.zoomPercent.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
     var temporaryEraser by remember { mutableStateOf(false) }
     var canvasSize by remember { mutableStateOf(Size.Zero) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    val rotation = rememberRotation()
+
+    LaunchedEffect(rotation) {
+        pan = Offset.Zero
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -60,6 +70,9 @@ fun NoteScreen(
                 onToolChange = viewModel::switchTool,
                 onColorChange = viewModel::switchColor,
                 onWidthChange = viewModel::switchWidth,
+                zoomPercent = zoomPercent,
+                onZoomDecrease = { pan = Offset.Zero; viewModel.decreaseZoom() },
+                onZoomIncrease = { viewModel.increaseZoom() },
                 onBackgroundChange = viewModel::switchBackground,
                 onUndo = viewModel::undo,
                 onClear = { showClearDialog = true },
@@ -73,6 +86,9 @@ fun NoteScreen(
                             canvasHeight = canvasSize.height.toInt(),
                             logicalCanvasWidth = logicalCanvasSize.width.toInt(),
                             logicalCanvasHeight = logicalCanvasSize.height.toInt(),
+                            rotation = rotation,
+                            zoomPercent = zoomPercent.toFloat(),
+                            pan = pan,
                             density = density
                         )
                         if (!success) {
@@ -93,6 +109,9 @@ fun NoteScreen(
                             canvasHeight = canvasSize.height.toInt(),
                             logicalCanvasWidth = logicalCanvasSize.width.toInt(),
                             logicalCanvasHeight = logicalCanvasSize.height.toInt(),
+                            rotation = rotation,
+                            zoomPercent = zoomPercent.toFloat(),
+                            pan = pan,
                             density = density
                         )
                         snackbarHostState.showSnackbar(
@@ -112,13 +131,21 @@ fun NoteScreen(
             currentTool = currentTool,
             backgroundType = backgroundType,
             logicalCanvasSize = logicalCanvasSize,
+            rotation = rotation,
+            zoomPercent = zoomPercent.toFloat(),
+            pan = pan,
             useSpenMode = inputMode.name == "SPEN",
+            onViewportChanged = { zoom, nextPan ->
+                viewModel.setZoomPercent(zoom)
+                pan = nextPan
+            },
             onStrokeComplete = viewModel::addStroke,
             onEraseStart = viewModel::beginErase,
             onEraseEnd = viewModel::endErase,
             onStrokesErased = viewModel::eraseStrokes,
             onTemporaryEraserChanged = { temporaryEraser = it },
             onCanvasSizeChanged = {
+                if (canvasSize != Size.Zero && canvasSize != it) pan = Offset.Zero
                 canvasSize = it
                 viewModel.setDocumentSize(it)
             },
@@ -134,5 +161,17 @@ fun NoteScreen(
             },
             onDismiss = { showClearDialog = false }
         )
+    }
+}
+
+@Composable
+private fun rememberRotation(): Int {
+    val context = LocalContext.current
+    val displayRotation = context.display?.rotation ?: Surface.ROTATION_0
+    return when (displayRotation) {
+        Surface.ROTATION_90 -> 1
+        Surface.ROTATION_180 -> 2
+        Surface.ROTATION_270 -> 3
+        else -> 0
     }
 }

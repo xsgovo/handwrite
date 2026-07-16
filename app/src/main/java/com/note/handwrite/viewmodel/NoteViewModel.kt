@@ -46,6 +46,9 @@ class NoteViewModel(
     private val _documentSize = MutableStateFlow(Size.Zero)
     val documentSize: StateFlow<Size> = _documentSize.asStateFlow()
 
+    private val _zoomPercent = MutableStateFlow(100)
+    val zoomPercent: StateFlow<Int> = _zoomPercent.asStateFlow()
+
     private val undoHistory = mutableListOf<NoteOperation>()
     private val activeEraseEntries = mutableListOf<RemovedStroke>()
     private var eraseBaseline: List<Stroke> = emptyList()
@@ -160,8 +163,24 @@ class NoteViewModel(
 
     fun setDocumentSize(size: Size) {
         if (_documentSize.value == Size.Zero && size != Size.Zero) {
-            _documentSize.value = size
+            _documentSize.value = if (size.width >= size.height) {
+                Size(size.height, size.width)
+            } else {
+                size
+            }
         }
+    }
+
+    fun decreaseZoom() {
+        _zoomPercent.value = (_zoomPercent.value - 5).coerceAtLeast(100)
+    }
+
+    fun increaseZoom() {
+        _zoomPercent.value = (_zoomPercent.value + 5).coerceAtMost(400)
+    }
+
+    fun setZoomPercent(percent: Float) {
+        _zoomPercent.value = percent.toInt().coerceIn(100, 400)
     }
 
     private fun updateStrokes(strokes: List<Stroke>, operation: NoteOperation) {
