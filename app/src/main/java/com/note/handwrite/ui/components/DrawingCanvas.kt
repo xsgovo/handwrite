@@ -28,8 +28,9 @@ import com.note.handwrite.model.CanvasPoint
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.Tool
 import com.note.handwrite.util.buildSmoothPath
+import com.note.handwrite.util.CanvasTransform
 import com.note.handwrite.util.drawBackground
-import com.note.handwrite.util.findHitStrokes
+import com.note.handwrite.util.findHitStrokesInViewport
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -39,6 +40,7 @@ fun DrawingCanvas(
     currentWidth: Float,
     currentTool: Tool,
     backgroundType: BackgroundType,
+    logicalCanvasSize: Size,
     useSpenMode: Boolean,
     onStrokeComplete: (Stroke) -> Unit,
     onEraseStart: () -> Unit,
@@ -63,6 +65,12 @@ fun DrawingCanvas(
     val input = remember { DrawingInputState() }
     val density = LocalDensity.current.density
     var canvasSize by remember { mutableStateOf(Size.Zero) }
+    val transform = CanvasTransform(
+        sourceWidth = if (logicalCanvasSize.width > 0f) logicalCanvasSize.width else canvasSize.width,
+        sourceHeight = if (logicalCanvasSize.height > 0f) logicalCanvasSize.height else canvasSize.height,
+        targetWidth = canvasSize.width,
+        targetHeight = canvasSize.height
+    )
 
     Box(
         modifier = modifier
@@ -84,6 +92,7 @@ fun DrawingCanvas(
                     currentWidth = latestWidth,
                     canvasWidth = canvasSize.width,
                     canvasHeight = canvasSize.height,
+                    transform = transform,
                     density = density,
                     onStrokeComplete = latestOnStrokeComplete,
                     onEraseStart = latestOnEraseStart,
@@ -94,12 +103,12 @@ fun DrawingCanvas(
             }
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawBackground(backgroundType)
+            drawBackground(backgroundType, transform)
             strokes.filterNot { erasedDuringGesture.contains(it) }.forEach { stroke ->
-                drawStroke(stroke.points, stroke.color, stroke.width)
+                drawStroke(stroke.points, stroke.color, stroke.width, transform)
             }
             if (currentPoints.isNotEmpty() && !(input.temporaryEraser || currentTool == Tool.ERASER)) {
-                drawStroke(currentPoints, currentColor, currentWidth)
+                drawStroke(currentPoints, currentColor, currentWidth, transform)
             }
         }
     }
@@ -125,6 +134,7 @@ private fun handleMotionEvent(
     currentWidth: Float,
     canvasWidth: Float,
     canvasHeight: Float,
+    transform: CanvasTransform,
     density: Float,
     onStrokeComplete: (Stroke) -> Unit,
     onEraseStart: () -> Unit,
@@ -174,7 +184,7 @@ private fun handleMotionEvent(
             currentPoints.clear()
             erasedDuringGesture.clear()
             if (state.temporaryEraser || currentTool == Tool.ERASER) onEraseStart()
-            addPoint(event.x, event.y, canvasWidth, canvasHeight, currentPoints)
+            addPoint(event.x, event.y, transform, currentPoints)
         }
 
         MotionEvent.ACTION_POINTER_DOWN -> {
@@ -188,8 +198,7 @@ private fun handleMotionEvent(
                 addPoint(
                     event.getX(event.actionIndex),
                     event.getY(event.actionIndex),
-                    canvasWidth,
-                    canvasHeight,
+                    transform,
                     currentPoints
                 )
             }
@@ -212,6 +221,7 @@ private fun handleMotionEvent(
                     currentWidth,
                     canvasWidth,
                     canvasHeight,
+                    transform,
                     density,
                     currentPoints,
                     erasedDuringGesture,
@@ -230,6 +240,7 @@ private fun handleMotionEvent(
                 currentWidth,
                 canvasWidth,
                 canvasHeight,
+                transform,
                 density,
                 currentPoints,
                 erasedDuringGesture,
@@ -312,6 +323,7 @@ private fun processPoint(
     currentWidth: Float,
     canvasWidth: Float,
     canvasHeight: Float,
+    transform: CanvasTransform,
     density: Float,
     currentPoints: MutableList<CanvasPoint>,
     erasedDuringGesture: MutableList<Stroke>,
@@ -320,11 +332,13 @@ private fun processPoint(
     val erasing = state.temporaryEraser || currentTool == Tool.ERASER
     if (erasing) {
         val tolerance = 24f * density
-        findHitStrokes(
+        findHitStrokesInViewport(
             strokes,
             x,
             y,
-            tolerance
+            tolerance,
+            transform::map,
+            transform.scale
         ).forEach { stroke ->
             if (!erasedDuringGesture.contains(stroke)) {
                 erasedDuringGesture += stroke
@@ -332,7 +346,7 @@ private fun processPoint(
             }
         }
     } else {
-        val point = CanvasPoint(x, y)
+        val point = transform.inverse(CanvasPoint(x, y))
         val previous = currentPoints.lastOrNull()
         if (previous == null || previous != point) currentPoints += point
     }
@@ -341,26 +355,35 @@ private fun processPoint(
 private fun addPoint(
     x: Float,
     y: Float,
-    canvasWidth: Float,
-    canvasHeight: Float,
+    transform: CanvasTransform,
     currentPoints: MutableList<CanvasPoint>
 ) {
-    currentPoints += CanvasPoint(x, y)
+    currentPoints += transform.inverse(CanvasPoint(x, y))
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
     points: List<CanvasPoint>,
     color: Color,
-    width: Float
+    width: Float,
+    transform: CanvasTransform
 ) {
-    val path = buildSmoothPath(points)
+    val path = buildSmoothPath(points.map(transform::map))
     drawPath(
         path = path,
         color = color,
-        style = DrawStroke(width * density, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        style = DrawStroke(
+            width * density * transform.scale,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
+        )
     )
     if (points.size == 1) {
         val point = points.first()
-        drawCircle(color, width * density / 2f, Offset(point.x, point.y))
+        val mapped = transform.map(point)
+        drawCircle(
+            color,
+            width * density * transform.scale / 2f,
+            Offset(mapped.x, mapped.y)
+        )
     }
 }

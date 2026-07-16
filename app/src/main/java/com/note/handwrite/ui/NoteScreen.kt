@@ -41,6 +41,7 @@ fun NoteScreen(
     val backgroundType by viewModel.backgroundType.collectAsState()
     val canUndo by viewModel.canUndo.collectAsState()
     val inputMode by viewModel.inputMode.collectAsState()
+    val logicalCanvasSize by viewModel.documentSize.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
     var temporaryEraser by remember { mutableStateOf(false) }
@@ -70,6 +71,8 @@ fun NoteScreen(
                             backgroundType = backgroundType,
                             canvasWidth = canvasSize.width.toInt(),
                             canvasHeight = canvasSize.height.toInt(),
+                            logicalCanvasWidth = logicalCanvasSize.width.toInt(),
+                            logicalCanvasHeight = logicalCanvasSize.height.toInt(),
                             density = density
                         )
                         if (!success) {
@@ -88,6 +91,8 @@ fun NoteScreen(
                             backgroundType = backgroundType,
                             canvasWidth = canvasSize.width.toInt(),
                             canvasHeight = canvasSize.height.toInt(),
+                            logicalCanvasWidth = logicalCanvasSize.width.toInt(),
+                            logicalCanvasHeight = logicalCanvasSize.height.toInt(),
                             density = density
                         )
                         snackbarHostState.showSnackbar(
@@ -106,13 +111,17 @@ fun NoteScreen(
             currentWidth = currentWidth,
             currentTool = currentTool,
             backgroundType = backgroundType,
+            logicalCanvasSize = logicalCanvasSize,
             useSpenMode = inputMode.name == "SPEN",
             onStrokeComplete = viewModel::addStroke,
             onEraseStart = viewModel::beginErase,
             onEraseEnd = viewModel::endErase,
             onStrokesErased = viewModel::eraseStrokes,
             onTemporaryEraserChanged = { temporaryEraser = it },
-            onCanvasSizeChanged = { canvasSize = it },
+            onCanvasSizeChanged = {
+                canvasSize = it
+                viewModel.setDocumentSize(it)
+            },
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         )
     }

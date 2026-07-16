@@ -5,30 +5,40 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import com.note.handwrite.model.BackgroundType
+import com.note.handwrite.model.CanvasPoint
 
-fun DrawScope.drawBackground(type: BackgroundType) {
+fun DrawScope.drawBackground(type: BackgroundType, transform: CanvasTransform) {
     drawRect(color = Color.White)
     val spacing = 40.dp.toPx()
     val lineColor = Color(0xFFE0E0E0)
+    val lineWidth = 1.dp.toPx() * transform.scale
+    val logicalWidth = transform.sourceWidth
+    val logicalHeight = transform.sourceHeight
 
     when (type) {
         BackgroundType.PLAIN -> Unit
         BackgroundType.LINED -> {
             var y = spacing
-            while (y < size.height) {
-                drawLine(lineColor, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+            while (y < logicalHeight) {
+                val start = transform.map(CanvasPoint(0f, y))
+                val end = transform.map(CanvasPoint(logicalWidth, y))
+                drawLine(lineColor, Offset(start.x, start.y), Offset(end.x, end.y), lineWidth)
                 y += spacing
             }
         }
         BackgroundType.GRID -> {
             var x = spacing
-            while (x < size.width) {
-                drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
+            while (x < logicalWidth) {
+                val start = transform.map(CanvasPoint(x, 0f))
+                val end = transform.map(CanvasPoint(x, logicalHeight))
+                drawLine(lineColor, Offset(start.x, start.y), Offset(end.x, end.y), lineWidth)
                 x += spacing
             }
             var y = spacing
-            while (y < size.height) {
-                drawLine(lineColor, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+            while (y < logicalHeight) {
+                val start = transform.map(CanvasPoint(0f, y))
+                val end = transform.map(CanvasPoint(logicalWidth, y))
+                drawLine(lineColor, Offset(start.x, start.y), Offset(end.x, end.y), lineWidth)
                 y += spacing
             }
         }

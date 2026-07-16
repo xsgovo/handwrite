@@ -15,8 +15,8 @@ import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.compose.ui.graphics.Color
 import com.note.handwrite.model.BackgroundType
-import com.note.handwrite.model.CanvasPoint
 import com.note.handwrite.model.Stroke
+import com.note.handwrite.model.CanvasPoint
 import java.io.File
 import java.io.FileOutputStream
 
@@ -26,6 +26,8 @@ fun saveNoteToGallery(
     backgroundType: BackgroundType,
     canvasWidth: Int,
     canvasHeight: Int,
+    logicalCanvasWidth: Int,
+    logicalCanvasHeight: Int,
     density: Float
 ): Uri? {
     if (canvasWidth <= 0 || canvasHeight <= 0) return null
@@ -51,6 +53,8 @@ fun saveNoteToGallery(
             backgroundType = backgroundType,
             width = canvasWidth,
             height = canvasHeight,
+            logicalWidth = logicalCanvasWidth,
+            logicalHeight = logicalCanvasHeight,
             density = density
         )
         resolver.openOutputStream(uri)?.use { output ->
@@ -92,12 +96,22 @@ fun shareNoteDirectly(
     backgroundType: BackgroundType,
     canvasWidth: Int,
     canvasHeight: Int,
+    logicalCanvasWidth: Int,
+    logicalCanvasHeight: Int,
     density: Float
 ): Boolean {
     if (canvasWidth <= 0 || canvasHeight <= 0) return false
 
     return try {
-        val bitmap = renderNoteBitmap(strokes, backgroundType, canvasWidth, canvasHeight, density)
+        val bitmap = renderNoteBitmap(
+            strokes,
+            backgroundType,
+            canvasWidth,
+            canvasHeight,
+            logicalCanvasWidth,
+            logicalCanvasHeight,
+            density
+        )
         val file = File(context.cacheDir, "shared_note_${System.currentTimeMillis()}.png")
         FileOutputStream(file).use { output ->
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
@@ -131,12 +145,20 @@ private fun renderNoteBitmap(
     backgroundType: BackgroundType,
     width: Int,
     height: Int,
+    logicalWidth: Int,
+    logicalHeight: Int,
     density: Float
 ): Bitmap {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(bitmap)
+    val transform = CanvasTransform(
+        sourceWidth = if (logicalWidth > 0) logicalWidth.toFloat() else width.toFloat(),
+        sourceHeight = if (logicalHeight > 0) logicalHeight.toFloat() else height.toFloat(),
+        targetWidth = width.toFloat(),
+        targetHeight = height.toFloat()
+    )
     canvas.drawColor(android.graphics.Color.WHITE)
-    drawBackgroundOnAndroidCanvas(canvas, backgroundType, width, height, density)
+    drawBackgroundOnAndroidCanvas(canvas, backgroundType, transform, density)
 
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -145,18 +167,18 @@ private fun renderNoteBitmap(
     }
     strokes.forEach { stroke ->
         paint.color = stroke.color.toAndroidColor()
-        paint.strokeWidth = stroke.width * density
+        paint.strokeWidth = stroke.width * density * transform.scale
         canvas.drawPath(
-            buildAndroidPath(stroke.points, width.toFloat(), height.toFloat()),
+            buildAndroidPath(stroke.points.map(transform::map)),
             paint
         )
         if (stroke.points.size == 1) {
             val point = stroke.points.first()
             paint.style = Paint.Style.FILL
             canvas.drawCircle(
-                point.x,
-                point.y,
-                stroke.width * density / 2f,
+                transform.map(point).x,
+                transform.map(point).y,
+                stroke.width * density * transform.scale / 2f,
                 paint
             )
             paint.style = Paint.Style.STROKE
@@ -175,33 +197,40 @@ private fun Color.toAndroidColor(): Int = android.graphics.Color.argb(
 private fun drawBackgroundOnAndroidCanvas(
     canvas: AndroidCanvas,
     type: BackgroundType,
-    width: Int,
-    height: Int,
+    transform: CanvasTransform,
     density: Float
 ) {
     val spacing = 40f * density
     val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFE0E0E0.toInt()
-        strokeWidth = density
+        strokeWidth = density * transform.scale
     }
+    val logicalWidth = transform.sourceWidth
+    val logicalHeight = transform.sourceHeight
     when (type) {
         BackgroundType.PLAIN -> Unit
         BackgroundType.LINED -> {
             var y = spacing
-            while (y < height) {
-                canvas.drawLine(0f, y, width.toFloat(), y, linePaint)
+            while (y < logicalHeight) {
+                val start = transform.map(CanvasPoint(0f, y))
+                val end = transform.map(CanvasPoint(logicalWidth, y))
+                canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
                 y += spacing
             }
         }
         BackgroundType.GRID -> {
             var x = spacing
-            while (x < width) {
-                canvas.drawLine(x, 0f, x, height.toFloat(), linePaint)
+            while (x < logicalWidth) {
+                val start = transform.map(CanvasPoint(x, 0f))
+                val end = transform.map(CanvasPoint(x, logicalHeight))
+                canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
                 x += spacing
             }
             var y = spacing
-            while (y < height) {
-                canvas.drawLine(0f, y, width.toFloat(), y, linePaint)
+            while (y < logicalHeight) {
+                val start = transform.map(CanvasPoint(0f, y))
+                val end = transform.map(CanvasPoint(logicalWidth, y))
+                canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
                 y += spacing
             }
         }
@@ -209,9 +238,7 @@ private fun drawBackgroundOnAndroidCanvas(
 }
 
 private fun buildAndroidPath(
-    points: List<CanvasPoint>,
-    canvasWidth: Float,
-    canvasHeight: Float
+    points: List<CanvasPoint>
 ): AndroidPath {
     val path = AndroidPath()
     if (points.isEmpty()) return path
