@@ -7,6 +7,6 @@ data class NoteSettings(
     val inputMode: InputMode = InputMode.SPEN,
     val tool: Tool = Tool.PEN,
     val color: Color = PenBlack,
-    val width: Float = 8f,
+    val widthStep: Int = 50,
     val background: BackgroundType = BackgroundType.PLAIN
 )

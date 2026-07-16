@@ -5,56 +5,72 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.note.handwrite.model.NotePage
+import kotlin.math.roundToInt
+
+private val quickSteps = listOf(20, 50, 80)
 
 @Composable
 fun WidthPicker(
-    currentWidth: Float,
-    onWidthSelected: (Float) -> Unit,
+    currentStep: Int,
+    onWidthSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var expanded by remember { mutableStateOf(false) }
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
     ) {
-        listOf(
-            2f to 26.dp,
-            4f to 28.dp,
-            6f to 30.dp,
-            8f to 32.dp,
-            12f to 36.dp,
-            16f to 40.dp
-        ).forEach { (width, buttonSize) ->
-            val selected = width == currentWidth
+        quickSteps.forEach { step ->
+            val selected = step == currentStep
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(buttonSize)
+                    .size(32.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
-                    .border(
-                        width = if (selected) 2.dp else 1.dp,
-                        color = if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outlineVariant,
-                        shape = CircleShape
-                    )
-                    .clickable { onWidthSelected(width) }
+                    .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                    .clickable { onWidthSelected(step) }
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(width.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onSurface)
-                )
+                Box(Modifier.size((8 + step / 5).dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface))
+            }
+        }
+        Box {
+            Text(
+                text = if (currentStep in quickSteps) "宽度" else "${"%.2f".format(NotePage.millimetersForStep(currentStep))}mm",
+                modifier = Modifier.clickable { expanded = true }.padding(8.dp),
+                style = MaterialTheme.typography.labelMedium
+            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("第 $currentStep 档 · ${"%.2f".format(NotePage.millimetersForStep(currentStep))} mm")
+                    Slider(
+                        value = currentStep.toFloat(),
+                        onValueChange = { onWidthSelected(it.roundToInt()) },
+                        valueRange = 1f..100f,
+                        steps = 98,
+                        modifier = Modifier.size(width = 240.dp, height = 48.dp)
+                    )
+                }
             }
         }
     }

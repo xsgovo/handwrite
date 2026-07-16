@@ -3,7 +3,6 @@ package com.note.handwrite.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.note.handwrite.model.BackgroundType
@@ -22,7 +21,7 @@ class InputSettingsRepository(private val context: Context) {
     private val useSpenModeKey = booleanPreferencesKey("useSpenMode")
     private val toolKey = stringPreferencesKey("tool")
     private val colorKey = stringPreferencesKey("color")
-    private val widthKey = floatPreferencesKey("width")
+    private val widthStepKey = stringPreferencesKey("width_step")
     private val backgroundKey = stringPreferencesKey("background")
 
     val settings: Flow<NoteSettings> = context.inputSettingsDataStore.data.map { preferences ->
@@ -30,7 +29,7 @@ class InputSettingsRepository(private val context: Context) {
             inputMode = if (preferences[useSpenModeKey] ?: true) InputMode.SPEN else InputMode.FINGER,
             tool = preferences[toolKey].toToolOrDefault(),
             color = preferences[colorKey].toColorOrDefault(),
-            width = preferences[widthKey] ?: 8f,
+            widthStep = preferences[widthStepKey]?.toIntOrNull()?.coerceIn(1, 100) ?: 50,
             background = preferences[backgroundKey].toBackgroundOrDefault()
         )
     }
@@ -49,8 +48,8 @@ class InputSettingsRepository(private val context: Context) {
         context.inputSettingsDataStore.edit { it[colorKey] = color.toColorKey() }
     }
 
-    suspend fun setWidth(width: Float) {
-        context.inputSettingsDataStore.edit { it[widthKey] = width }
+    suspend fun setWidthStep(step: Int) {
+        context.inputSettingsDataStore.edit { it[widthStepKey] = step.coerceIn(1, 100).toString() }
     }
 
     suspend fun setBackground(background: BackgroundType) {
