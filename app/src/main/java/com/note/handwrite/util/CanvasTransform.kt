@@ -2,6 +2,7 @@ package com.note.handwrite.util
 
 import com.note.handwrite.model.CanvasPoint
 import kotlin.math.max
+import kotlin.math.min
 
 /** Maps the fixed portrait document into the current viewport. */
 data class CanvasTransform(
@@ -16,7 +17,12 @@ data class CanvasTransform(
 ) {
     private val rotatedWidth = if (rotation == 1 || rotation == 3) sourceHeight else sourceWidth
     private val rotatedHeight = if (rotation == 1 || rotation == 3) sourceWidth else sourceHeight
-    private val baseScale = if (rotatedWidth > 0f) targetWidth / rotatedWidth else 1f
+    /** Fits the entire logical document into the current viewport. */
+    private val baseScale = if (rotatedWidth > 0f && rotatedHeight > 0f) {
+        min(targetWidth / rotatedWidth, targetHeight / rotatedHeight)
+    } else {
+        1f
+    }
 
     val scale: Float = baseScale * (zoomPercent.coerceAtLeast(100f) / 100f)
     private val centeredOffsetX = (targetWidth - rotatedWidth * scale) / 2f

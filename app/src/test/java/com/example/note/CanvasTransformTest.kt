@@ -60,7 +60,7 @@ class CanvasTransformTest {
     }
 
     @Test
-    fun zoomUsesWidthFitAndClampsPanIndependently() {
+    fun zoomUsesFitToPageAndClampsPanIndependently() {
         val transform = CanvasTransform(
             sourceWidth = 100f,
             sourceHeight = 200f,
@@ -71,8 +71,8 @@ class CanvasTransformTest {
             panY = -10_000f
         )
 
-        assertEquals(6f, transform.scale, 0.001f)
-        assertEquals(CanvasPoint(0f, -800f), transform.map(CanvasPoint(0f, 0f)))
+        assertEquals(4f, transform.scale, 0.001f)
+        assertEquals(CanvasPoint(0f, -400f), transform.map(CanvasPoint(0f, 0f)))
     }
 
     @Test
@@ -86,6 +86,6 @@ class CanvasTransformTest {
             panY = -100f
         )
 
-        assertEquals(CanvasPoint(0f, -100f), transform.map(CanvasPoint(0f, 0f)))
+        assertEquals(CanvasPoint(50f, 0f), transform.map(CanvasPoint(0f, 0f)))
     }
 }
