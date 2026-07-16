@@ -139,7 +139,8 @@ private enum class Gesture { NONE, DRAW, PAN, TRANSFORM }
 private class DrawingInputState {
     val pointers = linkedMapOf<Int, Offset>()
     val pointerTools = linkedMapOf<Int, Int>()
-    var gesture = Gesture.NONE
+    // Compose must observe this so an in-progress first stroke is rendered immediately.
+    var gesture by mutableStateOf(Gesture.NONE)
     var drawPointerId = MotionEvent.INVALID_POINTER_ID
     var temporaryEraser = false
     var stylusButtonDown = false
