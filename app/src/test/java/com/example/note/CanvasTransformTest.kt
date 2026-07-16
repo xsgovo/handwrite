@@ -7,6 +7,26 @@ import org.junit.Test
 
 class CanvasTransformTest {
     @Test
+    fun fluidCanvasKeepsStrokeCoordinatesStableAfterViewportRotation() {
+        val portrait = CanvasTransform(
+            sourceWidth = 1200f,
+            sourceHeight = 1800f,
+            targetWidth = 1200f,
+            targetHeight = 1800f
+        )
+        val landscape = CanvasTransform(
+            sourceWidth = 2000f,
+            sourceHeight = 1000f,
+            targetWidth = 2000f,
+            targetHeight = 1000f
+        )
+        val source = CanvasPoint(80f, 60f)
+
+        assertEquals(source, portrait.map(source))
+        assertEquals(source, landscape.map(source))
+    }
+
+    @Test
     fun portraitContentRotatesIntoLandscapeViewportUsingWidthFit() {
         val transform = CanvasTransform(
             sourceWidth = 100f,

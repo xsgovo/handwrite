@@ -1,7 +1,6 @@
 package com.note.handwrite.viewmodel
 
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.Size
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.note.handwrite.data.InputSettingsRepository
@@ -42,9 +41,6 @@ class NoteViewModel(
 
     private val _inputMode = MutableStateFlow(InputMode.SPEN)
     val inputMode: StateFlow<InputMode> = _inputMode.asStateFlow()
-
-    private val _documentSize = MutableStateFlow(Size.Zero)
-    val documentSize: StateFlow<Size> = _documentSize.asStateFlow()
 
     private val _zoomPercent = MutableStateFlow(100)
     val zoomPercent: StateFlow<Int> = _zoomPercent.asStateFlow()
@@ -158,16 +154,6 @@ class NoteViewModel(
         _inputMode.value = mode
         viewModelScope.launch {
             inputSettingsRepository?.setInputMode(mode)
-        }
-    }
-
-    fun setDocumentSize(size: Size) {
-        if (_documentSize.value == Size.Zero && size != Size.Zero) {
-            _documentSize.value = if (size.width >= size.height) {
-                Size(size.height, size.width)
-            } else {
-                size
-            }
         }
     }
 

@@ -27,9 +27,6 @@ fun saveNoteToGallery(
     backgroundType: BackgroundType,
     canvasWidth: Int,
     canvasHeight: Int,
-    logicalCanvasWidth: Int,
-    logicalCanvasHeight: Int,
-    rotation: Int,
     zoomPercent: Float,
     pan: Offset,
     density: Float
@@ -57,9 +54,6 @@ fun saveNoteToGallery(
             backgroundType = backgroundType,
             width = canvasWidth,
             height = canvasHeight,
-            logicalWidth = logicalCanvasWidth,
-            logicalHeight = logicalCanvasHeight,
-            rotation = rotation,
             zoomPercent = zoomPercent,
             pan = pan,
             density = density
@@ -103,9 +97,6 @@ fun shareNoteDirectly(
     backgroundType: BackgroundType,
     canvasWidth: Int,
     canvasHeight: Int,
-    logicalCanvasWidth: Int,
-    logicalCanvasHeight: Int,
-    rotation: Int,
     zoomPercent: Float,
     pan: Offset,
     density: Float
@@ -118,9 +109,6 @@ fun shareNoteDirectly(
             backgroundType,
             canvasWidth,
             canvasHeight,
-            logicalCanvasWidth,
-            logicalCanvasHeight,
-            rotation,
             zoomPercent,
             pan,
             density
@@ -158,9 +146,6 @@ private fun renderNoteBitmap(
     backgroundType: BackgroundType,
     width: Int,
     height: Int,
-    logicalWidth: Int,
-    logicalHeight: Int,
-    rotation: Int,
     zoomPercent: Float,
     pan: Offset,
     density: Float
@@ -168,11 +153,10 @@ private fun renderNoteBitmap(
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(bitmap)
     val transform = CanvasTransform(
-        sourceWidth = if (logicalWidth > 0) logicalWidth.toFloat() else width.toFloat(),
-        sourceHeight = if (logicalHeight > 0) logicalHeight.toFloat() else height.toFloat(),
+        sourceWidth = width.toFloat(),
+        sourceHeight = height.toFloat(),
         targetWidth = width.toFloat(),
         targetHeight = height.toFloat(),
-        rotation = rotation,
         zoomPercent = zoomPercent,
         panX = pan.x,
         panY = pan.y

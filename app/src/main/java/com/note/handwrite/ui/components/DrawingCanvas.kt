@@ -41,8 +41,6 @@ fun DrawingCanvas(
     currentWidth: Float,
     currentTool: Tool,
     backgroundType: BackgroundType,
-    logicalCanvasSize: Size,
-    rotation: Int,
     zoomPercent: Float,
     pan: Offset,
     useSpenMode: Boolean,
@@ -71,14 +69,11 @@ fun DrawingCanvas(
     val input = remember { DrawingInputState() }
     val density = LocalDensity.current.density
     var canvasSize by remember { mutableStateOf(Size.Zero) }
-    val sourceWidth = if (logicalCanvasSize.width > 0f) logicalCanvasSize.width else canvasSize.width
-    val sourceHeight = if (logicalCanvasSize.height > 0f) logicalCanvasSize.height else canvasSize.height
     val transform = CanvasTransform(
-        sourceWidth = sourceWidth,
-        sourceHeight = sourceHeight,
+        sourceWidth = canvasSize.width,
+        sourceHeight = canvasSize.height,
         targetWidth = canvasSize.width,
         targetHeight = canvasSize.height,
-        rotation = rotation,
         zoomPercent = zoomPercent,
         panX = pan.x,
         panY = pan.y
