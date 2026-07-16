@@ -181,11 +181,12 @@ class NoteViewModel(
         _zoomPercent.value = percent.coerceIn(100, 400)
     }
 
-    fun resetZoomForOrientation(orientation: Int) {
+    fun resetZoomForOrientation(orientation: Int): Boolean {
         val portraitToLandscape = lastOrientation == android.content.res.Configuration.ORIENTATION_PORTRAIT &&
             orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         resetZoom(if (portraitToLandscape) 200 else 100)
         lastOrientation = orientation
+        return portraitToLandscape
     }
 
     private fun updateStrokes(strokes: List<Stroke>, operation: NoteOperation) {

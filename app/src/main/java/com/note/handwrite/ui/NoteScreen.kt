@@ -28,6 +28,8 @@ import com.note.handwrite.ui.components.DrawingCanvas
 import com.note.handwrite.ui.components.TopToolbar
 import com.note.handwrite.util.saveNoteToGallery
 import com.note.handwrite.util.shareNoteDirectly
+import com.note.handwrite.util.CanvasTransform
+import com.note.handwrite.model.NotePage
 import com.note.handwrite.viewmodel.NoteViewModel
 import kotlinx.coroutines.launch
 
@@ -53,9 +55,10 @@ fun NoteScreen(
     var temporaryEraser by remember { mutableStateOf(false) }
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    var alignTopAfterLandscapeRotation by remember { mutableStateOf(false) }
     LaunchedEffect(orientation) {
         pan = Offset.Zero
-        viewModel.resetZoomForOrientation(orientation)
+        alignTopAfterLandscapeRotation = viewModel.resetZoomForOrientation(orientation)
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -136,6 +139,18 @@ fun NoteScreen(
             onCanvasSizeChanged = {
                 if (canvasSize != Size.Zero && canvasSize != it) pan = Offset.Zero
                 canvasSize = it
+                if (alignTopAfterLandscapeRotation && it != Size.Zero) {
+                    val transform = CanvasTransform(
+                        sourceWidth = NotePage.WIDTH,
+                        sourceHeight = NotePage.HEIGHT,
+                        targetWidth = it.width,
+                        targetHeight = it.height,
+                        zoomPercent = zoomPercent.toFloat()
+                    )
+                    val topAlignedPan = transform.panForTopAlignment()
+                    pan = Offset(topAlignedPan.first, topAlignedPan.second)
+                    alignTopAfterLandscapeRotation = false
+                }
             },
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         )

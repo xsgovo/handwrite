@@ -88,4 +88,20 @@ class CanvasTransformTest {
 
         assertEquals(CanvasPoint(50f, 0f), transform.map(CanvasPoint(0f, 0f)))
     }
+
+    @Test
+    fun topAlignmentPinsZoomedDocumentToViewportTop() {
+        val transform = CanvasTransform(
+            sourceWidth = 100f,
+            sourceHeight = 200f,
+            targetWidth = 400f,
+            targetHeight = 300f,
+            zoomPercent = 200f
+        )
+
+        val pan = transform.panForTopAlignment()
+        val aligned = transform.copy(panX = pan.first, panY = pan.second)
+
+        assertEquals(0f, aligned.map(CanvasPoint(0f, 0f)).y, 0.001f)
+    }
 }

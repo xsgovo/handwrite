@@ -65,6 +65,9 @@ data class CanvasTransform(
         return x.coerceIn(-maxX, maxX) to y.coerceIn(-maxY, maxY)
     }
 
+    /** Moves the document's upper edge to the viewport's upper edge when zoomed in. */
+    fun panForTopAlignment(): Pair<Float, Float> = clampPan(0f, Float.MAX_VALUE)
+
     private fun rotate(point: CanvasPoint): CanvasPoint = when (rotation) {
         1 -> CanvasPoint(sourceHeight - point.y, point.x)
         2 -> CanvasPoint(sourceWidth - point.x, sourceHeight - point.y)
