@@ -15,7 +15,7 @@ import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.compose.ui.graphics.Color
 import com.note.handwrite.model.BackgroundType
-import com.note.handwrite.model.NormalizedPoint
+import com.note.handwrite.model.CanvasPoint
 import com.note.handwrite.model.Stroke
 import java.io.File
 import java.io.FileOutputStream
@@ -154,8 +154,8 @@ private fun renderNoteBitmap(
             val point = stroke.points.first()
             paint.style = Paint.Style.FILL
             canvas.drawCircle(
-                point.x * width,
-                point.y * height,
+                point.x,
+                point.y,
                 stroke.width * density / 2f,
                 paint
             )
@@ -209,26 +209,26 @@ private fun drawBackgroundOnAndroidCanvas(
 }
 
 private fun buildAndroidPath(
-    points: List<NormalizedPoint>,
+    points: List<CanvasPoint>,
     canvasWidth: Float,
     canvasHeight: Float
 ): AndroidPath {
     val path = AndroidPath()
     if (points.isEmpty()) return path
     val first = points.first()
-    path.moveTo(first.x * canvasWidth, first.y * canvasHeight)
+    path.moveTo(first.x, first.y)
     if (points.size == 1) return path
     for (i in 1 until points.size - 1) {
         val current = points[i]
         val next = points[i + 1]
         path.quadTo(
-            current.x * canvasWidth,
-            current.y * canvasHeight,
-            (current.x + next.x) / 2f * canvasWidth,
-            (current.y + next.y) / 2f * canvasHeight
+            current.x,
+            current.y,
+            (current.x + next.x) / 2f,
+            (current.y + next.y) / 2f
         )
     }
     val last = points.last()
-    path.lineTo(last.x * canvasWidth, last.y * canvasHeight)
+    path.lineTo(last.x, last.y)
     return path
 }

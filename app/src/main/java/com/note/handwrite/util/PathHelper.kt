@@ -1,18 +1,16 @@
 package com.note.handwrite.util
 
 import androidx.compose.ui.graphics.Path
-import com.note.handwrite.model.NormalizedPoint
+import com.note.handwrite.model.CanvasPoint
 
 fun buildSmoothPath(
-    points: List<NormalizedPoint>,
-    canvasWidth: Float,
-    canvasHeight: Float
+    points: List<CanvasPoint>
 ): Path {
     if (points.isEmpty()) return Path()
 
     val path = Path()
     val first = points.first()
-    path.moveTo(first.x * canvasWidth, first.y * canvasHeight)
+    path.moveTo(first.x, first.y)
 
     if (points.size == 1) return path
 
@@ -20,17 +18,14 @@ fun buildSmoothPath(
         val current = points[i]
         val next = points[i + 1]
         path.quadraticTo(
-            current.x * canvasWidth,
-            current.y * canvasHeight,
-            (current.x + next.x) / 2f * canvasWidth,
-            (current.y + next.y) / 2f * canvasHeight
+            current.x,
+            current.y,
+            (current.x + next.x) / 2f,
+            (current.y + next.y) / 2f
         )
     }
 
     val last = points.last()
-    path.lineTo(last.x * canvasWidth, last.y * canvasHeight)
+    path.lineTo(last.x, last.y)
     return path
 }
-
-fun NormalizedPoint.toCanvasPoint(canvasWidth: Float, canvasHeight: Float): Pair<Float, Float> =
-    x * canvasWidth to y * canvasHeight

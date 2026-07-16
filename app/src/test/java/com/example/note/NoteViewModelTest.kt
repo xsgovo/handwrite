@@ -1,7 +1,7 @@
 package com.example.note
 
 import androidx.compose.ui.graphics.Color
-import com.note.handwrite.model.NormalizedPoint
+import com.note.handwrite.model.CanvasPoint
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.viewmodel.NoteViewModel
 import org.junit.Assert.assertEquals
@@ -10,7 +10,7 @@ import org.junit.Test
 
 class NoteViewModelTest {
     private fun stroke(x: Float) = Stroke(
-        points = listOf(NormalizedPoint(x, 0.5f)),
+        points = listOf(CanvasPoint(x, 0.5f)),
         color = Color.Black,
         width = 8f
     )

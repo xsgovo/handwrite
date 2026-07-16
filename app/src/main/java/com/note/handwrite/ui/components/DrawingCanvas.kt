@@ -24,7 +24,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import com.note.handwrite.model.BackgroundType
-import com.note.handwrite.model.NormalizedPoint
+import com.note.handwrite.model.CanvasPoint
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.Tool
 import com.note.handwrite.util.buildSmoothPath
@@ -48,7 +48,7 @@ fun DrawingCanvas(
     onCanvasSizeChanged: (Size) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val currentPoints = remember { mutableStateListOf<NormalizedPoint>() }
+    val currentPoints = remember { mutableStateListOf<CanvasPoint>() }
     val erasedDuringGesture = remember { mutableStateListOf<Stroke>() }
     val latestStrokes by rememberUpdatedState(strokes)
     val latestColor by rememberUpdatedState(currentColor)
@@ -117,7 +117,7 @@ private fun handleMotionEvent(
     event: MotionEvent,
     state: DrawingInputState,
     strokes: List<Stroke>,
-    currentPoints: MutableList<NormalizedPoint>,
+    currentPoints: MutableList<CanvasPoint>,
     erasedDuringGesture: MutableList<Stroke>,
     currentTool: Tool,
     useSpenMode: Boolean,
@@ -277,7 +277,7 @@ private fun finishStroke(
     currentTool: Tool,
     currentColor: Color,
     currentWidth: Float,
-    currentPoints: MutableList<NormalizedPoint>,
+    currentPoints: MutableList<CanvasPoint>,
     erasedDuringGesture: MutableList<Stroke>,
     onStrokeComplete: (Stroke) -> Unit,
     onEraseEnd: () -> Unit,
@@ -313,7 +313,7 @@ private fun processPoint(
     canvasWidth: Float,
     canvasHeight: Float,
     density: Float,
-    currentPoints: MutableList<NormalizedPoint>,
+    currentPoints: MutableList<CanvasPoint>,
     erasedDuringGesture: MutableList<Stroke>,
     onStrokesErased: (List<Stroke>) -> Unit
 ) {
@@ -324,8 +324,6 @@ private fun processPoint(
             strokes,
             x,
             y,
-            canvasWidth.coerceAtLeast(1f),
-            canvasHeight.coerceAtLeast(1f),
             tolerance
         ).forEach { stroke ->
             if (!erasedDuringGesture.contains(stroke)) {
@@ -334,10 +332,7 @@ private fun processPoint(
             }
         }
     } else {
-        val point = NormalizedPoint(
-            (x / canvasWidth.coerceAtLeast(1f)).coerceIn(0f, 1f),
-            (y / canvasHeight.coerceAtLeast(1f)).coerceIn(0f, 1f)
-        )
+        val point = CanvasPoint(x, y)
         val previous = currentPoints.lastOrNull()
         if (previous == null || previous != point) currentPoints += point
     }
@@ -348,19 +343,17 @@ private fun addPoint(
     y: Float,
     canvasWidth: Float,
     canvasHeight: Float,
-    currentPoints: MutableList<NormalizedPoint>
+    currentPoints: MutableList<CanvasPoint>
 ) {
-    val width = canvasWidth.coerceAtLeast(1f)
-    val height = canvasHeight.coerceAtLeast(1f)
-    currentPoints += NormalizedPoint((x / width).coerceIn(0f, 1f), (y / height).coerceIn(0f, 1f))
+    currentPoints += CanvasPoint(x, y)
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
-    points: List<NormalizedPoint>,
+    points: List<CanvasPoint>,
     color: Color,
     width: Float
 ) {
-    val path = buildSmoothPath(points, size.width, size.height)
+    val path = buildSmoothPath(points)
     drawPath(
         path = path,
         color = color,
@@ -368,6 +361,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
     )
     if (points.size == 1) {
         val point = points.first()
-        drawCircle(color, width * density / 2f, Offset(point.x * size.width, point.y * size.height))
+        drawCircle(color, width * density / 2f, Offset(point.x, point.y))
     }
 }
