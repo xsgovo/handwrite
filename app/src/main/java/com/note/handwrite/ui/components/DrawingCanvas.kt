@@ -18,7 +18,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.layout.onSizeChanged
@@ -27,10 +26,12 @@ import com.note.handwrite.model.BackgroundType
 import com.note.handwrite.model.CanvasPoint
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.Tool
-import com.note.handwrite.util.buildSmoothPath
 import com.note.handwrite.util.CanvasTransform
+import com.note.handwrite.util.buildSmoothPath
 import com.note.handwrite.util.drawBackground
 import com.note.handwrite.util.findHitStrokesInViewport
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -41,7 +42,11 @@ fun DrawingCanvas(
     currentTool: Tool,
     backgroundType: BackgroundType,
     logicalCanvasSize: Size,
+    rotation: Int,
+    zoomPercent: Float,
+    pan: Offset,
     useSpenMode: Boolean,
+    onViewportChanged: (zoomPercent: Float, pan: Offset) -> Unit,
     onStrokeComplete: (Stroke) -> Unit,
     onEraseStart: () -> Unit,
     onEraseEnd: () -> Unit,
@@ -57,6 +62,7 @@ fun DrawingCanvas(
     val latestWidth by rememberUpdatedState(currentWidth)
     val latestTool by rememberUpdatedState(currentTool)
     val latestSpenMode by rememberUpdatedState(useSpenMode)
+    val latestViewportChanged by rememberUpdatedState(onViewportChanged)
     val latestOnStrokeComplete by rememberUpdatedState(onStrokeComplete)
     val latestOnEraseStart by rememberUpdatedState(onEraseStart)
     val latestOnEraseEnd by rememberUpdatedState(onEraseEnd)
@@ -65,11 +71,17 @@ fun DrawingCanvas(
     val input = remember { DrawingInputState() }
     val density = LocalDensity.current.density
     var canvasSize by remember { mutableStateOf(Size.Zero) }
+    val sourceWidth = if (logicalCanvasSize.width > 0f) logicalCanvasSize.width else canvasSize.width
+    val sourceHeight = if (logicalCanvasSize.height > 0f) logicalCanvasSize.height else canvasSize.height
     val transform = CanvasTransform(
-        sourceWidth = if (logicalCanvasSize.width > 0f) logicalCanvasSize.width else canvasSize.width,
-        sourceHeight = if (logicalCanvasSize.height > 0f) logicalCanvasSize.height else canvasSize.height,
+        sourceWidth = sourceWidth,
+        sourceHeight = sourceHeight,
         targetWidth = canvasSize.width,
-        targetHeight = canvasSize.height
+        targetHeight = canvasSize.height,
+        rotation = rotation,
+        zoomPercent = zoomPercent,
+        panX = pan.x,
+        panY = pan.y
     )
 
     Box(
@@ -90,10 +102,9 @@ fun DrawingCanvas(
                     useSpenMode = latestSpenMode,
                     currentColor = latestColor,
                     currentWidth = latestWidth,
-                    canvasWidth = canvasSize.width,
-                    canvasHeight = canvasSize.height,
                     transform = transform,
                     density = density,
+                    onViewportChanged = latestViewportChanged,
                     onStrokeComplete = latestOnStrokeComplete,
                     onEraseStart = latestOnEraseStart,
                     onEraseEnd = latestOnEraseEnd,
@@ -107,19 +118,32 @@ fun DrawingCanvas(
             strokes.filterNot { erasedDuringGesture.contains(it) }.forEach { stroke ->
                 drawStroke(stroke.points, stroke.color, stroke.width, transform)
             }
-            if (currentPoints.isNotEmpty() && !(input.temporaryEraser || currentTool == Tool.ERASER)) {
+            if (input.gesture == Gesture.DRAW && currentPoints.isNotEmpty() &&
+                !input.isErasing(currentTool)
+            ) {
                 drawStroke(currentPoints, currentColor, currentWidth, transform)
             }
         }
     }
 }
 
+private enum class Gesture { NONE, DRAW, PAN, TRANSFORM }
+
 private class DrawingInputState {
-    var activePointerId = MotionEvent.INVALID_POINTER_ID
-    var pointerDown = false
+    val pointers = linkedMapOf<Int, Offset>()
+    val pointerTools = linkedMapOf<Int, Int>()
+    var gesture = Gesture.NONE
+    var drawPointerId = MotionEvent.INVALID_POINTER_ID
     var temporaryEraser = false
     var stylusButtonDown = false
-    var originalTool = Tool.PEN
+    var initialZoom = 100f
+    var initialPan = Offset.Zero
+    var initialMidpoint = Offset.Zero
+    var initialDistance = 0f
+    var focalPoint = CanvasPoint(0f, 0f)
+
+    fun isErasing(currentTool: Tool): Boolean = temporaryEraser || currentTool == Tool.ERASER
+    fun hasStylus(): Boolean = pointerTools.values.any { it == MotionEvent.TOOL_TYPE_STYLUS }
 }
 
 private fun handleMotionEvent(
@@ -132,158 +156,263 @@ private fun handleMotionEvent(
     useSpenMode: Boolean,
     currentColor: Color,
     currentWidth: Float,
-    canvasWidth: Float,
-    canvasHeight: Float,
     transform: CanvasTransform,
     density: Float,
+    onViewportChanged: (Float, Offset) -> Unit,
     onStrokeComplete: (Stroke) -> Unit,
     onEraseStart: () -> Unit,
     onEraseEnd: () -> Unit,
     onStrokesErased: (List<Stroke>) -> Unit,
     onTemporaryEraserChanged: (Boolean) -> Unit
 ): Boolean {
-    val isStylus = event.getToolType(event.actionIndex) == MotionEvent.TOOL_TYPE_STYLUS ||
+    val actionIndex = event.actionIndex.coerceIn(0, (event.pointerCount - 1).coerceAtLeast(0))
+    val actionTool = event.getToolType(actionIndex)
+    val isStylusAction = actionTool == MotionEvent.TOOL_TYPE_STYLUS ||
         event.source and InputDevice.SOURCE_STYLUS == InputDevice.SOURCE_STYLUS
-    val isPrimaryButton = event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY != 0
-    val wasPrimaryButtonDown = state.stylusButtonDown
     val buttonPressed = event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS &&
         event.actionButton == MotionEvent.BUTTON_STYLUS_PRIMARY
     val buttonReleased = event.actionMasked == MotionEvent.ACTION_BUTTON_RELEASE &&
         event.actionButton == MotionEvent.BUTTON_STYLUS_PRIMARY
+    val buttonDown = event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY != 0
+    val wasButtonDown = state.stylusButtonDown
 
-    // Some S Pen firmware reports hover button release only through buttonState changes.
-    if (isStylus && !state.pointerDown &&
-        (buttonPressed || (!wasPrimaryButtonDown && isPrimaryButton))
+    if (isStylusAction && state.pointers.isEmpty() &&
+        (buttonPressed || (!wasButtonDown && buttonDown))
     ) {
-        if (!state.temporaryEraser) {
-            state.originalTool = currentTool
-            state.temporaryEraser = true
-            onTemporaryEraserChanged(true)
-        }
+        state.temporaryEraser = true
+        onTemporaryEraserChanged(true)
     }
-
-    if (isStylus && !state.pointerDown &&
-        (buttonReleased || (wasPrimaryButtonDown && !isPrimaryButton))
+    if (isStylusAction && state.pointers.isEmpty() &&
+        (buttonReleased || (wasButtonDown && !buttonDown))
     ) {
         state.temporaryEraser = false
         onTemporaryEraserChanged(false)
     }
-
     state.stylusButtonDown = when {
         buttonReleased -> false
-        isStylus -> isPrimaryButton
+        isStylusAction -> buttonDown
         else -> state.stylusButtonDown
     }
 
     when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
-            // Keep ownership of the gesture stream even when a finger is ignored in S Pen mode.
-            if (useSpenMode && !isStylus) return true
-            state.pointerDown = true
-            state.activePointerId = event.getPointerId(event.actionIndex)
-            currentPoints.clear()
-            erasedDuringGesture.clear()
-            if (state.temporaryEraser || currentTool == Tool.ERASER) onEraseStart()
-            addPoint(event.x, event.y, transform, currentPoints)
+            state.pointers.clear()
+            state.pointerTools.clear()
+            rememberPointer(event, 0, state)
+            if (useSpenMode && actionTool != MotionEvent.TOOL_TYPE_STYLUS) {
+                state.gesture = Gesture.PAN
+                state.initialMidpoint = Offset(event.x, event.y)
+            } else {
+                startDrawing(state, currentPoints, erasedDuringGesture, currentTool, transform,
+                    event.x, event.y, onEraseStart)
+            }
         }
 
         MotionEvent.ACTION_POINTER_DOWN -> {
-            // A finger may already be down. Start a new active stroke when the S Pen joins.
-            if (useSpenMode && isStylus && !state.pointerDown) {
-                state.pointerDown = true
-                state.activePointerId = event.getPointerId(event.actionIndex)
-                currentPoints.clear()
-                erasedDuringGesture.clear()
-                if (state.temporaryEraser || currentTool == Tool.ERASER) onEraseStart()
-                addPoint(
-                    event.getX(event.actionIndex),
-                    event.getY(event.actionIndex),
-                    transform,
-                    currentPoints
-                )
+            rememberAllPointers(event, state)
+            if (!useSpenMode && event.pointerCount >= 2) {
+                startTransform(state, transform)
+                cancelGesture(state, currentPoints, erasedDuringGesture, currentTool, onEraseEnd)
+                state.gesture = Gesture.TRANSFORM
+                state.initialZoom = transform.zoomPercent
+                state.initialPan = Offset(transform.panX, transform.panY)
+                state.initialMidpoint = midpoint(state.pointers.values.toList())
+                state.initialDistance = distance(state.pointers.values.toList())
+                state.focalPoint = transform.inverse(state.initialMidpoint.toCanvasPoint())
+            } else if (state.hasStylus()) {
+                val stylusId = state.pointerTools.entries.first { it.value == MotionEvent.TOOL_TYPE_STYLUS }.key
+                if (state.gesture != Gesture.DRAW || state.drawPointerId != stylusId) {
+                    cancelGesture(state, currentPoints, erasedDuringGesture, currentTool, onEraseEnd)
+                    state.gesture = Gesture.DRAW
+                    state.drawPointerId = stylusId
+                    val index = event.findPointerIndex(stylusId)
+                    if (index >= 0) addPoint(event.getX(index), event.getY(index), transform, currentPoints)
+                    if (state.isErasing(currentTool)) onEraseStart()
+                }
+            } else if (event.pointerCount >= 2) {
+                startTransform(state, transform)
+                cancelGesture(state, currentPoints, erasedDuringGesture, currentTool, onEraseEnd)
+                state.gesture = Gesture.TRANSFORM
+                state.initialZoom = transform.zoomPercent
+                state.initialPan = Offset(transform.panX, transform.panY)
+                state.initialMidpoint = midpoint(state.pointers.values.toList())
+                state.initialDistance = distance(state.pointers.values.toList())
+                state.focalPoint = transform.inverse(state.initialMidpoint.toCanvasPoint())
             }
         }
 
         MotionEvent.ACTION_MOVE -> {
-            if (!state.pointerDown) return true
-            val pointerIndex = event.findPointerIndex(state.activePointerId)
-            if (pointerIndex < 0) return true
-            repeat(event.historySize) { historyIndex ->
-                processPoint(
-                    event.getHistoricalX(pointerIndex, historyIndex),
-                    event.getHistoricalY(pointerIndex, historyIndex),
-                    event,
-                    pointerIndex,
-                    state,
-                    strokes,
-                    currentTool,
-                    currentColor,
-                    currentWidth,
-                    canvasWidth,
-                    canvasHeight,
-                    transform,
-                    density,
-                    currentPoints,
-                    erasedDuringGesture,
-                    onStrokesErased
+            rememberAllPointers(event, state)
+            when (state.gesture) {
+                Gesture.DRAW -> processDrawingMove(
+                    event, state, strokes, currentTool, currentColor, currentWidth,
+                    transform, density, currentPoints, erasedDuringGesture, onStrokesErased
                 )
+                Gesture.PAN -> {
+                    if (state.pointers.size == 1) {
+                        val current = state.pointers.values.first()
+                        val previous = state.initialMidpoint
+                        val nextPan = Offset(
+                            transform.panX + current.x - previous.x,
+                            transform.panY + current.y - previous.y
+                        )
+                        state.initialMidpoint = current
+                        onViewportChanged(transform.zoomPercent, transform.clampPan(nextPan.x, nextPan.y).toOffset())
+                    }
+                }
+                Gesture.TRANSFORM -> updateTransform(state, transform, useSpenMode, onViewportChanged)
+                Gesture.NONE -> Unit
             }
-            processPoint(
-                event.getX(pointerIndex),
-                event.getY(pointerIndex),
-                event,
-                pointerIndex,
-                state,
-                strokes,
-                currentTool,
-                currentColor,
-                currentWidth,
-                canvasWidth,
-                canvasHeight,
-                transform,
-                density,
-                currentPoints,
-                erasedDuringGesture,
-                onStrokesErased
-            )
         }
 
         MotionEvent.ACTION_POINTER_UP -> {
-            if (state.pointerDown && event.getPointerId(event.actionIndex) == state.activePointerId) {
-                finishStroke(
-                    state,
-                    currentTool,
-                    currentColor,
-                    currentWidth,
-                    currentPoints,
-                    erasedDuringGesture,
-                    onStrokeComplete,
-                    onEraseEnd,
-                    onTemporaryEraserChanged
-                )
+            val leavingId = event.getPointerId(event.actionIndex)
+            val leavingWasDraw = leavingId == state.drawPointerId
+            state.pointers.remove(leavingId)
+            state.pointerTools.remove(leavingId)
+            if (leavingWasDraw) {
+                finishDrawing(state, currentTool, currentColor, currentWidth, currentPoints,
+                    erasedDuringGesture, onStrokeComplete, onEraseEnd, onTemporaryEraserChanged)
+            } else if (state.pointers.size < 2 && state.gesture == Gesture.TRANSFORM) {
+                state.gesture = Gesture.NONE
             }
         }
 
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-            if (state.pointerDown) {
-                finishStroke(
-                    state,
-                    currentTool,
-                    currentColor,
-                    currentWidth,
-                    currentPoints,
-                    erasedDuringGesture,
-                    onStrokeComplete,
-                    onEraseEnd,
-                    onTemporaryEraserChanged
-                )
+            if (state.gesture == Gesture.DRAW) {
+                finishDrawing(state, currentTool, currentColor, currentWidth, currentPoints,
+                    erasedDuringGesture, onStrokeComplete, onEraseEnd, onTemporaryEraserChanged)
+            } else {
+                state.gesture = Gesture.NONE
+                state.pointers.clear()
+                state.pointerTools.clear()
+                currentPoints.clear()
+                erasedDuringGesture.clear()
+                state.stylusButtonDown = false
+                if (state.temporaryEraser) {
+                    state.temporaryEraser = false
+                    onTemporaryEraserChanged(false)
+                }
             }
         }
     }
     return true
 }
 
-private fun finishStroke(
+private fun startDrawing(
+    state: DrawingInputState,
+    currentPoints: MutableList<CanvasPoint>,
+    erasedDuringGesture: MutableList<Stroke>,
+    currentTool: Tool,
+    transform: CanvasTransform,
+    x: Float,
+    y: Float,
+    onEraseStart: () -> Unit
+) {
+    state.gesture = Gesture.DRAW
+    state.drawPointerId = state.pointers.keys.first()
+    currentPoints.clear()
+    erasedDuringGesture.clear()
+    if (state.isErasing(currentTool)) onEraseStart()
+    addPoint(x, y, transform, currentPoints)
+}
+
+private fun startTransform(state: DrawingInputState, transform: CanvasTransform) {
+    state.initialZoom = transform.zoomPercent
+    state.initialPan = Offset(transform.panX, transform.panY)
+}
+
+private fun updateTransform(
+    state: DrawingInputState,
+    transform: CanvasTransform,
+    useSpenMode: Boolean,
+    onViewportChanged: (Float, Offset) -> Unit
+) {
+    val points = state.pointers.values.toList()
+    if (points.size < 2) return
+    val midpoint = midpoint(points)
+    val distance = distance(points)
+    val zoom = if (useSpenMode && state.initialDistance > 0f) {
+        val raw = (state.initialZoom * distance / state.initialDistance).coerceIn(100f, 400f)
+        (raw / 5f).roundToInt() * 5f
+    } else {
+        state.initialZoom
+    }
+    val candidate = CanvasTransform(
+        sourceWidth = transform.sourceWidth,
+        sourceHeight = transform.sourceHeight,
+        targetWidth = transform.targetWidth,
+        targetHeight = transform.targetHeight,
+        rotation = transform.rotation,
+        zoomPercent = zoom,
+        panX = 0f,
+        panY = 0f
+    )
+    val mappedFocal = candidate.map(state.focalPoint)
+    val pan = if (useSpenMode) {
+        Offset(midpoint.x - mappedFocal.x, midpoint.y - mappedFocal.y)
+    } else {
+        Offset(
+            state.initialPan.x + midpoint.x - state.initialMidpoint.x,
+            state.initialPan.y + midpoint.y - state.initialMidpoint.y
+        )
+    }
+    val clamped = candidate.clampPan(pan.x, pan.y)
+    onViewportChanged(zoom, clamped.toOffset())
+}
+
+private fun processDrawingMove(
+    event: MotionEvent,
+    state: DrawingInputState,
+    strokes: List<Stroke>,
+    currentTool: Tool,
+    currentColor: Color,
+    currentWidth: Float,
+    transform: CanvasTransform,
+    density: Float,
+    currentPoints: MutableList<CanvasPoint>,
+    erasedDuringGesture: MutableList<Stroke>,
+    onStrokesErased: (List<Stroke>) -> Unit
+) {
+    val pointerIndex = event.findPointerIndex(state.drawPointerId)
+    if (pointerIndex < 0) return
+    repeat(event.historySize) { historyIndex ->
+        processPoint(event.getHistoricalX(pointerIndex, historyIndex), event.getHistoricalY(pointerIndex, historyIndex),
+            state, strokes, currentTool, currentWidth, transform, density, currentPoints, erasedDuringGesture,
+            onStrokesErased)
+    }
+    processPoint(event.getX(pointerIndex), event.getY(pointerIndex), state, strokes, currentTool, currentWidth,
+        transform, density, currentPoints, erasedDuringGesture, onStrokesErased)
+}
+
+private fun processPoint(
+    x: Float,
+    y: Float,
+    state: DrawingInputState,
+    strokes: List<Stroke>,
+    currentTool: Tool,
+    currentWidth: Float,
+    transform: CanvasTransform,
+    density: Float,
+    currentPoints: MutableList<CanvasPoint>,
+    erasedDuringGesture: MutableList<Stroke>,
+    onStrokesErased: (List<Stroke>) -> Unit
+) {
+    if (state.isErasing(currentTool)) {
+        findHitStrokesInViewport(strokes, x, y, 24f * density, transform::map, transform.scale)
+            .forEach { stroke ->
+                if (!erasedDuringGesture.contains(stroke)) {
+                    erasedDuringGesture += stroke
+                    onStrokesErased(listOf(stroke))
+                }
+            }
+    } else {
+        val point = transform.inverse(CanvasPoint(x, y))
+        if (currentPoints.lastOrNull() != point) currentPoints += point
+    }
+}
+
+private fun finishDrawing(
     state: DrawingInputState,
     currentTool: Tool,
     currentColor: Color,
@@ -294,16 +423,14 @@ private fun finishStroke(
     onEraseEnd: () -> Unit,
     onTemporaryEraserChanged: (Boolean) -> Unit
 ) {
-    val erasing = state.temporaryEraser || currentTool == Tool.ERASER
-    if (erasing) {
-        onEraseEnd()
-    } else if (currentPoints.isNotEmpty()) {
-        onStrokeComplete(Stroke(currentPoints.toList(), currentColor, currentWidth))
-    }
+    if (state.isErasing(currentTool)) onEraseEnd()
+    else if (currentPoints.isNotEmpty()) onStrokeComplete(Stroke(currentPoints.toList(), currentColor, currentWidth))
+    state.gesture = Gesture.NONE
+    state.drawPointerId = MotionEvent.INVALID_POINTER_ID
     currentPoints.clear()
     erasedDuringGesture.clear()
-    state.pointerDown = false
-    state.activePointerId = MotionEvent.INVALID_POINTER_ID
+    state.pointers.clear()
+    state.pointerTools.clear()
     state.stylusButtonDown = false
     if (state.temporaryEraser) {
         state.temporaryEraser = false
@@ -311,54 +438,46 @@ private fun finishStroke(
     }
 }
 
-private fun processPoint(
-    x: Float,
-    y: Float,
-    event: MotionEvent,
-    pointerIndex: Int,
+private fun cancelGesture(
     state: DrawingInputState,
-    strokes: List<Stroke>,
-    currentTool: Tool,
-    currentColor: Color,
-    currentWidth: Float,
-    canvasWidth: Float,
-    canvasHeight: Float,
-    transform: CanvasTransform,
-    density: Float,
     currentPoints: MutableList<CanvasPoint>,
     erasedDuringGesture: MutableList<Stroke>,
-    onStrokesErased: (List<Stroke>) -> Unit
+    currentTool: Tool,
+    onEraseEnd: () -> Unit
 ) {
-    val erasing = state.temporaryEraser || currentTool == Tool.ERASER
-    if (erasing) {
-        val tolerance = 24f * density
-        findHitStrokesInViewport(
-            strokes,
-            x,
-            y,
-            tolerance,
-            transform::map,
-            transform.scale
-        ).forEach { stroke ->
-            if (!erasedDuringGesture.contains(stroke)) {
-                erasedDuringGesture += stroke
-                onStrokesErased(listOf(stroke))
-            }
-        }
-    } else {
-        val point = transform.inverse(CanvasPoint(x, y))
-        val previous = currentPoints.lastOrNull()
-        if (previous == null || previous != point) currentPoints += point
-    }
+    if (state.gesture == Gesture.DRAW && state.isErasing(currentTool)) onEraseEnd()
+    state.gesture = Gesture.NONE
+    state.drawPointerId = MotionEvent.INVALID_POINTER_ID
+    currentPoints.clear()
+    erasedDuringGesture.clear()
 }
 
-private fun addPoint(
-    x: Float,
-    y: Float,
-    transform: CanvasTransform,
-    currentPoints: MutableList<CanvasPoint>
-) {
-    currentPoints += transform.inverse(CanvasPoint(x, y))
+private fun rememberPointer(event: MotionEvent, index: Int, state: DrawingInputState) {
+    val id = event.getPointerId(index)
+    state.pointers[id] = Offset(event.getX(index), event.getY(index))
+    state.pointerTools[id] = event.getToolType(index)
+}
+
+private fun rememberAllPointers(event: MotionEvent, state: DrawingInputState) {
+    repeat(event.pointerCount) { rememberPointer(event, it, state) }
+}
+
+private fun midpoint(points: List<Offset>): Offset = Offset(
+    points.map { it.x }.average().toFloat(),
+    points.map { it.y }.average().toFloat()
+)
+
+private fun distance(points: List<Offset>): Float = hypot(
+    points[0].x - points[1].x,
+    points[0].y - points[1].y
+)
+
+private fun Offset.toCanvasPoint(): CanvasPoint = CanvasPoint(x, y)
+
+private fun Pair<Float, Float>.toOffset(): Offset = Offset(first, second)
+
+private fun addPoint(x: Float, y: Float, transform: CanvasTransform, points: MutableList<CanvasPoint>) {
+    points += transform.inverse(CanvasPoint(x, y))
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
@@ -371,19 +490,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
     drawPath(
         path = path,
         color = color,
-        style = DrawStroke(
+        style = androidx.compose.ui.graphics.drawscope.Stroke(
             width * density * transform.scale,
             cap = StrokeCap.Round,
             join = StrokeJoin.Round
         )
     )
     if (points.size == 1) {
-        val point = points.first()
-        val mapped = transform.map(point)
-        drawCircle(
-            color,
-            width * density * transform.scale / 2f,
-            Offset(mapped.x, mapped.y)
-        )
+        val mapped = transform.map(points.first())
+        drawCircle(color, width * density * transform.scale / 2f, Offset(mapped.x, mapped.y))
     }
 }
