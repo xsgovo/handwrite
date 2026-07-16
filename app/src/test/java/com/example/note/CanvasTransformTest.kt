@@ -96,12 +96,10 @@ class CanvasTransformTest {
             sourceHeight = 200f,
             targetWidth = 400f,
             targetHeight = 300f,
-            zoomPercent = 200f
+            zoomPercent = 200f,
+            topAligned = true
         )
 
-        val pan = transform.panForTopAlignment()
-        val aligned = transform.copy(panX = pan.first, panY = pan.second)
-
-        assertEquals(0f, aligned.map(CanvasPoint(0f, 0f)).y, 0.001f)
+        assertEquals(0f, transform.map(CanvasPoint(0f, 0f)).y, 0.001f)
     }
 }

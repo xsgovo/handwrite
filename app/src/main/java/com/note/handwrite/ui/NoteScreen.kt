@@ -28,8 +28,6 @@ import com.note.handwrite.ui.components.DrawingCanvas
 import com.note.handwrite.ui.components.TopToolbar
 import com.note.handwrite.util.saveNoteToGallery
 import com.note.handwrite.util.shareNoteDirectly
-import com.note.handwrite.util.CanvasTransform
-import com.note.handwrite.model.NotePage
 import com.note.handwrite.viewmodel.NoteViewModel
 import kotlinx.coroutines.launch
 
@@ -55,24 +53,10 @@ fun NoteScreen(
     var temporaryEraser by remember { mutableStateOf(false) }
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     var pan by remember { mutableStateOf(Offset.Zero) }
-    var alignTopAfterLandscapeRotation by remember { mutableStateOf(false) }
+    var topAligned by remember { mutableStateOf(false) }
     LaunchedEffect(orientation) {
         pan = Offset.Zero
-        alignTopAfterLandscapeRotation = viewModel.resetZoomForOrientation(orientation)
-    }
-    LaunchedEffect(alignTopAfterLandscapeRotation, canvasSize, zoomPercent) {
-        if (alignTopAfterLandscapeRotation && canvasSize != Size.Zero) {
-            val transform = CanvasTransform(
-                sourceWidth = NotePage.WIDTH,
-                sourceHeight = NotePage.HEIGHT,
-                targetWidth = canvasSize.width,
-                targetHeight = canvasSize.height,
-                zoomPercent = zoomPercent.toFloat()
-            )
-            val topAlignedPan = transform.panForTopAlignment()
-            pan = Offset(topAlignedPan.first, topAlignedPan.second)
-            alignTopAfterLandscapeRotation = false
-        }
+        topAligned = viewModel.resetZoomForOrientation(orientation)
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -133,6 +117,7 @@ fun NoteScreen(
             backgroundType = backgroundType,
             zoomPercent = zoomPercent.toFloat(),
             pan = pan,
+            topAligned = topAligned,
             useSpenMode = inputMode.name == "SPEN",
             onViewportChanged = { zoom, nextPan ->
                 viewModel.setZoomPercent(zoom)

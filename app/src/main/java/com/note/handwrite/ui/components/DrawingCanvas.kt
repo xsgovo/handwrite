@@ -45,6 +45,7 @@ fun DrawingCanvas(
     backgroundType: BackgroundType,
     zoomPercent: Float,
     pan: Offset,
+    topAligned: Boolean,
     useSpenMode: Boolean,
     onViewportChanged: (zoomPercent: Float, pan: Offset) -> Unit,
     onStrokeComplete: (Stroke) -> Unit,
@@ -80,7 +81,8 @@ fun DrawingCanvas(
         targetHeight = canvasSize.height,
         zoomPercent = zoomPercent,
         panX = pan.x,
-        panY = pan.y
+        panY = pan.y,
+        topAligned = topAligned
     )
 
     Box(
@@ -363,7 +365,8 @@ private fun updateTransform(
         rotation = transform.rotation,
         zoomPercent = zoom,
         panX = 0f,
-        panY = 0f
+        panY = 0f,
+        topAligned = transform.topAligned
     )
     val mappedFocal = candidate.map(state.focalPoint)
     val pan = if (useSpenMode) {

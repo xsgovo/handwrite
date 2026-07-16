@@ -13,7 +13,8 @@ data class CanvasTransform(
     val rotation: Int = 0,
     val zoomPercent: Float = 100f,
     val panX: Float = 0f,
-    val panY: Float = 0f
+    val panY: Float = 0f,
+    val topAligned: Boolean = false
 ) {
     private val rotatedWidth = if (rotation == 1 || rotation == 3) sourceHeight else sourceWidth
     private val rotatedHeight = if (rotation == 1 || rotation == 3) sourceWidth else sourceHeight
@@ -26,7 +27,7 @@ data class CanvasTransform(
 
     val scale: Float = baseScale * (zoomPercent.coerceAtLeast(100f) / 100f)
     private val centeredOffsetX = (targetWidth - rotatedWidth * scale) / 2f
-    private val centeredOffsetY = (targetHeight - rotatedHeight * scale) / 2f
+    private val centeredOffsetY = if (topAligned) 0f else (targetHeight - rotatedHeight * scale) / 2f
     private val resolvedPan = clampPan(panX, panY)
     private val offsetX = centeredOffsetX + resolvedPan.first
     private val offsetY = centeredOffsetY + resolvedPan.second
@@ -62,11 +63,13 @@ data class CanvasTransform(
         if (zoomPercent <= 100f) return 0f to 0f
         val maxX = max(0f, (rotatedWidth * scale - targetWidth) / 2f)
         val maxY = max(0f, (rotatedHeight * scale - targetHeight) / 2f)
-        return x.coerceIn(-maxX, maxX) to y.coerceIn(-maxY, maxY)
+        val clampedY = if (topAligned) {
+            y.coerceIn(-maxY * 2f, 0f)
+        } else {
+            y.coerceIn(-maxY, maxY)
+        }
+        return x.coerceIn(-maxX, maxX) to clampedY
     }
-
-    /** Moves the document's upper edge to the viewport's upper edge when zoomed in. */
-    fun panForTopAlignment(): Pair<Float, Float> = clampPan(0f, Float.MAX_VALUE)
 
     private fun rotate(point: CanvasPoint): CanvasPoint = when (rotation) {
         1 -> CanvasPoint(sourceHeight - point.y, point.x)
