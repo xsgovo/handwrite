@@ -60,6 +60,20 @@ fun NoteScreen(
         pan = Offset.Zero
         alignTopAfterLandscapeRotation = viewModel.resetZoomForOrientation(orientation)
     }
+    LaunchedEffect(alignTopAfterLandscapeRotation, canvasSize, zoomPercent) {
+        if (alignTopAfterLandscapeRotation && canvasSize != Size.Zero) {
+            val transform = CanvasTransform(
+                sourceWidth = NotePage.WIDTH,
+                sourceHeight = NotePage.HEIGHT,
+                targetWidth = canvasSize.width,
+                targetHeight = canvasSize.height,
+                zoomPercent = zoomPercent.toFloat()
+            )
+            val topAlignedPan = transform.panForTopAlignment()
+            pan = Offset(topAlignedPan.first, topAlignedPan.second)
+            alignTopAfterLandscapeRotation = false
+        }
+    }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -139,18 +153,6 @@ fun NoteScreen(
             onCanvasSizeChanged = {
                 if (canvasSize != Size.Zero && canvasSize != it) pan = Offset.Zero
                 canvasSize = it
-                if (alignTopAfterLandscapeRotation && it != Size.Zero) {
-                    val transform = CanvasTransform(
-                        sourceWidth = NotePage.WIDTH,
-                        sourceHeight = NotePage.HEIGHT,
-                        targetWidth = it.width,
-                        targetHeight = it.height,
-                        zoomPercent = zoomPercent.toFloat()
-                    )
-                    val topAlignedPan = transform.panForTopAlignment()
-                    pan = Offset(topAlignedPan.first, topAlignedPan.second)
-                    alignTopAfterLandscapeRotation = false
-                }
             },
             modifier = Modifier.fillMaxSize().padding(paddingValues)
         )
