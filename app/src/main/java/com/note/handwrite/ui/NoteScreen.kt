@@ -22,7 +22,7 @@ import com.note.handwrite.ui.components.ClearConfirmDialog
 import com.note.handwrite.ui.components.DrawingCanvas
 import com.note.handwrite.ui.components.TopToolbar
 import com.note.handwrite.util.saveNoteToGallery
-import com.note.handwrite.util.shareImage
+import com.note.handwrite.util.shareNoteDirectly
 import com.note.handwrite.viewmodel.NoteViewModel
 import kotlinx.coroutines.launch
 
@@ -64,6 +64,24 @@ fun NoteScreen(
                 onClear = { showClearDialog = true },
                 onExport = {
                     scope.launch {
+                        val success = shareNoteDirectly(
+                            context = context,
+                            strokes = strokes,
+                            backgroundType = backgroundType,
+                            canvasWidth = canvasSize.width.toInt(),
+                            canvasHeight = canvasSize.height.toInt(),
+                            density = density
+                        )
+                        if (!success) {
+                            snackbarHostState.showSnackbar(
+                                message = "分享失败，请重试",
+                                duration = SnackbarDuration.Long
+                            )
+                        }
+                    }
+                },
+                onSave = {
+                    scope.launch {
                         val uri = saveNoteToGallery(
                             context = context,
                             strokes = strokes,
@@ -72,18 +90,10 @@ fun NoteScreen(
                             canvasHeight = canvasSize.height.toInt(),
                             density = density
                         )
-                        if (uri != null) {
-                            snackbarHostState.showSnackbar(
-                                message = "已保存到相册",
-                                duration = SnackbarDuration.Short
-                            )
-                            shareImage(context, uri)
-                        } else {
-                            snackbarHostState.showSnackbar(
-                                message = "保存失败，请重试",
-                                duration = SnackbarDuration.Long
-                            )
-                        }
+                        snackbarHostState.showSnackbar(
+                            message = if (uri != null) "已保存到相册" else "保存失败，请重试",
+                            duration = if (uri != null) SnackbarDuration.Short else SnackbarDuration.Long
+                        )
                     }
                 },
                 onOpenSettings = onOpenSettings

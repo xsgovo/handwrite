@@ -1,5 +1,6 @@
 package com.note.handwrite.util
 
+import android.content.ClipData
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -11,10 +12,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.core.content.FileProvider
 import androidx.compose.ui.graphics.Color
 import com.note.handwrite.model.BackgroundType
 import com.note.handwrite.model.NormalizedPoint
 import com.note.handwrite.model.Stroke
+import java.io.File
+import java.io.FileOutputStream
 
 fun saveNoteToGallery(
     context: Context,
@@ -80,6 +84,46 @@ fun shareImage(context: Context, uri: Uri) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     )
+}
+
+fun shareNoteDirectly(
+    context: Context,
+    strokes: List<Stroke>,
+    backgroundType: BackgroundType,
+    canvasWidth: Int,
+    canvasHeight: Int,
+    density: Float
+): Boolean {
+    if (canvasWidth <= 0 || canvasHeight <= 0) return false
+
+    return try {
+        val bitmap = renderNoteBitmap(strokes, backgroundType, canvasWidth, canvasHeight, density)
+        val file = File(context.cacheDir, "shared_note_${System.currentTimeMillis()}.png")
+        FileOutputStream(file).use { output ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+        }
+        bitmap.recycle()
+
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newRawUri("image/png", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(
+            Intent.createChooser(shareIntent, "分享随手写图片").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        )
+        true
+    } catch (_: Exception) {
+        false
+    }
 }
 
 private fun renderNoteBitmap(

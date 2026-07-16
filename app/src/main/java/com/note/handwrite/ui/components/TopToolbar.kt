@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.DropdownMenu
@@ -56,6 +57,7 @@ fun TopToolbar(
     onUndo: () -> Unit,
     onClear: () -> Unit,
     onExport: () -> Unit,
+    onSave: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -111,6 +113,9 @@ fun TopToolbar(
             }
             IconButton(onClick = onExport) {
                 Icon(Icons.Default.ContentCopy, contentDescription = "导出到剪贴板")
+            }
+            IconButton(onClick = onSave) {
+                Icon(Icons.Default.Save, contentDescription = "保存到相册")
             }
             Box {
                 IconButton(onClick = {
