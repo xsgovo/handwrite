@@ -19,6 +19,7 @@ import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.CanvasPoint
 import java.io.File
 import java.io.FileOutputStream
+import androidx.compose.ui.geometry.Offset
 
 fun saveNoteToGallery(
     context: Context,
@@ -28,6 +29,9 @@ fun saveNoteToGallery(
     canvasHeight: Int,
     logicalCanvasWidth: Int,
     logicalCanvasHeight: Int,
+    rotation: Int,
+    zoomPercent: Float,
+    pan: Offset,
     density: Float
 ): Uri? {
     if (canvasWidth <= 0 || canvasHeight <= 0) return null
@@ -55,6 +59,9 @@ fun saveNoteToGallery(
             height = canvasHeight,
             logicalWidth = logicalCanvasWidth,
             logicalHeight = logicalCanvasHeight,
+            rotation = rotation,
+            zoomPercent = zoomPercent,
+            pan = pan,
             density = density
         )
         resolver.openOutputStream(uri)?.use { output ->
@@ -98,6 +105,9 @@ fun shareNoteDirectly(
     canvasHeight: Int,
     logicalCanvasWidth: Int,
     logicalCanvasHeight: Int,
+    rotation: Int,
+    zoomPercent: Float,
+    pan: Offset,
     density: Float
 ): Boolean {
     if (canvasWidth <= 0 || canvasHeight <= 0) return false
@@ -110,6 +120,9 @@ fun shareNoteDirectly(
             canvasHeight,
             logicalCanvasWidth,
             logicalCanvasHeight,
+            rotation,
+            zoomPercent,
+            pan,
             density
         )
         val file = File(context.cacheDir, "shared_note_${System.currentTimeMillis()}.png")
@@ -147,6 +160,9 @@ private fun renderNoteBitmap(
     height: Int,
     logicalWidth: Int,
     logicalHeight: Int,
+    rotation: Int,
+    zoomPercent: Float,
+    pan: Offset,
     density: Float
 ): Bitmap {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -155,10 +171,17 @@ private fun renderNoteBitmap(
         sourceWidth = if (logicalWidth > 0) logicalWidth.toFloat() else width.toFloat(),
         sourceHeight = if (logicalHeight > 0) logicalHeight.toFloat() else height.toFloat(),
         targetWidth = width.toFloat(),
-        targetHeight = height.toFloat()
+        targetHeight = height.toFloat(),
+        rotation = rotation,
+        zoomPercent = zoomPercent,
+        panX = pan.x,
+        panY = pan.y
     )
     canvas.drawColor(android.graphics.Color.WHITE)
-    drawBackgroundOnAndroidCanvas(canvas, backgroundType, transform, density)
+    drawBackgroundOnAndroidCanvas(
+        canvas, backgroundType, width, height,
+        transform.sourceWidth.toInt(), transform.sourceHeight.toInt(), transform, density
+    )
 
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -197,6 +220,10 @@ private fun Color.toAndroidColor(): Int = android.graphics.Color.argb(
 private fun drawBackgroundOnAndroidCanvas(
     canvas: AndroidCanvas,
     type: BackgroundType,
+    width: Int,
+    height: Int,
+    logicalWidth: Int,
+    logicalHeight: Int,
     transform: CanvasTransform,
     density: Float
 ) {
@@ -205,15 +232,13 @@ private fun drawBackgroundOnAndroidCanvas(
         color = 0xFFE0E0E0.toInt()
         strokeWidth = density * transform.scale
     }
-    val logicalWidth = transform.sourceWidth
-    val logicalHeight = transform.sourceHeight
     when (type) {
         BackgroundType.PLAIN -> Unit
         BackgroundType.LINED -> {
             var y = spacing
             while (y < logicalHeight) {
                 val start = transform.map(CanvasPoint(0f, y))
-                val end = transform.map(CanvasPoint(logicalWidth, y))
+                val end = transform.map(CanvasPoint(logicalWidth.toFloat(), y))
                 canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
                 y += spacing
             }
@@ -222,14 +247,14 @@ private fun drawBackgroundOnAndroidCanvas(
             var x = spacing
             while (x < logicalWidth) {
                 val start = transform.map(CanvasPoint(x, 0f))
-                val end = transform.map(CanvasPoint(x, logicalHeight))
+                val end = transform.map(CanvasPoint(x, logicalHeight.toFloat()))
                 canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
                 x += spacing
             }
             var y = spacing
             while (y < logicalHeight) {
                 val start = transform.map(CanvasPoint(0f, y))
-                val end = transform.map(CanvasPoint(logicalWidth, y))
+                val end = transform.map(CanvasPoint(logicalWidth.toFloat(), y))
                 canvas.drawLine(start.x, start.y, end.x, end.y, linePaint)
                 y += spacing
             }
