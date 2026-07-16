@@ -49,27 +49,24 @@ fun WidthPicker(
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
                     .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                    .clickable { onWidthSelected(step) }
+                    .clickable {
+                        if (selected) expanded = true else onWidthSelected(step)
+                    }
             ) {
                 Box(Modifier.size((8 + step / 5).dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface))
-            }
-        }
-        Box {
-            Text(
-                text = if (currentStep in quickSteps) "宽度" else "${"%.2f".format(NotePage.millimetersForStep(currentStep))}mm",
-                modifier = Modifier.clickable { expanded = true }.padding(8.dp),
-                style = MaterialTheme.typography.labelMedium
-            )
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("第 $currentStep 档 · ${"%.2f".format(NotePage.millimetersForStep(currentStep))} mm")
-                    Slider(
-                        value = currentStep.toFloat(),
-                        onValueChange = { onWidthSelected(it.roundToInt()) },
-                        valueRange = 1f..100f,
-                        steps = 98,
-                        modifier = Modifier.size(width = 240.dp, height = 48.dp)
-                    )
+                if (selected) {
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("第 $currentStep 档 · ${"%.2f".format(NotePage.millimetersForStep(currentStep))} mm")
+                            Slider(
+                                value = currentStep.toFloat(),
+                                onValueChange = { onWidthSelected(it.roundToInt()) },
+                                valueRange = 1f..100f,
+                                steps = 98,
+                                modifier = Modifier.size(width = 240.dp, height = 48.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
