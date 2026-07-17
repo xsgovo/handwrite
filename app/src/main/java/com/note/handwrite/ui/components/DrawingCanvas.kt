@@ -226,14 +226,7 @@ private fun handleMotionEvent(
         MotionEvent.ACTION_POINTER_DOWN -> {
             rememberAllPointers(event, state)
             if (!useSpenMode && event.pointerCount >= 2) {
-                // Preserve the active finger stroke before this gesture becomes a viewport transform.
-                if (state.gesture == Gesture.DRAW) {
-                    finishDrawing(
-                        state, currentTool, currentColor, currentWidth, currentPoints,
-                        erasedDuringGesture, onStrokeComplete, onEraseEnd, onTemporaryEraserChanged
-                    )
-                    rememberAllPointers(event, state)
-                }
+                cancelGesture(state, currentPoints, erasedDuringGesture, currentTool, onEraseEnd)
                 startTransform(state, transform)
                 state.gesture = Gesture.TRANSFORM
                 state.initialZoom = transform.zoomPercent
