@@ -35,6 +35,7 @@ fun WidthPicker(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var panelAnchorStep by remember { mutableStateOf(50) }
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -50,11 +51,16 @@ fun WidthPicker(
                     .background(MaterialTheme.colorScheme.surface)
                     .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
                     .clickable {
-                        if (selected) expanded = true else onWidthSelected(step)
+                        if (selected) {
+                            panelAnchorStep = step
+                            expanded = true
+                        } else {
+                            onWidthSelected(step)
+                        }
                     }
             ) {
                 Box(Modifier.size((8 + step / 5).dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface))
-                if (selected) {
+                if (step == panelAnchorStep) {
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         Column(Modifier.padding(16.dp)) {
                             Text("第 $currentStep 档 · ${"%.2f".format(NotePage.millimetersForStep(currentStep))} mm")
