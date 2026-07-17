@@ -244,7 +244,7 @@ private fun handleMotionEvent(
                     if (index >= 0) startDrawSegment(state, event.getX(index), event.getY(index), transform, currentPoints)
                     if (state.isErasing(currentTool)) onEraseStart()
                 }
-            } else if (event.pointerCount >= 2) {
+            } else if (useSpenMode && state.nonPalmPointerCount() >= 2) {
                 startTransform(state, transform)
                 cancelGesture(state, currentPoints, erasedDuringGesture, currentTool, onEraseEnd)
                 state.gesture = Gesture.TRANSFORM
@@ -547,10 +547,13 @@ private fun midpoint(points: List<Offset>): Offset = Offset(
     points.map { it.y }.average().toFloat()
 )
 
-private fun distance(points: List<Offset>): Float = hypot(
-    points[0].x - points[1].x,
-    points[0].y - points[1].y
-)
+private fun distance(points: List<Offset>): Float {
+    if (points.size < 2) return 0f
+    return hypot(
+        points[0].x - points[1].x,
+        points[0].y - points[1].y
+    )
+}
 
 private fun Offset.toCanvasPoint(): CanvasPoint = CanvasPoint(x, y)
 
