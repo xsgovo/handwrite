@@ -226,8 +226,15 @@ private fun handleMotionEvent(
         MotionEvent.ACTION_POINTER_DOWN -> {
             rememberAllPointers(event, state)
             if (!useSpenMode && event.pointerCount >= 2) {
+                // Preserve the active finger stroke before this gesture becomes a viewport transform.
+                if (state.gesture == Gesture.DRAW) {
+                    finishDrawing(
+                        state, currentTool, currentColor, currentWidth, currentPoints,
+                        erasedDuringGesture, onStrokeComplete, onEraseEnd, onTemporaryEraserChanged
+                    )
+                    rememberAllPointers(event, state)
+                }
                 startTransform(state, transform)
-                cancelGesture(state, currentPoints, erasedDuringGesture, currentTool, onEraseEnd)
                 state.gesture = Gesture.TRANSFORM
                 state.initialZoom = transform.zoomPercent
                 state.initialPan = Offset(transform.panX, transform.panY)
@@ -351,7 +358,7 @@ private fun updateTransform(
     if (points.size < 2) return
     val midpoint = midpoint(points)
     val distance = distance(points)
-    val zoom = if (useSpenMode && state.initialDistance > 0f) {
+    val zoom = if (state.initialDistance > 0f) {
         val raw = (state.initialZoom * distance / state.initialDistance).coerceIn(100f, 400f)
         (raw / 5f).roundToInt() * 5f
     } else {
@@ -369,14 +376,7 @@ private fun updateTransform(
         topAligned = transform.topAligned
     )
     val mappedFocal = candidate.map(state.focalPoint)
-    val pan = if (useSpenMode) {
-        Offset(midpoint.x - mappedFocal.x, midpoint.y - mappedFocal.y)
-    } else {
-        Offset(
-            state.initialPan.x + midpoint.x - state.initialMidpoint.x,
-            state.initialPan.y + midpoint.y - state.initialMidpoint.y
-        )
-    }
+    val pan = Offset(midpoint.x - mappedFocal.x, midpoint.y - mappedFocal.y)
     val clamped = candidate.clampPan(pan.x, pan.y)
     onViewportChanged(zoom, clamped.toOffset())
 }
