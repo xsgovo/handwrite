@@ -41,6 +41,8 @@ fun NoteScreen(
     val strokes by viewModel.strokes.collectAsState()
     val currentTool by viewModel.currentTool.collectAsState()
     val currentColor by viewModel.currentColor.collectAsState()
+    val colorSlots by viewModel.colorSlots.collectAsState()
+    val activeColorSlot by viewModel.activeColorSlot.collectAsState()
     val currentWidth by viewModel.currentWidth.collectAsState()
     val currentWidthStep by viewModel.currentWidthStep.collectAsState()
     val backgroundType by viewModel.backgroundType.collectAsState()
@@ -64,12 +66,17 @@ fun NoteScreen(
             TopToolbar(
                 currentTool = currentTool,
                 currentColor = currentColor,
+                colorSlots = colorSlots,
+                activeColorSlot = activeColorSlot,
                 currentWidthStep = currentWidthStep,
                 currentBackground = backgroundType,
                 canUndo = canUndo,
                 temporaryEraser = temporaryEraser,
                 onToolChange = viewModel::switchTool,
-                onColorChange = viewModel::switchColor,
+                onColorSlotSelected = viewModel::selectColorSlot,
+                onActiveColorChanged = viewModel::updateActiveColor,
+                onColorSlotsSaved = viewModel::saveColorSlots,
+                onColorSlotsRestored = viewModel::restoreColorSlots,
                 onWidthChange = viewModel::switchWidthStep,
                 zoomPercent = zoomPercent,
                 onZoomDecrease = { pan = Offset.Zero; viewModel.decreaseZoom() },

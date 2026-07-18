@@ -1,5 +1,6 @@
 package com.note.handwrite.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,18 +20,24 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,8 +47,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.note.handwrite.ui.theme.PenBlack
 import com.note.handwrite.ui.theme.PenBlue
@@ -49,129 +57,160 @@ import com.note.handwrite.ui.theme.PenGreen
 import com.note.handwrite.ui.theme.PenOrange
 import com.note.handwrite.ui.theme.PenPurple
 import com.note.handwrite.ui.theme.PenRed
-import kotlin.math.roundToInt
+
+private data class ColorPickerSnapshot(
+    val colors: List<Color>,
+    val activeSlot: Int
+)
+
+private val quickColors = listOf(PenBlack, PenRed, PenGreen, PenBlue, PenOrange, PenPurple)
+private val hexColorPattern = Regex("#[0-9A-F]{6}")
 
 @Composable
 fun ColorPicker(
-    currentColor: Color,
-    onColorSelected: (Color) -> Unit,
+    colorSlots: List<Color>,
+    activeSlot: Int,
+    onSlotSelected: (Int) -> Unit,
+    onActiveColorChanged: (Color) -> Unit,
+    onColorSlotsSaved: () -> Unit,
+    onColorSlotsRestored: (List<Color>, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val presetColors = listOf(PenBlack, PenBlue, PenRed, PenGreen, PenOrange, PenPurple)
+    if (colorSlots.isEmpty() || activeSlot !in colorSlots.indices) return
+
     var expanded by remember { mutableStateOf(false) }
-    var selectedColor by remember { mutableStateOf(currentColor) }
+    var spectrumMode by remember { mutableStateOf(false) }
+    var snapshot by remember { mutableStateOf(ColorPickerSnapshot(colorSlots, activeSlot)) }
+    var hexValue by remember { mutableStateOf(colorSlots[activeSlot].toHex()) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val latestExpanded by rememberUpdatedState(expanded)
+    val latestSnapshot by rememberUpdatedState(snapshot)
+    val latestRestore by rememberUpdatedState(onColorSlotsRestored)
+    val currentColor = colorSlots[activeSlot]
 
-    LaunchedEffect(currentColor) { selectedColor = currentColor }
-
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(30.dp)
-                .clip(CircleShape)
-                .clickable {
-                    selectedColor = currentColor
-                    expanded = true
-                }
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(currentColor)
-                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-            )
-            PaletteMenu(
-                expanded = expanded,
-                currentColor = currentColor,
-                selectedColor = selectedColor,
-                onColorChange = { selectedColor = it },
-                onConfirm = {
-                    onColorSelected(selectedColor)
-                    expanded = false
-                },
-                onDismiss = { expanded = false }
-            )
-        }
-        presetColors.forEach { color ->
-            val selected = color == currentColor
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .clickable { onColorSelected(color) }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(if (selected) 20.dp else 24.dp)
-                        .clip(CircleShape)
-                        .background(color)
-                        .border(
-                            if (selected) 2.dp else 1.dp,
-                            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                            CircleShape
-                        )
-                )
+    LaunchedEffect(currentColor) {
+        hexValue = currentColor.toHex()
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (latestExpanded) {
+                latestRestore(latestSnapshot.colors, latestSnapshot.activeSlot)
             }
         }
     }
-}
 
-@Composable
-private fun PaletteMenu(
-    expanded: Boolean,
-    currentColor: Color,
-    selectedColor: Color,
-    onColorChange: (Color) -> Unit,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var spectrumMode by remember { mutableStateOf(false) }
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        modifier = Modifier
-            .width(310.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth().padding(16.dp)
+    fun closeAndSave() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        onColorSlotsSaved()
+        expanded = false
+    }
+    fun discardAndClose() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        onColorSlotsRestored(snapshot.colors, snapshot.activeSlot)
+        expanded = false
+    }
+    fun applyColor(color: Color) {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        onActiveColorChanged(color)
+        hexValue = color.toHex()
+    }
+
+    BackHandler(enabled = expanded) { discardAndClose() }
+
+    Box(modifier = modifier) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(36.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                PaletteTab("色板", !spectrumMode, Modifier.weight(1f)) { spectrumMode = false }
-                PaletteTab("光谱", spectrumMode, Modifier.weight(1f)) { spectrumMode = true }
-            }
-            if (spectrumMode) {
-                SpectrumPicker(selectedColor, onColorChange)
-            } else {
-                PaletteGrid(selectedColor, onColorChange)
-            }
-            PreviewAndChannels(currentColor, selectedColor)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(Color(0xFF2ECC71), Color.Black, Color.White, Color(0xFFFFD1DC), Color(0xFFD4E6F1)).forEach { color ->
+            colorSlots.forEachIndexed { index, color ->
+                val selected = index == activeSlot
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            if (selected) {
+                                if (!expanded) {
+                                    snapshot = ColorPickerSnapshot(colorSlots.toList(), activeSlot)
+                                    hexValue = currentColor.toHex()
+                                    expanded = true
+                                }
+                            } else {
+                                if (expanded) closeAndSave()
+                                onSlotSelected(index)
+                            }
+                        }
+                ) {
                     Box(
-                        modifier = Modifier.size(24.dp).clip(CircleShape).background(color)
-                            .border(1.dp, if (color == Color.White) Color.LightGray else Color.Transparent, CircleShape)
-                            .clickable { onColorChange(color) }
+                        modifier = Modifier
+                            .size(if (selected) 20.dp else 24.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .border(
+                                width = if (selected) 2.dp else 1.dp,
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                shape = CircleShape
+                            )
                     )
                 }
             }
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Action("取消", Modifier.weight(1f), onDismiss, MaterialTheme.colorScheme.onSurfaceVariant)
-                Action("完成", Modifier.weight(1f), onConfirm, MaterialTheme.colorScheme.primary)
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { closeAndSave() },
+            modifier = Modifier
+                .width(310.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PaletteTab("色板", !spectrumMode, Modifier.weight(1f)) { spectrumMode = false }
+                    PaletteTab("光谱", spectrumMode, Modifier.weight(1f)) { spectrumMode = true }
+                }
+                QuickColorRow { applyColor(it) }
+                if (spectrumMode) {
+                    SpectrumPicker(currentColor, ::applyColor)
+                } else {
+                    PaletteGrid(currentColor, ::applyColor)
+                }
+                ColorPreview(currentColor)
+                OutlinedTextField(
+                    value = hexValue,
+                    onValueChange = { candidate ->
+                        val normalized = candidate.uppercase()
+                        if (normalized.isValidHexInput()) {
+                            hexValue = normalized
+                            if (hexColorPattern.matches(normalized)) {
+                                applyColor(Color(android.graphics.Color.parseColor(normalized)))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    label = { Text("HEX") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
@@ -181,11 +220,29 @@ private fun PaletteMenu(
 private fun PaletteTab(text: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.height(36.dp).clip(RoundedCornerShape(18.dp))
+        modifier = modifier
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
             .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
             .clickable(onClick = onClick)
     ) {
         Text(text, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun QuickColorRow(onColorSelected: (Color) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        quickColors.forEach { color ->
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(color)
+                    .border(1.dp, if (color == Color.White) Color.LightGray else Color.Transparent, CircleShape)
+                    .clickable { onColorSelected(color) }
+            )
+        }
     }
 }
 
@@ -197,7 +254,10 @@ private fun PaletteGrid(selectedColor: Color, onColorChange: (Color) -> Unit) {
                 for (column in 0 until 11) {
                     val color = gridColor(column, row)
                     Box(
-                        modifier = Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(3.dp))
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(3.dp))
                             .background(color)
                             .border(
                                 if (color == selectedColor) 2.dp else 0.5.dp,
@@ -222,7 +282,10 @@ private fun SpectrumPicker(selectedColor: Color, onColorChange: (Color) -> Unit)
     val value = hsv[2]
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         Box(
-            modifier = Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(8.dp))
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(130.dp)
+                .clip(RoundedCornerShape(8.dp))
                 .pointerInput(value) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
@@ -234,7 +297,10 @@ private fun SpectrumPicker(selectedColor: Color, onColorChange: (Color) -> Unit)
                             )
                         )
                         update(down.position)
-                        drag(down.id) { change -> update(change.position); change.consume() }
+                        drag(down.id) { change ->
+                            update(change.position)
+                            change.consume()
+                        }
                     }
                 }
         ) {
@@ -257,31 +323,21 @@ private fun SpectrumPicker(selectedColor: Color, onColorChange: (Color) -> Unit)
 }
 
 @Composable
-private fun PreviewAndChannels(currentColor: Color, selectedColor: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.size(width = 56.dp, height = 32.dp).clip(RoundedCornerShape(6.dp))) {
-            Box(Modifier.weight(1f).background(currentColor))
-            Box(Modifier.weight(1f).background(selectedColor))
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            "#%06X  R%d G%d B%d".format(
-                selectedColor.toArgb() and 0xFFFFFF,
-                (selectedColor.red * 255).roundToInt(),
-                (selectedColor.green * 255).roundToInt(),
-                (selectedColor.blue * 255).roundToInt()
-            ),
-            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-        )
-    }
+private fun ColorPreview(color: Color) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(color)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
+    )
 }
 
-@Composable
-private fun Action(text: String, modifier: Modifier, onClick: () -> Unit, color: Color) {
-    Box(contentAlignment = Alignment.Center, modifier = modifier.height(40.dp).clickable(onClick = onClick)) {
-        Text(text, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = color)
-    }
-}
+private fun Color.toHex(): String = "#%06X".format(toArgb() and 0xFFFFFF)
+
+private fun String.isValidHexInput(): Boolean =
+    isEmpty() || this == "#" || matches(Regex("#[0-9A-F]{0,6}"))
 
 private fun gridColor(column: Int, row: Int): Color {
     if (column == 0) {

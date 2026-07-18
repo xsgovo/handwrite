@@ -48,12 +48,17 @@ import com.note.handwrite.model.Tool
 fun TopToolbar(
     currentTool: Tool,
     currentColor: Color,
+    colorSlots: List<Color>,
+    activeColorSlot: Int,
     currentWidthStep: Int,
     currentBackground: BackgroundType,
     canUndo: Boolean,
     temporaryEraser: Boolean,
     onToolChange: (Tool) -> Unit,
-    onColorChange: (Color) -> Unit,
+    onColorSlotSelected: (Int) -> Unit,
+    onActiveColorChanged: (Color) -> Unit,
+    onColorSlotsSaved: () -> Unit,
+    onColorSlotsRestored: (List<Color>, Int) -> Unit,
     onWidthChange: (Int) -> Unit,
     zoomPercent: Int,
     onZoomDecrease: () -> Unit,
@@ -108,7 +113,14 @@ fun TopToolbar(
                 temporary = temporaryEraser,
                 onToolChange = onToolChange
             )
-            ColorPicker(currentColor, onColorChange)
+            ColorPicker(
+                colorSlots = colorSlots,
+                activeSlot = activeColorSlot,
+                onSlotSelected = onColorSlotSelected,
+                onActiveColorChanged = onActiveColorChanged,
+                onColorSlotsSaved = onColorSlotsSaved,
+                onColorSlotsRestored = onColorSlotsRestored
+            )
             WidthPicker(currentWidthStep, currentColor, onWidthChange)
             IconButton(onClick = onZoomDecrease, enabled = zoomPercent > 100) {
                 Icon(Icons.Default.Remove, contentDescription = "缩小")
