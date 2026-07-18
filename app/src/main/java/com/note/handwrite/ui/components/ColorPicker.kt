@@ -68,6 +68,35 @@ fun ColorPicker(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
     ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .clickable {
+                    selectedColor = currentColor
+                    expanded = true
+                }
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(currentColor)
+                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+            )
+            PaletteMenu(
+                expanded = expanded,
+                currentColor = currentColor,
+                selectedColor = selectedColor,
+                onColorChange = { selectedColor = it },
+                onConfirm = {
+                    onColorSelected(selectedColor)
+                    expanded = false
+                },
+                onDismiss = { expanded = false }
+            )
+        }
         presetColors.forEach { color ->
             val selected = color == currentColor
             Box(
@@ -75,14 +104,7 @@ fun ColorPicker(
                 modifier = Modifier
                     .size(28.dp)
                     .clip(CircleShape)
-                    .clickable {
-                        if (selected) {
-                            selectedColor = currentColor
-                            expanded = true
-                        } else {
-                            onColorSelected(color)
-                        }
-                    }
+                    .clickable { onColorSelected(color) }
             ) {
                 Box(
                     modifier = Modifier
@@ -95,19 +117,6 @@ fun ColorPicker(
                             CircleShape
                         )
                 )
-                if (selected) {
-                    PaletteMenu(
-                        expanded = expanded,
-                        currentColor = currentColor,
-                        selectedColor = selectedColor,
-                        onColorChange = { selectedColor = it },
-                        onConfirm = {
-                            onColorSelected(selectedColor)
-                            expanded = false
-                        },
-                        onDismiss = { expanded = false }
-                    )
-                }
             }
         }
     }
