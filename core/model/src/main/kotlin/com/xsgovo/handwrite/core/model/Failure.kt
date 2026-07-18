@@ -10,6 +10,8 @@ sealed interface DomainFailure {
     data class UnsupportedPackageVersion(val version: Int) : DomainFailure
     data class InvalidPackage(val reason: String) : DomainFailure
     data object ExportTargetUnavailable : DomainFailure
+    data object ResourceNotFound : DomainFailure
+    data object InvalidResource : DomainFailure
 }
 
 sealed interface DomainResult<out T> {

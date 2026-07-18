@@ -7,6 +7,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStoreFile
 import androidx.room.Room
 import com.xsgovo.handwrite.core.data.FilePendingCommandJournal
+import com.xsgovo.handwrite.core.data.ContentAddressedResourceRepository
 import com.xsgovo.handwrite.core.data.ProtoSettingsRepository
 import com.xsgovo.handwrite.core.data.RoomDocumentRepository
 import com.xsgovo.handwrite.core.data.db.HandwriteDao
@@ -14,6 +15,7 @@ import com.xsgovo.handwrite.core.data.db.HandwriteDatabase
 import com.xsgovo.handwrite.core.data.settings.AppSettingsPayload
 import com.xsgovo.handwrite.core.data.settings.AppSettingsSerializer
 import com.xsgovo.handwrite.core.document.DocumentCommandStore
+import com.xsgovo.handwrite.core.document.BackgroundResourceRepository
 import com.xsgovo.handwrite.core.document.DocumentRepository
 import com.xsgovo.handwrite.core.document.DurableCommandExecutor
 import com.xsgovo.handwrite.core.document.EpochClock
@@ -57,6 +59,19 @@ object PersistenceModule {
 
     @Provides
     fun provideDocumentCommandStore(repository: RoomDocumentRepository): DocumentCommandStore = repository
+
+    @Provides
+    @Singleton
+    fun provideBackgroundResourceRepository(
+        @ApplicationContext context: Context,
+        database: HandwriteDatabase,
+        dao: HandwriteDao,
+    ): BackgroundResourceRepository = ContentAddressedResourceRepository(
+        database = database,
+        dao = dao,
+        directory = File(context.filesDir, "resources"),
+        ioDispatcher = Dispatchers.IO,
+    )
 
     @Provides
     @Singleton

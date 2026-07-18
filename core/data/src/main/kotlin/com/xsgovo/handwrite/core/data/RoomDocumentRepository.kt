@@ -77,6 +77,7 @@ class RoomDocumentRepository(
                     backgroundPayload = PayloadCodec.encodeBackground(background),
                 ),
             )
+            background.resourceIdOrNull()?.let { requireResourceReference(it.value, 1) }
             dao.insertDocumentState(DocumentStateEntity(documentId, pageId))
             DocumentId(documentId)
         }
@@ -91,7 +92,11 @@ class RoomDocumentRepository(
     }
 
     override suspend fun deleteDocument(documentId: DocumentId): DomainResult<Unit> = guardedWrite {
-        if (dao.deleteDocument(documentId.value) == 0) throw MissingDocumentException()
+        database.withTransaction {
+            val backgrounds = dao.findBackgroundsForDocument(documentId.value).map(PayloadCodec::decodeBackground)
+            if (dao.deleteDocument(documentId.value) == 0) throw MissingDocumentException()
+            backgrounds.forEach { it.resourceIdOrNull()?.let { id -> requireResourceReference(id.value, -1) } }
+        }
     }
 
     override suspend fun createPage(
@@ -110,6 +115,7 @@ class RoomDocumentRepository(
                     backgroundPayload = PayloadCodec.encodeBackground(background),
                 ),
             )
+            background.resourceIdOrNull()?.let { requireResourceReference(it.value, 1) }
             dao.updateLastActivePage(documentId.value, pageId)
             dao.touchDocumentForPage(pageId, clock.nowMillis())
             PageId(pageId)
@@ -121,7 +127,10 @@ class RoomDocumentRepository(
             val documentId = dao.findDocumentIdForPage(pageId.value) ?: throw MissingPageException()
             if (dao.countPages(documentId) <= 1) throw LastPageException()
             val wasActivePage = dao.findLastActivePageId(documentId) == pageId.value
+            val background = dao.findBackgroundForPage(pageId.value)?.let(PayloadCodec::decodeBackground)
+                ?: throw MissingPageException()
             if (dao.deletePage(pageId.value) == 0) throw MissingPageException()
+            background.resourceIdOrNull()?.let { requireResourceReference(it.value, -1) }
             val firstPageId = dao.findFirstPageId(documentId) ?: throw MissingPageException()
             if (wasActivePage) dao.updateLastActivePage(documentId, firstPageId)
             dao.touchDocumentForPage(firstPageId, clock.nowMillis())
@@ -152,8 +161,16 @@ class RoomDocumentRepository(
                     if (command.added.isNotEmpty()) dao.insertElements(command.added.map { it.toEntity() })
                 }
                 is DocumentCommand.UpdateBackground -> {
+                    val beforeResource = command.before.resourceIdOrNull()
+                    val afterResource = command.after.resourceIdOrNull()
+                    if (afterResource != beforeResource) {
+                        afterResource?.let { requireResourceReference(it.value, 1) }
+                    }
                     if (dao.updateBackground(command.pageId.value, PayloadCodec.encodeBackground(command.after)) == 0) {
                         throw MissingPageException()
+                    }
+                    if (afterResource != beforeResource) {
+                        beforeResource?.let { requireResourceReference(it.value, -1) }
                     }
                 }
             }
@@ -179,6 +196,8 @@ class RoomDocumentRepository(
         DomainResult.Failure(DomainFailure.PageNotFound)
     } catch (exception: LastPageException) {
         DomainResult.Failure(DomainFailure.LastPageCannotBeDeleted)
+    } catch (exception: MissingResourceException) {
+        DomainResult.Failure(DomainFailure.ResourceNotFound)
     } catch (exception: IOException) {
         DomainResult.Failure(DomainFailure.DatabaseUnavailable)
     }
@@ -187,7 +206,15 @@ class RoomDocumentRepository(
     private class MissingPageException : Exception()
     private class LastPageException : Exception()
 
+    private suspend fun requireResourceReference(resourceId: Long, delta: Long) {
+        if (dao.adjustResourceReferenceCount(resourceId, delta) == 0) throw MissingResourceException()
+    }
+
+    private class MissingResourceException : Exception()
+
     private companion object {
         const val ORDER_STEP = 1_024L
     }
 }
+
+private fun PageBackground.resourceIdOrNull() = (this as? PageBackground.Asset)?.resourceId
