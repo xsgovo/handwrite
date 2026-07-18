@@ -37,7 +37,9 @@ dependencies {
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.datastore)
     implementation(libs.protobuf.javalite)
+    implementation(libs.hilt.android)
     ksp(libs.androidx.room.compiler)
+    ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit4)
     testImplementation(libs.androidx.room.testing)
