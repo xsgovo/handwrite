@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.compose.ui.graphics.Color
 import com.note.handwrite.model.BackgroundType
@@ -20,53 +21,84 @@ import com.note.handwrite.model.CanvasPoint
 import com.note.handwrite.model.NotePage
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
-fun saveNoteToGallery(
+private const val EXPORT_TAG = "GalleryExport"
+private val exportMutex = Mutex()
+
+suspend fun saveNoteToGallery(
     context: Context,
     strokes: List<Stroke>,
     backgroundType: BackgroundType,
     canvasWidth: Int = NotePage.EXPORT_WIDTH,
     canvasHeight: Int = NotePage.EXPORT_HEIGHT
-): Uri? {
-    val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "note_${System.currentTimeMillis()}.png")
-        put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(
-                MediaStore.Images.Media.RELATIVE_PATH,
-                Environment.DIRECTORY_PICTURES + "/随手写"
-            )
-            put(MediaStore.Images.Media.IS_PENDING, 1)
+): Result<Uri> {
+    val appContext = context.applicationContext
+    return exportMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val resolver = appContext.contentResolver
+            var pendingUri: Uri? = null
+            var published = false
+            var bitmap: Bitmap? = null
+
+            try {
+                currentCoroutineContext().ensureActive()
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "note_${System.currentTimeMillis()}.png")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(
+                            MediaStore.Images.Media.RELATIVE_PATH,
+                            Environment.DIRECTORY_PICTURES + "/随手写"
+                        )
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
+                }
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IOException("Unable to create gallery entry")
+                pendingUri = uri
+
+                currentCoroutineContext().ensureActive()
+                val exportBitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
+                bitmap = exportBitmap
+                renderNoteBitmap(exportBitmap, strokes, backgroundType)
+
+                currentCoroutineContext().ensureActive()
+                resolver.openOutputStream(uri)?.use { output ->
+                    check(exportBitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                } ?: throw IOException("Unable to open gallery output stream")
+
+                currentCoroutineContext().ensureActive()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    resolver.update(
+                        uri,
+                        ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
+                        null,
+                        null
+                    )
+                }
+                published = true
+                Result.success(uri)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.e(EXPORT_TAG, "Failed to save note to gallery", exception)
+                Result.failure(exception)
+            } finally {
+                bitmap?.recycle()
+                if (!published) {
+                    pendingUri?.let { uri -> deletePendingUri(resolver, uri) }
+                }
+            }
         }
-    }
-
-    val resolver = context.contentResolver
-    val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
-
-    return try {
-        val bitmap = renderNoteBitmap(
-            strokes = strokes,
-            backgroundType = backgroundType,
-            width = canvasWidth,
-            height = canvasHeight
-        )
-        resolver.openOutputStream(uri)?.use { output ->
-            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
-        } ?: error("Unable to open gallery output stream")
-        bitmap.recycle()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            resolver.update(
-                uri,
-                ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
-                null,
-                null
-            )
-        }
-        uri
-    } catch (_: Exception) {
-        resolver.delete(uri, null, null)
-        null
     }
 }
 
@@ -74,6 +106,7 @@ fun shareImage(context: Context, uri: Uri) {
     val shareIntent = Intent(Intent.ACTION_SEND).apply {
         type = "image/png"
         putExtra(Intent.EXTRA_STREAM, uri)
+        clipData = ClipData.newRawUri("image/png", uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(
@@ -83,55 +116,69 @@ fun shareImage(context: Context, uri: Uri) {
     )
 }
 
-fun shareNoteDirectly(
+suspend fun prepareNoteForSharing(
     context: Context,
     strokes: List<Stroke>,
     backgroundType: BackgroundType,
     canvasWidth: Int = NotePage.EXPORT_WIDTH,
     canvasHeight: Int = NotePage.EXPORT_HEIGHT
-): Boolean {
-    return try {
-        val bitmap = renderNoteBitmap(
-            strokes,
-            backgroundType,
-            canvasWidth,
-            canvasHeight
-        )
-        val file = File(context.cacheDir, "shared_note_${System.currentTimeMillis()}.png")
-        FileOutputStream(file).use { output ->
-            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
-        }
-        bitmap.recycle()
+): Result<Uri> {
+    val appContext = context.applicationContext
+    var cacheFile: File? = null
+    var prepared = false
 
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "image/png"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            clipData = ClipData.newRawUri("image/png", uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(
-            Intent.createChooser(shareIntent, "分享随手写图片").apply {
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    return exportMutex.withLock {
+        try {
+            withContext(Dispatchers.IO) {
+                var bitmap: Bitmap? = null
+                try {
+                    currentCoroutineContext().ensureActive()
+                    val exportBitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
+                    bitmap = exportBitmap
+                    renderNoteBitmap(exportBitmap, strokes, backgroundType)
+
+                    currentCoroutineContext().ensureActive()
+                    val file = File(appContext.cacheDir, "shared_note_${System.currentTimeMillis()}.png")
+                    cacheFile = file
+                    FileOutputStream(file).use { output ->
+                        check(exportBitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                    }
+
+                    currentCoroutineContext().ensureActive()
+                    val uri = FileProvider.getUriForFile(
+                        appContext,
+                        "${appContext.packageName}.fileprovider",
+                        file
+                    )
+                    currentCoroutineContext().ensureActive()
+                    prepared = true
+                    Result.success(uri)
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (exception: Exception) {
+                    Log.e(EXPORT_TAG, "Failed to prepare note for sharing", exception)
+                    Result.failure(exception)
+                } finally {
+                    bitmap?.recycle()
+                    if (!prepared) deleteCacheFile(cacheFile)
+                }
             }
-        )
-        true
-    } catch (_: Exception) {
-        false
+        } catch (exception: CancellationException) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                deleteCacheFile(cacheFile)
+            }
+            throw exception
+        }
     }
 }
 
 private fun renderNoteBitmap(
+    bitmap: Bitmap,
     strokes: List<Stroke>,
-    backgroundType: BackgroundType,
-    width: Int,
-    height: Int
-): Bitmap {
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    backgroundType: BackgroundType
+) {
+    val width = bitmap.width
+    val height = bitmap.height
     val canvas = AndroidCanvas(bitmap)
     val transform = CanvasTransform(
         sourceWidth = NotePage.WIDTH,
@@ -168,7 +215,25 @@ private fun renderNoteBitmap(
             }
         }
     }
-    return bitmap
+}
+
+private fun deletePendingUri(resolver: android.content.ContentResolver, uri: Uri) {
+    try {
+        resolver.delete(uri, null, null)
+    } catch (exception: Exception) {
+        Log.e(EXPORT_TAG, "Failed to delete pending gallery entry", exception)
+    }
+}
+
+private fun deleteCacheFile(file: File?) {
+    if (file == null || !file.exists()) return
+    try {
+        if (!file.delete()) {
+            Log.e(EXPORT_TAG, "Failed to delete incomplete share cache file")
+        }
+    } catch (exception: Exception) {
+        Log.e(EXPORT_TAG, "Failed to delete incomplete share cache file", exception)
+    }
 }
 
 private fun Color.toAndroidColor(): Int = android.graphics.Color.argb(

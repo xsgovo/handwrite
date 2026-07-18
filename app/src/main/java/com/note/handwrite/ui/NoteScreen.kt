@@ -22,14 +22,18 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.util.Log
 import androidx.compose.ui.geometry.Offset
 import com.note.handwrite.ui.components.ClearConfirmDialog
 import com.note.handwrite.ui.components.DrawingCanvas
 import com.note.handwrite.ui.components.TopToolbar
+import com.note.handwrite.util.prepareNoteForSharing
 import com.note.handwrite.util.saveNoteToGallery
-import com.note.handwrite.util.shareNoteDirectly
+import com.note.handwrite.util.shareImage
 import com.note.handwrite.viewmodel.NoteViewModel
 import kotlinx.coroutines.launch
+
+private const val NOTE_SCREEN_TAG = "NoteScreen"
 
 @Composable
 fun NoteScreen(
@@ -37,6 +41,7 @@ fun NoteScreen(
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
+    val exportContext = context.applicationContext
     val scope = rememberCoroutineScope()
     val strokes by viewModel.strokes.collectAsState()
     val currentTool by viewModel.currentTool.collectAsState()
@@ -56,6 +61,20 @@ fun NoteScreen(
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     var topAligned by remember { mutableStateOf(false) }
+    var exportInProgress by remember { mutableStateOf(false) }
+
+    fun launchExport(block: suspend () -> Unit) {
+        if (exportInProgress) return
+        exportInProgress = true
+        scope.launch {
+            try {
+                block()
+            } finally {
+                exportInProgress = false
+            }
+        }
+    }
+
     LaunchedEffect(orientation) {
         pan = Offset.Zero
         topAligned = viewModel.resetZoomForOrientation(orientation)
@@ -85,27 +104,43 @@ fun NoteScreen(
                 onUndo = viewModel::undo,
                 onClear = { showClearDialog = true },
                 onExport = {
-                    scope.launch {
-                        val success = shareNoteDirectly(
-                            context = context,
-                            strokes = strokes,
-                            backgroundType = backgroundType
+                    val strokeSnapshot = strokes.toList()
+                    val backgroundSnapshot = backgroundType
+                    launchExport {
+                        val result = prepareNoteForSharing(
+                            context = exportContext,
+                            strokes = strokeSnapshot,
+                            backgroundType = backgroundSnapshot
                         )
-                        if (!success) {
+                        val uri = result.getOrNull()
+                        if (uri == null) {
                             snackbarHostState.showSnackbar(
                                 message = "分享失败，请重试",
                                 duration = SnackbarDuration.Long
                             )
+                        } else {
+                            try {
+                                shareImage(context, uri)
+                            } catch (exception: Exception) {
+                                Log.e(NOTE_SCREEN_TAG, "Failed to launch share activity", exception)
+                                snackbarHostState.showSnackbar(
+                                    message = "分享失败，请重试",
+                                    duration = SnackbarDuration.Long
+                                )
+                            }
                         }
                     }
                 },
                 onSave = {
-                    scope.launch {
-                        val uri = saveNoteToGallery(
-                            context = context,
-                            strokes = strokes,
-                            backgroundType = backgroundType
+                    val strokeSnapshot = strokes.toList()
+                    val backgroundSnapshot = backgroundType
+                    launchExport {
+                        val result = saveNoteToGallery(
+                            context = exportContext,
+                            strokes = strokeSnapshot,
+                            backgroundType = backgroundSnapshot
                         )
+                        val uri = result.getOrNull()
                         snackbarHostState.showSnackbar(
                             message = if (uri != null) "已保存到相册" else "保存失败，请重试",
                             duration = if (uri != null) SnackbarDuration.Short else SnackbarDuration.Long
