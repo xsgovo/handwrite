@@ -29,18 +29,20 @@ internal fun DocumentBundle.toDomain(): Document {
 }
 
 internal fun PageBundle.toDomain(): PageContent {
-    val domainPage = Page(
-        id = PageId(page.id),
-        documentId = DocumentId(page.documentId),
-        orderKey = page.orderKey,
-        size = LogicalSize(page.logicalWidth, page.logicalHeight),
-        background = PayloadCodec.decodeBackground(page.backgroundPayload),
-    )
+    val domainPage = page.toDomain()
     return PageContent(
         page = domainPage,
         elements = elements.sortedBy(PageElementEntity::orderKey).map(PageElementEntity::toDomain),
     )
 }
+
+internal fun PageEntity.toDomain(): Page = Page(
+    id = PageId(id),
+    documentId = DocumentId(documentId),
+    orderKey = orderKey,
+    size = LogicalSize(logicalWidth, logicalHeight),
+    background = PayloadCodec.decodeBackground(backgroundPayload),
+)
 
 internal fun PageElementEntity.toDomain(): PageElement = when (type) {
     PageElementTypes.STROKE -> {

@@ -24,6 +24,7 @@ import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.OperationId
 import com.xsgovo.handwrite.core.model.PageBackground
+import com.xsgovo.handwrite.core.model.Page
 import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PageId
 import java.io.IOException
@@ -36,11 +37,17 @@ class RoomDocumentRepository(
     private val dao: HandwriteDao,
     private val clock: EpochClock,
 ) : DocumentRepository {
+    override fun observeDocuments(): Flow<List<Document>> =
+        dao.observeDocuments().map { documents -> documents.map { it.toDomain() } }
+
     override fun observeDocument(documentId: DocumentId): Flow<Document?> =
         dao.observeDocument(documentId.value).map { it?.toDomain() }
 
     override fun observePage(pageId: PageId): Flow<PageContent?> =
         dao.observePage(pageId.value).map { it?.toDomain() }
+
+    override fun observePages(documentId: DocumentId): Flow<List<Page>> =
+        dao.observePages(documentId.value).map { pages -> pages.map { it.toDomain() } }
 
     override suspend fun createDocument(
         name: DisplayName,
@@ -81,6 +88,52 @@ class RoomDocumentRepository(
     ): DomainResult<Unit> = guardedWrite(DomainFailure.NameConflict) {
         val changed = dao.renameDocument(documentId.value, name.value, name.normalizedKey, clock.nowMillis())
         if (changed == 0) throw MissingDocumentException()
+    }
+
+    override suspend fun deleteDocument(documentId: DocumentId): DomainResult<Unit> = guardedWrite {
+        if (dao.deleteDocument(documentId.value) == 0) throw MissingDocumentException()
+    }
+
+    override suspend fun createPage(
+        documentId: DocumentId,
+        size: LogicalSize,
+        background: PageBackground,
+    ): DomainResult<PageId> = guardedWrite {
+        database.withTransaction {
+            if (dao.hasDocument(documentId.value) == 0) throw MissingDocumentException()
+            val pageId = dao.insertPage(
+                PageEntity(
+                    documentId = documentId.value,
+                    orderKey = dao.maxPageOrderKey(documentId.value) + ORDER_STEP,
+                    logicalWidth = size.width,
+                    logicalHeight = size.height,
+                    backgroundPayload = PayloadCodec.encodeBackground(background),
+                ),
+            )
+            dao.updateLastActivePage(documentId.value, pageId)
+            dao.touchDocumentForPage(pageId, clock.nowMillis())
+            PageId(pageId)
+        }
+    }
+
+    override suspend fun deletePage(pageId: PageId): DomainResult<Unit> = guardedWrite {
+        database.withTransaction {
+            val documentId = dao.findDocumentIdForPage(pageId.value) ?: throw MissingPageException()
+            if (dao.countPages(documentId) <= 1) throw LastPageException()
+            val wasActivePage = dao.findLastActivePageId(documentId) == pageId.value
+            if (dao.deletePage(pageId.value) == 0) throw MissingPageException()
+            val firstPageId = dao.findFirstPageId(documentId) ?: throw MissingPageException()
+            if (wasActivePage) dao.updateLastActivePage(documentId, firstPageId)
+            dao.touchDocumentForPage(firstPageId, clock.nowMillis())
+        }
+    }
+
+    override suspend fun setLastActivePage(
+        documentId: DocumentId,
+        pageId: PageId,
+    ): DomainResult<Unit> = guardedWrite {
+        if (dao.findDocumentIdForPage(pageId.value) != documentId.value) throw MissingPageException()
+        if (dao.updateLastActivePage(documentId.value, pageId.value) == 0) throw MissingDocumentException()
     }
 
     override suspend fun apply(
@@ -124,12 +177,15 @@ class RoomDocumentRepository(
         DomainResult.Failure(DomainFailure.DocumentNotFound)
     } catch (exception: MissingPageException) {
         DomainResult.Failure(DomainFailure.PageNotFound)
+    } catch (exception: LastPageException) {
+        DomainResult.Failure(DomainFailure.LastPageCannotBeDeleted)
     } catch (exception: IOException) {
         DomainResult.Failure(DomainFailure.DatabaseUnavailable)
     }
 
     private class MissingDocumentException : Exception()
     private class MissingPageException : Exception()
+    private class LastPageException : Exception()
 
     private companion object {
         const val ORDER_STEP = 1_024L
