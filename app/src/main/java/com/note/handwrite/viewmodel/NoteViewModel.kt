@@ -5,13 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.note.handwrite.data.InputSettingsRepository
 import com.note.handwrite.model.BackgroundType
+import com.note.handwrite.model.DefaultColorSlots
 import com.note.handwrite.model.NoteOperation
 import com.note.handwrite.model.InputMode
 import com.note.handwrite.model.RemovedStroke
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.model.Tool
 import com.note.handwrite.model.NotePage
-import com.note.handwrite.ui.theme.PenBlack
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +28,13 @@ class NoteViewModel(
     private val _currentTool = MutableStateFlow(Tool.PEN)
     val currentTool: StateFlow<Tool> = _currentTool.asStateFlow()
 
-    private val _currentColor = MutableStateFlow(PenBlack)
+    private val _colorSlots = MutableStateFlow(DefaultColorSlots)
+    val colorSlots: StateFlow<List<Color>> = _colorSlots.asStateFlow()
+
+    private val _activeColorSlot = MutableStateFlow(0)
+    val activeColorSlot: StateFlow<Int> = _activeColorSlot.asStateFlow()
+
+    private val _currentColor = MutableStateFlow(DefaultColorSlots.first())
     val currentColor: StateFlow<Color> = _currentColor.asStateFlow()
 
     private val _currentWidthStep = MutableStateFlow(50)
@@ -58,6 +64,8 @@ class NoteViewModel(
         inputSettingsRepository?.settings?.onEach { settings ->
             _inputMode.value = settings.inputMode
             _currentTool.value = settings.tool
+            _colorSlots.value = settings.colorSlots
+            _activeColorSlot.value = settings.activeColorSlot
             _currentColor.value = settings.color
             _currentWidthStep.value = settings.widthStep
             _currentWidth.value = NotePage.widthForStep(settings.widthStep)
@@ -141,9 +149,36 @@ class NoteViewModel(
         viewModelScope.launch { inputSettingsRepository?.setTool(tool) }
     }
 
-    fun switchColor(color: Color) {
+    fun selectColorSlot(index: Int) {
+        if (index !in _colorSlots.value.indices) return
+        _activeColorSlot.value = index
+        _currentColor.value = _colorSlots.value[index]
+    }
+
+    fun updateActiveColor(color: Color) {
+        val activeSlot = _activeColorSlot.value
+        _colorSlots.value = _colorSlots.value.toMutableList().also { it[activeSlot] = color }
         _currentColor.value = color
-        viewModelScope.launch { inputSettingsRepository?.setColor(color) }
+    }
+
+    fun switchColor(color: Color) {
+        updateActiveColor(color)
+        saveColorSlots()
+    }
+
+    fun restoreColorSlots(colors: List<Color>, activeSlot: Int) {
+        if (colors.size != DefaultColorSlots.size || activeSlot !in colors.indices) return
+        _colorSlots.value = colors
+        _activeColorSlot.value = activeSlot
+        _currentColor.value = colors[activeSlot]
+    }
+
+    fun saveColorSlots() {
+        val colors = _colorSlots.value
+        val activeSlot = _activeColorSlot.value
+        viewModelScope.launch {
+            inputSettingsRepository?.setColorSlots(colors, activeSlot)
+        }
     }
 
     fun switchWidthStep(step: Int) {

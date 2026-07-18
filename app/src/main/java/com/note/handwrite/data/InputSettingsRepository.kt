@@ -3,15 +3,15 @@ package com.note.handwrite.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.compose.ui.graphics.toArgb
 import com.note.handwrite.model.BackgroundType
+import com.note.handwrite.model.DefaultColorSlots
 import com.note.handwrite.model.InputMode
 import com.note.handwrite.model.NoteSettings
 import com.note.handwrite.model.Tool
-import com.note.handwrite.ui.theme.PenBlack
-import com.note.handwrite.ui.theme.PenGreen
-import com.note.handwrite.ui.theme.PenRed
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -20,7 +20,10 @@ private val Context.inputSettingsDataStore by preferencesDataStore(name = "input
 class InputSettingsRepository(private val context: Context) {
     private val useSpenModeKey = booleanPreferencesKey("useSpenMode")
     private val toolKey = stringPreferencesKey("tool")
-    private val colorKey = stringPreferencesKey("color")
+    private val colorSlotKeys = List(DefaultColorSlots.size) { index ->
+        stringPreferencesKey("color_slot_$index")
+    }
+    private val activeColorSlotKey = intPreferencesKey("active_color_slot")
     private val widthStepKey = stringPreferencesKey("width_step")
     private val backgroundKey = stringPreferencesKey("background")
 
@@ -28,7 +31,12 @@ class InputSettingsRepository(private val context: Context) {
         NoteSettings(
             inputMode = if (preferences[useSpenModeKey] ?: true) InputMode.SPEN else InputMode.FINGER,
             tool = preferences[toolKey].toToolOrDefault(),
-            color = preferences[colorKey].toColorOrDefault(),
+            colorSlots = colorSlotKeys.mapIndexed { index, key ->
+                preferences[key].toColorOrDefault(DefaultColorSlots[index])
+            },
+            activeColorSlot = preferences[activeColorSlotKey]
+                ?.takeIf { it in DefaultColorSlots.indices }
+                ?: 0,
             widthStep = preferences[widthStepKey]?.toIntOrNull()?.coerceIn(1, 100) ?: 50,
             background = preferences[backgroundKey].toBackgroundOrDefault()
         )
@@ -44,8 +52,13 @@ class InputSettingsRepository(private val context: Context) {
         context.inputSettingsDataStore.edit { it[toolKey] = tool.name }
     }
 
-    suspend fun setColor(color: androidx.compose.ui.graphics.Color) {
-        context.inputSettingsDataStore.edit { it[colorKey] = color.toColorKey() }
+    suspend fun setColorSlots(colors: List<androidx.compose.ui.graphics.Color>, activeSlot: Int) {
+        context.inputSettingsDataStore.edit { preferences ->
+            colorSlotKeys.forEachIndexed { index, key ->
+                preferences[key] = colors.getOrElse(index) { DefaultColorSlots[index] }.toColorKey()
+            }
+            preferences[activeColorSlotKey] = activeSlot.coerceIn(DefaultColorSlots.indices)
+        }
     }
 
     suspend fun setWidthStep(step: Int) {
@@ -63,14 +76,13 @@ private fun String?.toToolOrDefault(): Tool =
 private fun String?.toBackgroundOrDefault(): BackgroundType =
     runCatching { BackgroundType.valueOf(this ?: "") }.getOrDefault(BackgroundType.PLAIN)
 
-private fun String?.toColorOrDefault(): androidx.compose.ui.graphics.Color = when (this) {
-    "red" -> PenRed
-    "green" -> PenGreen
-    else -> PenBlack
+private fun String?.toColorOrDefault(default: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
+    val value = this ?: return default
+    if (!COLOR_PATTERN.matches(value)) return default
+    return androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(value))
 }
 
-private fun androidx.compose.ui.graphics.Color.toColorKey(): String = when (this) {
-    PenRed -> "red"
-    PenGreen -> "green"
-    else -> "black"
-}
+private fun androidx.compose.ui.graphics.Color.toColorKey(): String =
+    "#%06X".format(toArgb() and 0xFFFFFF)
+
+private val COLOR_PATTERN = Regex("#[0-9A-Fa-f]{6}")

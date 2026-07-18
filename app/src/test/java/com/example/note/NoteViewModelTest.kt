@@ -1,6 +1,7 @@
 package com.example.note
 
 import androidx.compose.ui.graphics.Color
+import com.note.handwrite.model.DefaultColorSlots
 import com.note.handwrite.model.CanvasPoint
 import com.note.handwrite.model.Stroke
 import com.note.handwrite.viewmodel.NoteViewModel
@@ -57,5 +58,40 @@ class NoteViewModelTest {
 
         assertTrue(viewModel.strokes.value.isEmpty())
         assertEquals(false, viewModel.canUndo.value)
+    }
+
+    @Test
+    fun selectingColorSlotUpdatesTheCurrentPenColor() {
+        val viewModel = NoteViewModel()
+
+        viewModel.selectColorSlot(1)
+
+        assertEquals(1, viewModel.activeColorSlot.value)
+        assertEquals(DefaultColorSlots[1], viewModel.currentColor.value)
+    }
+
+    @Test
+    fun updatingActiveColorOnlyChangesTheActiveSlot() {
+        val viewModel = NoteViewModel()
+        val customColor = Color(0xFF123456)
+
+        viewModel.selectColorSlot(2)
+        viewModel.updateActiveColor(customColor)
+
+        assertEquals(customColor, viewModel.currentColor.value)
+        assertEquals(customColor, viewModel.colorSlots.value[2])
+        assertEquals(DefaultColorSlots[0], viewModel.colorSlots.value[0])
+    }
+
+    @Test
+    fun restoringColorSlotsRestoresActiveColor() {
+        val viewModel = NoteViewModel()
+        val colors = listOf(Color(0xFF111111), Color(0xFF222222), Color(0xFF333333))
+
+        viewModel.restoreColorSlots(colors, 1)
+
+        assertEquals(colors, viewModel.colorSlots.value)
+        assertEquals(1, viewModel.activeColorSlot.value)
+        assertEquals(colors[1], viewModel.currentColor.value)
     }
 }
