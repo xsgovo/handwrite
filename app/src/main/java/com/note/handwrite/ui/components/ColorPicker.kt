@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -196,23 +197,29 @@ fun ColorPicker(
                 } else {
                     PaletteGrid(currentColor, ::applyColor)
                 }
-                ColorPreview(currentColor)
-                OutlinedTextField(
-                    value = hexValue,
-                    onValueChange = { candidate ->
-                        val normalized = candidate.uppercase()
-                        if (normalized.isValidHexInput()) {
-                            hexValue = normalized
-                            if (hexColorPattern.matches(normalized)) {
-                                applyColor(Color(android.graphics.Color.parseColor(normalized)))
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    label = { Text("HEX") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
-                )
+                ) {
+                    ColorPreview(currentColor, Modifier.weight(1f))
+                    OutlinedTextField(
+                        value = hexValue,
+                        onValueChange = { candidate ->
+                            val normalized = candidate.uppercase()
+                            if (normalized.isValidHexInput()) {
+                                hexValue = normalized
+                                if (hexColorPattern.matches(normalized)) {
+                                    applyColor(Color(android.graphics.Color.parseColor(normalized)))
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        label = { Text("HEX") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                        modifier = Modifier.weight(2f)
+                    )
+                }
             }
         }
     }
@@ -250,21 +257,20 @@ private fun QuickColorRow(onColorSelected: (Color) -> Unit) {
 
 @Composable
 private fun PaletteGrid(selectedColor: Color, onColorChange: (Color) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         for (row in 0 until 10) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxWidth()) {
                 for (column in 0 until 11) {
                     val color = gridColor(column, row)
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .aspectRatio(1f)
-                            .clip(RoundedCornerShape(3.dp))
                             .background(color)
                             .border(
-                                if (color == selectedColor) 2.dp else 0.5.dp,
-                                if (color == selectedColor) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.1f),
-                                RoundedCornerShape(3.dp)
+                                if (color == selectedColor) 2.dp else 0.dp,
+                                if (color == selectedColor) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                RectangleShape
                             )
                             .clickable { onColorChange(color) }
                     )
@@ -325,11 +331,10 @@ private fun SpectrumPicker(selectedColor: Color, onColorChange: (Color) -> Unit)
 }
 
 @Composable
-private fun ColorPreview(color: Color) {
+private fun ColorPreview(color: Color, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(36.dp)
+        modifier = modifier
+            .height(56.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(color)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
