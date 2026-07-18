@@ -1,6 +1,9 @@
 plugins {
     id("handwrite.android.application")
     id("handwrite.android.compose")
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -14,6 +17,13 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:data"))
+    implementation(project(":core:document"))
+    implementation(project(":core:model"))
+    implementation(project(":core:designsystem"))
+    implementation(project(":feature:editor"))
+    implementation(project(":feature:library"))
+    implementation(project(":feature:settings"))
     implementation(platform(libs.androidx.compose.bom))
 
     implementation(libs.androidx.core.ktx)
@@ -21,7 +31,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
 
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

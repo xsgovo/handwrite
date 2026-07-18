@@ -1,0 +1,175 @@
+package com.xsgovo.handwrite.feature.editor
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.AutoFixNormal
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.xsgovo.handwrite.core.model.PageBackground
+import com.xsgovo.handwrite.core.model.PatternType
+
+@Composable
+fun EditorToolbar(
+    state: EditorUiState,
+    onLibrary: () -> Unit,
+    onSettings: () -> Unit,
+    onTool: (EditorTool) -> Unit,
+    onColorSlot: (Int) -> Unit,
+    onWidth: (Int) -> Unit,
+    onZoom: (Int) -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onClear: () -> Unit,
+    onBackground: (PageBackground) -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    var menuExpanded by remember { mutableStateOf(false) }
+    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .horizontalScroll(scrollState)
+                .padding(horizontal = 6.dp),
+        ) {
+            IconButton(onClick = onLibrary) {
+                Icon(Icons.Default.FolderOpen, contentDescription = "文档库")
+            }
+            ToolButton(EditorTool.PEN, state.tool, onTool, Icons.Default.Edit, "画笔")
+            ToolButton(EditorTool.ERASER, state.tool, onTool, Icons.Default.AutoFixNormal, "橡皮擦")
+            state.colorSlots.forEachIndexed { index, argb ->
+                ColorSwatch(Color(argb), selected = index == state.activeColorSlot) { onColorSlot(index) }
+            }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "画布选项")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    Text("笔宽 ${state.widthStep}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(12.dp, 6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+                        IconButton(onClick = { onWidth(state.widthStep - 5) }, enabled = state.widthStep > 1) {
+                            Icon(Icons.Default.Remove, contentDescription = "减小笔宽")
+                        }
+                        IconButton(onClick = { onWidth(state.widthStep + 5) }, enabled = state.widthStep < 100) {
+                            Icon(Icons.Default.Add, contentDescription = "增大笔宽")
+                        }
+                    }
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("白色背景") },
+                        leadingIcon = { Icon(Icons.Default.GridOn, contentDescription = null) },
+                        onClick = { menuExpanded = false; onBackground(PageBackground.Solid()) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("横线背景") },
+                        onClick = { menuExpanded = false; onBackground(PageBackground.Pattern(PatternType.LINED)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("方格背景") },
+                        onClick = { menuExpanded = false; onBackground(PageBackground.Pattern(PatternType.GRID)) },
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("设置") },
+                        leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                        onClick = { menuExpanded = false; onSettings() },
+                    )
+                }
+            }
+            IconButton(onClick = { onZoom(state.zoomPercent - 25) }, enabled = state.zoomPercent > 100) {
+                Icon(Icons.Default.Remove, contentDescription = "缩小")
+            }
+            Text("${state.zoomPercent}%", style = MaterialTheme.typography.labelMedium)
+            IconButton(onClick = { onZoom(state.zoomPercent + 25) }, enabled = state.zoomPercent < 400) {
+                Icon(Icons.Default.Add, contentDescription = "放大")
+            }
+            IconButton(onClick = onUndo, enabled = state.canUndo) {
+                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "撤销")
+            }
+            IconButton(onClick = onRedo, enabled = state.canRedo) {
+                Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "重做")
+            }
+            IconButton(onClick = onClear, enabled = state.elements.isNotEmpty()) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = "清空页面")
+            }
+            if (state.isSaving) {
+                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolButton(
+    tool: EditorTool,
+    selectedTool: EditorTool,
+    onTool: (EditorTool) -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+) {
+    IconButton(onClick = { onTool(tool) }) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = if (tool == selectedTool) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ColorSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .padding(4.dp)
+            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)
+            .padding(3.dp)
+            .background(color, CircleShape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), CircleShape)
+            .clickable(onClick = onClick),
+    )
+}
