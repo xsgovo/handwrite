@@ -12,6 +12,6 @@ class ExampleInstrumentedTest {
     fun applicationContextUsesCurrentApplicationId() {
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
 
-        assertEquals("com.note.handwrite", appContext.packageName)
+        assertEquals("com.xsgovo.handwrite", appContext.packageName)
     }
 }
