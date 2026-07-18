@@ -16,8 +16,11 @@ val Error = Color(0xFFE53935)
 val OnError = Color(0xFFFFFFFF)
 
 val PenBlack = Color(0xFF1A1A1A)
-val PenRed = Color(0xFFE53935)
-val PenGreen = Color(0xFF43A047)
+val PenRed = Color(0xFFD32F2F)
+val PenGreen = Color(0xFF2E7D32)
+val PenBlue = Color(0xFF1976D2)
+val PenOrange = Color(0xFFE65100)
+val PenPurple = Color(0xFF7B1FA2)
 
 val CanvasWhite = Color(0xFFFFFFFF)
 val GridLine = Color(0xFFE0E0E0)
