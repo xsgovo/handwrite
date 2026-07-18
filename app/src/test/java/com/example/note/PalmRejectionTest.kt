@@ -10,17 +10,22 @@ import kotlin.math.hypot
 class PalmRejectionTest {
     @Test
     fun largeContactIsClassifiedAsPalm() {
-        assertTrue(isPalmContact(25f, 18f, 8f))
+        assertTrue(isPalmContact(29f, 18f))
     }
 
     @Test
     fun elongatedLargeContactIsClassifiedAsPalm() {
-        assertTrue(isPalmContact(18f, 7f, 8f))
+        assertTrue(isPalmContact(21f, 7f))
     }
 
     @Test
     fun normalFingerIsNotClassifiedAsPalm() {
-        assertFalse(isPalmContact(9f, 7f, 8f))
+        assertFalse(isPalmContact(9f, 7f))
+    }
+
+    @Test
+    fun largerThumbIsNotClassifiedAsPalm() {
+        assertFalse(isPalmContact(18f, 11f))
     }
 
     @Test

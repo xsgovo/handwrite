@@ -147,6 +147,7 @@ private class DrawingInputState {
     val pointerTools = linkedMapOf<Int, Int>()
     val palmFrames = linkedMapOf<Int, Int>()
     val palmPointerIds = mutableSetOf<Int>()
+    var transformPointerIds: Set<Int> = emptySet()
     // Compose must observe this so an in-progress first stroke is rendered immediately.
     var gesture by mutableStateOf(Gesture.NONE)
     var drawPointerId = MotionEvent.INVALID_POINTER_ID
@@ -250,8 +251,9 @@ private fun handleMotionEvent(
                 state.gesture = Gesture.TRANSFORM
                 state.initialZoom = transform.zoomPercent
                 state.initialPan = Offset(transform.panX, transform.panY)
-                state.initialMidpoint = midpoint(state.nonPalmPointers().values.toList())
-                state.initialDistance = distance(state.nonPalmPointers().values.toList())
+                state.transformPointerIds = state.nonPalmPointers().keys.take(2).toSet()
+                state.initialMidpoint = midpoint(state.transformPointers().values.toList())
+                state.initialDistance = distance(state.transformPointers().values.toList())
                 state.focalPoint = transform.inverse(state.initialMidpoint.toCanvasPoint())
             }
         }
@@ -262,8 +264,9 @@ private fun handleMotionEvent(
                 cancelGesture(state, currentPoints, erasedDuringGesture, currentTool, onEraseEnd)
                 startTransform(state, transform)
                 state.gesture = Gesture.TRANSFORM
-                state.initialMidpoint = midpoint(state.nonPalmPointers().values.toList())
-                state.initialDistance = distance(state.nonPalmPointers().values.toList())
+                state.transformPointerIds = state.nonPalmPointers().keys.take(2).toSet()
+                state.initialMidpoint = midpoint(state.transformPointers().values.toList())
+                state.initialDistance = distance(state.transformPointers().values.toList())
                 state.focalPoint = transform.inverse(state.initialMidpoint.toCanvasPoint())
             }
             when (state.gesture) {
@@ -298,8 +301,9 @@ private fun handleMotionEvent(
             if (leavingWasDraw) {
                 finishDrawing(state, currentTool, currentColor, currentWidth, currentPoints,
                     erasedDuringGesture, onStrokeComplete, onEraseEnd, onTemporaryEraserChanged)
-            } else if (state.nonPalmPointerCount() < 2 && state.gesture == Gesture.TRANSFORM) {
+            } else if (!state.hasTransformPair() && state.gesture == Gesture.TRANSFORM) {
                 state.gesture = Gesture.NONE
+                state.transformPointerIds = emptySet()
             }
         }
 
@@ -313,6 +317,7 @@ private fun handleMotionEvent(
                 state.pointerTools.clear()
                 state.palmFrames.clear()
                 state.palmPointerIds.clear()
+                state.transformPointerIds = emptySet()
                 currentPoints.clear()
                 erasedDuringGesture.clear()
                 state.stylusButtonDown = false
@@ -359,7 +364,7 @@ private fun updateTransform(
     useSpenMode: Boolean,
     onViewportChanged: (Float, Offset) -> Unit
 ) {
-    val points = state.nonPalmPointers().values.toList()
+    val points = state.transformPointers().values.toList()
     if (points.size < 2) return
     val midpoint = midpoint(points)
     val distance = distance(points)
@@ -485,6 +490,7 @@ private fun finishDrawing(
     state.pointerTools.clear()
     state.palmFrames.clear()
     state.palmPointerIds.clear()
+    state.transformPointerIds = emptySet()
     state.stylusButtonDown = false
     if (state.temporaryEraser) {
         state.temporaryEraser = false
@@ -504,6 +510,7 @@ private fun cancelGesture(
     state.drawPointerId = MotionEvent.INVALID_POINTER_ID
     state.lastDrawPoint = null
     state.segmentBreaks.clear()
+    state.transformPointerIds = emptySet()
     currentPoints.clear()
     erasedDuringGesture.clear()
 }
@@ -521,11 +528,7 @@ private fun rememberPointer(
 
     val majorMm = event.getTouchMajor(index) / pixelsPerMillimeter
     val minorMm = event.getTouchMinor(index) / pixelsPerMillimeter
-    val otherMajorMm = (0 until event.pointerCount)
-        .filter { it != index }
-        .map { event.getTouchMajor(it) / pixelsPerMillimeter }
-        .maxOrNull()
-    if (isPalmContact(majorMm, minorMm, otherMajorMm)) {
+    if (isPalmContact(majorMm, minorMm)) {
         state.palmFrames[id] = (state.palmFrames[id] ?: 0) + 1
         if ((state.palmFrames[id] ?: 0) >= 2) state.palmPointerIds += id
     } else {
@@ -541,6 +544,11 @@ private fun DrawingInputState.nonPalmPointers(): Map<Int, Offset> =
     pointers.filterKeys { it !in palmPointerIds }
 
 private fun DrawingInputState.nonPalmPointerCount(): Int = nonPalmPointers().size
+
+private fun DrawingInputState.transformPointers(): Map<Int, Offset> =
+    pointers.filterKeys { it in transformPointerIds }
+
+private fun DrawingInputState.hasTransformPair(): Boolean = transformPointers().size == 2
 
 private fun midpoint(points: List<Offset>): Offset = Offset(
     points.map { it.x }.average().toFloat(),
