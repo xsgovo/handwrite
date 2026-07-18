@@ -12,4 +12,7 @@ dependencies {
     implementation(project(":core:document"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.ink.rendering)
+    implementation(libs.androidx.ink.brush)
+    implementation(libs.androidx.ink.strokes)
 }

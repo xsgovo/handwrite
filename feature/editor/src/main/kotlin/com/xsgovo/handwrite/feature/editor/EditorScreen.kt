@@ -100,9 +100,14 @@ fun EditorRoute(
             zoomPercent = state.zoomPercent,
             activeColor = state.activeColor,
             activeWidth = state.activeWidth,
+            activeBrushId = state.activeBrushId,
+            pressureSensitivity = state.pressureSensitivity,
+            sideButtonAction = state.sideButtonAction,
             onZoomChanged = viewModel::setZoom,
             onStrokeFinished = viewModel::commitStroke,
             onEraseFinished = viewModel::eraseElements,
+            onToggleEraser = viewModel::toggleEraser,
+            onUndo = viewModel::undo,
             modifier = Modifier.fillMaxSize().padding(paddingValues),
         )
     }

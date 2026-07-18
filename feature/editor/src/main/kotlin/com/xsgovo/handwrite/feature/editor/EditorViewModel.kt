@@ -17,6 +17,7 @@ import com.xsgovo.handwrite.core.model.AppSettings
 import com.xsgovo.handwrite.core.model.BackBehavior
 import com.xsgovo.handwrite.core.model.BackgroundAssetKind
 import com.xsgovo.handwrite.core.model.BrushStyle
+import com.xsgovo.handwrite.core.model.BrushId
 import com.xsgovo.handwrite.core.model.DisplayName
 import com.xsgovo.handwrite.core.model.Document
 import com.xsgovo.handwrite.core.model.DocumentId
@@ -31,6 +32,8 @@ import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageElement
 import com.xsgovo.handwrite.core.model.PageId
 import com.xsgovo.handwrite.core.model.PageTemplate
+import com.xsgovo.handwrite.core.model.PressureSensitivity
+import com.xsgovo.handwrite.core.model.SideButtonAction
 import com.xsgovo.handwrite.core.model.StrokeElement
 import com.xsgovo.handwrite.core.model.StrokeSample
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -70,6 +73,9 @@ data class EditorUiState(
     val colorSlots: List<Int> = AppSettings.DEFAULT_COLOR_SLOTS,
     val activeColorSlot: Int = 0,
     val widthStep: Int = 50,
+    val activeBrushId: BrushId = BrushId.MONOLINE,
+    val pressureSensitivity: PressureSensitivity = PressureSensitivity.STANDARD,
+    val sideButtonAction: SideButtonAction = SideButtonAction.TEMPORARY_ERASER,
     val zoomPercent: Int = 100,
     val backBehavior: BackBehavior = BackBehavior.EXIT_APP,
     val canUndo: Boolean = false,
@@ -115,6 +121,9 @@ class EditorViewModel @Inject constructor(
                         colorSlots = settings.colorSlots,
                         activeColorSlot = settings.activeColorSlot,
                         widthStep = settings.widthStep,
+                        activeBrushId = settings.activeBrushId,
+                        pressureSensitivity = settings.pressureSensitivity,
+                        sideButtonAction = settings.sideButtonAction,
                         backBehavior = settings.backBehavior,
                         pageSize = if (current.documentId == null) settings.defaultPageTemplate.size else current.pageSize,
                         background = if (current.documentId == null) settings.defaultBackground else current.background,
@@ -164,8 +173,10 @@ class EditorViewModel @Inject constructor(
                     pageId = target.second,
                     orderKey = (current.elements.maxOfOrNull(PageElement::orderKey) ?: 0L) + ORDER_STEP,
                     style = BrushStyle(
+                        id = current.activeBrushId,
                         argb = current.activeColor,
                         width = current.activeWidth,
+                        pressureSensitivity = current.pressureSensitivity,
                     ),
                     samples = samples,
                 )
@@ -261,6 +272,12 @@ class EditorViewModel @Inject constructor(
                 if (commit(command, recordHistory = false)) history.confirmRedo()
                 updateHistoryState()
             }
+        }
+    }
+
+    fun toggleEraser() {
+        mutableState.update { current ->
+            current.copy(tool = if (current.tool == EditorTool.ERASER) EditorTool.PEN else EditorTool.ERASER)
         }
     }
 
