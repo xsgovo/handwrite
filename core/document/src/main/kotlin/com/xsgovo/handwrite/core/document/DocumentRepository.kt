@@ -5,13 +5,22 @@ import com.xsgovo.handwrite.core.model.Document
 import com.xsgovo.handwrite.core.model.DocumentId
 import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.PageContent
+import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageId
+import com.xsgovo.handwrite.core.model.LogicalSize
 import kotlinx.coroutines.flow.Flow
 
 interface DocumentRepository : DocumentCommandStore {
     fun observeDocument(documentId: DocumentId): Flow<Document?>
 
     fun observePage(pageId: PageId): Flow<PageContent?>
+
+    suspend fun createDocument(
+        name: DisplayName,
+        size: LogicalSize,
+        background: PageBackground,
+        nowEpochMillis: Long,
+    ): DomainResult<DocumentId>
 
     suspend fun renameDocument(
         documentId: DocumentId,

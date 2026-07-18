@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package handwrite.settings;
+
+option java_package = "com.xsgovo.handwrite.core.data.settings";
+option java_multiple_files = true;
+option optimize_for = LITE_RUNTIME;
+
+message AppSettingsPayload {
+  InputMode input_mode = 1;
+  ThemeMode theme_mode = 2;
+  ImageFormat image_format = 3;
+  ExportResolution export_resolution = 4;
+  CompressionQuality compression_quality = 5;
+  BackBehavior back_behavior = 6;
+  SideButtonAction side_button_action = 7;
+  PressureSensitivitySetting pressure_sensitivity = 8;
+  string active_brush_id = 9;
+  repeated fixed32 color_slots = 10;
+  uint32 active_color_slot = 11;
+  uint32 width_step = 12;
+  PageTemplateSetting default_page_template = 13;
+  DefaultBackgroundSetting default_background = 14;
+}
+
+enum InputMode { INPUT_MODE_UNSPECIFIED = 0; INPUT_MODE_FINGER = 1; INPUT_MODE_STYLUS = 2; }
+enum ThemeMode { THEME_MODE_UNSPECIFIED = 0; THEME_MODE_SYSTEM = 1; THEME_MODE_LIGHT = 2; THEME_MODE_DARK = 3; }
+enum ImageFormat { IMAGE_FORMAT_UNSPECIFIED = 0; IMAGE_FORMAT_AUTO = 1; IMAGE_FORMAT_PNG = 2; IMAGE_FORMAT_WEBP = 3; IMAGE_FORMAT_JPEG = 4; }
+enum ExportResolution { EXPORT_RESOLUTION_UNSPECIFIED = 0; EXPORT_RESOLUTION_SMALL = 1; EXPORT_RESOLUTION_STANDARD = 2; EXPORT_RESOLUTION_HIGH = 3; }
+enum CompressionQuality { COMPRESSION_QUALITY_UNSPECIFIED = 0; COMPRESSION_QUALITY_LOW = 1; COMPRESSION_QUALITY_BALANCED = 2; COMPRESSION_QUALITY_HIGH = 3; }
+enum BackBehavior { BACK_BEHAVIOR_UNSPECIFIED = 0; BACK_BEHAVIOR_EXIT_APP = 1; BACK_BEHAVIOR_OPEN_LIBRARY = 2; }
+enum SideButtonAction { SIDE_BUTTON_ACTION_UNSPECIFIED = 0; SIDE_BUTTON_ACTION_TEMPORARY_ERASER = 1; SIDE_BUTTON_ACTION_TOGGLE_ERASER = 2; SIDE_BUTTON_ACTION_UNDO = 3; }
+enum PressureSensitivitySetting { PRESSURE_SETTING_UNSPECIFIED = 0; PRESSURE_SETTING_LOW = 1; PRESSURE_SETTING_STANDARD = 2; PRESSURE_SETTING_HIGH = 3; }
+enum PageTemplateSetting { PAGE_TEMPLATE_UNSPECIFIED = 0; PAGE_TEMPLATE_LEGACY_PORTRAIT = 1; PAGE_TEMPLATE_THREE_BY_FOUR = 2; PAGE_TEMPLATE_FOUR_BY_THREE = 3; PAGE_TEMPLATE_SQUARE = 4; PAGE_TEMPLATE_NINE_BY_SIXTEEN = 5; }
+enum DefaultBackgroundSetting { DEFAULT_BACKGROUND_UNSPECIFIED = 0; DEFAULT_BACKGROUND_WHITE = 1; DEFAULT_BACKGROUND_TRANSPARENT = 2; DEFAULT_BACKGROUND_LINED = 3; DEFAULT_BACKGROUND_GRID = 4; }
