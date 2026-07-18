@@ -1,5 +1,8 @@
 package com.xsgovo.handwrite.feature.editor
 
+import android.webkit.MimeTypeMap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -17,8 +20,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.xsgovo.handwrite.core.document.ResourceInput
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
+import com.xsgovo.handwrite.core.rendering.rememberBackgroundAssetImage
+import java.io.FileNotFoundException
 
 @Composable
 fun EditorRoute(
@@ -31,6 +38,22 @@ fun EditorRoute(
     val state by viewModel.state.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var confirmClear by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val backgroundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val resolver = context.contentResolver
+        val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
+        val mimeType = resolver.getType(uri)
+            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.lowercase())
+            ?: "image/*"
+        viewModel.importBackground(
+            mimeType = mimeType,
+            input = ResourceInput {
+                resolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())
+            },
+        )
+    }
+    val backgroundImage by rememberBackgroundAssetImage(state.background, state.backgroundResource)
 
     LaunchedEffect(documentId) { viewModel.openDocument(documentId) }
     LaunchedEffect(viewModel) {
@@ -58,6 +81,9 @@ fun EditorRoute(
                 onRedo = viewModel::redo,
                 onClear = { confirmClear = true },
                 onBackground = viewModel::setBackground,
+                onImportBackground = {
+                    backgroundPicker.launch(arrayOf("image/*", "application/pdf"))
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -65,6 +91,7 @@ fun EditorRoute(
         HandwriteCanvas(
             pageSize = state.pageSize,
             background = state.background,
+            backgroundImage = backgroundImage,
             strokes = state.strokes,
             tool = state.tool,
             inputMode = state.inputMode,

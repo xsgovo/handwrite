@@ -3,6 +3,7 @@ package com.xsgovo.handwrite.feature.editor
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xsgovo.handwrite.core.document.CommandHistory
+import com.xsgovo.handwrite.core.document.BackgroundResourceRepository
 import com.xsgovo.handwrite.core.document.DocumentCommand
 import com.xsgovo.handwrite.core.document.DocumentRepository
 import com.xsgovo.handwrite.core.document.DurableCommandExecutor
@@ -10,8 +11,11 @@ import com.xsgovo.handwrite.core.document.EpochClock
 import com.xsgovo.handwrite.core.document.HistoryLimits
 import com.xsgovo.handwrite.core.document.PendingCommand
 import com.xsgovo.handwrite.core.document.SettingsRepository
+import com.xsgovo.handwrite.core.document.ResourceInput
+import com.xsgovo.handwrite.core.document.StoredResource
 import com.xsgovo.handwrite.core.model.AppSettings
 import com.xsgovo.handwrite.core.model.BackBehavior
+import com.xsgovo.handwrite.core.model.BackgroundAssetKind
 import com.xsgovo.handwrite.core.model.BrushStyle
 import com.xsgovo.handwrite.core.model.DisplayName
 import com.xsgovo.handwrite.core.model.Document
@@ -59,6 +63,7 @@ data class EditorUiState(
     val documentName: String = "新文档",
     val pageSize: LogicalSize = PageTemplate.LEGACY_PORTRAIT.size,
     val background: PageBackground = PageBackground.Solid(),
+    val backgroundResource: StoredResource? = null,
     val elements: List<PageElement> = emptyList(),
     val tool: EditorTool = EditorTool.PEN,
     val inputMode: InputMode = InputMode.FINGER,
@@ -85,6 +90,7 @@ class EditorViewModel @Inject constructor(
     private val documents: DocumentRepository,
     private val commands: DurableCommandExecutor,
     private val settingsRepository: SettingsRepository,
+    private val backgroundResources: BackgroundResourceRepository,
     private val clock: EpochClock,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(EditorUiState())
@@ -97,6 +103,7 @@ class EditorViewModel @Inject constructor(
     private val writeMutex = Mutex()
     private val nextElementId = AtomicLong(clock.nowMillis() shl 16)
     private var observationJob: Job? = null
+    private var resourceJob: Job? = null
     private var openedDocumentId: DocumentId? = null
 
     init {
@@ -207,6 +214,36 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    fun importBackground(mimeType: String, input: ResourceInput) {
+        viewModelScope.launch {
+            writeMutex.withLock {
+                mutableState.update { it.copy(isSaving = true) }
+                when (val imported = backgroundResources.import(mimeType, input)) {
+                    is DomainResult.Success -> {
+                        val target = ensureDocument() ?: return@withLock
+                        val before = mutableState.value.background
+                        val after = PageBackground.Asset(
+                            resourceId = imported.value.id,
+                            kind = if (imported.value.mimeType == PDF_MIME_TYPE) {
+                                BackgroundAssetKind.PDF
+                            } else {
+                                BackgroundAssetKind.IMAGE
+                            },
+                            pdfPageIndex = if (imported.value.mimeType == PDF_MIME_TYPE) 0 else null,
+                        )
+                        if (commit(DocumentCommand.UpdateBackground(target.first, target.second, before, after), true)) {
+                            mutableState.update { it.copy(backgroundResource = imported.value) }
+                        }
+                    }
+                    is DomainResult.Failure -> {
+                        mutableState.update { it.copy(isSaving = false) }
+                        effectsChannel.send(EditorUiEffect.ShowMessage("无法导入背景文件"))
+                    }
+                }
+            }
+        }
+    }
+
     fun undo() {
         val command = history.commandToUndo() ?: return
         viewModelScope.launch {
@@ -303,6 +340,28 @@ class EditorViewModel @Inject constructor(
                         isSaving = false,
                     )
                 }
+                resolveBackgroundResource(content.page.background)
+            }
+        }
+    }
+
+    private fun resolveBackgroundResource(background: PageBackground) {
+        val asset = background as? PageBackground.Asset
+        if (asset == null) {
+            resourceJob?.cancel()
+            mutableState.update { it.copy(backgroundResource = null) }
+            return
+        }
+        if (mutableState.value.backgroundResource?.id == asset.resourceId) return
+        resourceJob?.cancel()
+        resourceJob = viewModelScope.launch {
+            when (val resource = backgroundResources.find(asset.resourceId)) {
+                is DomainResult.Success -> {
+                    if ((mutableState.value.background as? PageBackground.Asset)?.resourceId == asset.resourceId) {
+                        mutableState.update { it.copy(backgroundResource = resource.value) }
+                    }
+                }
+                is DomainResult.Failure -> effectsChannel.send(EditorUiEffect.ShowMessage("背景文件已丢失"))
             }
         }
     }
@@ -357,6 +416,7 @@ class EditorViewModel @Inject constructor(
 
     private companion object {
         const val ORDER_STEP = 1_024L
+        const val PDF_MIME_TYPE = "application/pdf"
         val NAME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm.ss.SSS")
             .withZone(ZoneId.systemDefault())
 

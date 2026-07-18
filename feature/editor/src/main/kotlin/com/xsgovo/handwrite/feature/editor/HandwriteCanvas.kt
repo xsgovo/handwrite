@@ -14,11 +14,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
@@ -37,6 +40,7 @@ import kotlin.math.roundToInt
 fun HandwriteCanvas(
     pageSize: LogicalSize,
     background: PageBackground,
+    backgroundImage: ImageBitmap?,
     strokes: List<StrokeElement>,
     tool: EditorTool,
     inputMode: InputMode,
@@ -209,6 +213,24 @@ fun HandwriteCanvas(
         clipRect(page.left, page.top, page.right, page.bottom) {
             when (background) {
                 is PageBackground.Pattern -> drawPattern(background, page)
+                is PageBackground.Asset -> backgroundImage?.let { image ->
+                    val scale = background.transform.scalePermille / 1_000f
+                    val translation = Offset(
+                        background.transform.translation.x * transform.scale,
+                        background.transform.translation.y * transform.scale,
+                    )
+                    withTransform({
+                        translate(translation.x, translation.y)
+                        rotate(background.transform.rotationMilliDegrees / 1_000f, page.center)
+                        scale(scale, scale, page.center)
+                    }) {
+                        drawImage(
+                            image = image,
+                            dstOffset = IntOffset(page.left.roundToInt(), page.top.roundToInt()),
+                            dstSize = IntSize(page.width.roundToInt(), page.height.roundToInt()),
+                        )
+                    }
+                }
                 else -> Unit
             }
             strokes.filterNot { it.id in erasedIds }.forEach { stroke ->

@@ -1,17 +1,22 @@
 package com.xsgovo.handwrite.feature.editor
 
 import com.xsgovo.handwrite.core.document.DocumentCommand
+import com.xsgovo.handwrite.core.document.BackgroundResourceRepository
 import com.xsgovo.handwrite.core.document.DocumentRepository
 import com.xsgovo.handwrite.core.document.DurableCommandExecutor
 import com.xsgovo.handwrite.core.document.EpochClock
 import com.xsgovo.handwrite.core.document.PendingCommand
 import com.xsgovo.handwrite.core.document.PendingCommandJournal
 import com.xsgovo.handwrite.core.document.SettingsRepository
+import com.xsgovo.handwrite.core.document.ResourceInput
+import com.xsgovo.handwrite.core.document.StoredResource
 import com.xsgovo.handwrite.core.model.AppSettings
 import com.xsgovo.handwrite.core.model.DisplayName
 import com.xsgovo.handwrite.core.model.Document
 import com.xsgovo.handwrite.core.model.DocumentId
 import com.xsgovo.handwrite.core.model.DomainResult
+import com.xsgovo.handwrite.core.model.DomainFailure
+import com.xsgovo.handwrite.core.model.ResourceId
 import com.xsgovo.handwrite.core.model.LogicalPoint
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.OperationId
@@ -91,8 +96,19 @@ class EditorViewModelTest {
         documents = repository,
         commands = DurableCommandExecutor(repository, InMemoryJournal()),
         settingsRepository = FakeSettingsRepository(),
+        backgroundResources = FakeBackgroundResources(),
         clock = EpochClock { 1_700_000_000_000 },
     )
+
+    private class FakeBackgroundResources : BackgroundResourceRepository {
+        override suspend fun import(mimeType: String, input: ResourceInput): DomainResult<StoredResource> =
+            DomainResult.Failure(DomainFailure.InvalidResource)
+
+        override suspend fun find(resourceId: ResourceId): DomainResult<StoredResource> =
+            DomainResult.Failure(DomainFailure.ResourceNotFound)
+
+        override suspend fun pruneUnreferenced(): DomainResult<Unit> = DomainResult.Success(Unit)
+    }
 
     private class FakeSettingsRepository : SettingsRepository {
         private val mutableSettings = MutableStateFlow(AppSettings())

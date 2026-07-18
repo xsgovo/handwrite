@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
@@ -61,6 +62,7 @@ fun EditorToolbar(
     onRedo: () -> Unit,
     onClear: () -> Unit,
     onBackground: (PageBackground) -> Unit,
+    onImportBackground: () -> Unit,
 ) {
     val scrollState = rememberScrollState()
     var menuExpanded by remember { mutableStateOf(false) }
@@ -109,6 +111,11 @@ fun EditorToolbar(
                     DropdownMenuItem(
                         text = { Text("方格背景") },
                         onClick = { menuExpanded = false; onBackground(PageBackground.Pattern(PatternType.GRID)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("导入图片或 PDF 背景") },
+                        leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, contentDescription = null) },
+                        onClick = { menuExpanded = false; onImportBackground() },
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
