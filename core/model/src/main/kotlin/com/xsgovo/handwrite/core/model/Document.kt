@@ -47,3 +47,14 @@ data class PageContent(
         require(elements.zipWithNext().all { (left, right) -> left.orderKey <= right.orderKey })
     }
 }
+
+data class DocumentSnapshot(
+    val document: Document,
+    val pages: List<PageContent>,
+) {
+    init {
+        require(pages.isNotEmpty())
+        require(pages.all { it.page.documentId == document.id })
+        require(pages.zipWithNext().all { (left, right) -> left.page.orderKey <= right.page.orderKey })
+    }
+}

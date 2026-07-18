@@ -42,6 +42,14 @@ interface HandwriteDao {
     @Query("SELECT * FROM pages WHERE documentId = :documentId ORDER BY orderKey ASC")
     fun observePages(documentId: Long): Flow<List<PageEntity>>
 
+    @Transaction
+    @Query("SELECT * FROM library_items WHERE id = :documentId AND kind = 'DOCUMENT'")
+    suspend fun findDocument(documentId: Long): DocumentBundle?
+
+    @Transaction
+    @Query("SELECT * FROM pages WHERE documentId = :documentId ORDER BY orderKey ASC")
+    suspend fun findPageBundles(documentId: Long): List<PageBundle>
+
     @Query("SELECT COUNT(*) FROM applied_operations WHERE operationId = :operationId")
     suspend fun hasAppliedOperation(operationId: String): Int
 

@@ -3,6 +3,7 @@ package com.xsgovo.handwrite.core.document
 import com.xsgovo.handwrite.core.model.DisplayName
 import com.xsgovo.handwrite.core.model.Document
 import com.xsgovo.handwrite.core.model.DocumentId
+import com.xsgovo.handwrite.core.model.DocumentSnapshot
 import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PageBackground
@@ -19,6 +20,8 @@ interface DocumentRepository : DocumentCommandStore {
     fun observePages(documentId: DocumentId): Flow<List<Page>>
 
     fun observePage(pageId: PageId): Flow<PageContent?>
+
+    suspend fun loadSnapshot(documentId: DocumentId): DomainResult<DocumentSnapshot>
 
     suspend fun createDocument(
         name: DisplayName,

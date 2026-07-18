@@ -14,6 +14,7 @@ import com.xsgovo.handwrite.core.model.AppSettings
 import com.xsgovo.handwrite.core.model.DisplayName
 import com.xsgovo.handwrite.core.model.Document
 import com.xsgovo.handwrite.core.model.DocumentId
+import com.xsgovo.handwrite.core.model.DocumentSnapshot
 import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.DomainFailure
 import com.xsgovo.handwrite.core.model.ResourceId
@@ -146,6 +147,12 @@ class EditorViewModelTest {
         override fun observeDocument(documentId: DocumentId): Flow<Document?> = document
         override fun observePages(documentId: DocumentId): Flow<List<Page>> = MutableStateFlow(listOfNotNull(page.value?.page))
         override fun observePage(pageId: PageId): Flow<PageContent?> = page
+
+        override suspend fun loadSnapshot(documentId: DocumentId): DomainResult<DocumentSnapshot> {
+            val currentDocument = document.value ?: return DomainResult.Failure(DomainFailure.DocumentNotFound)
+            val currentPage = page.value ?: return DomainResult.Failure(DomainFailure.PageNotFound)
+            return DomainResult.Success(DocumentSnapshot(currentDocument, listOf(currentPage)))
+        }
 
         override suspend fun createDocument(
             name: DisplayName,
