@@ -12,12 +12,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.AutoFixNormal
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -103,13 +103,13 @@ fun TopToolbar(
             ToolButton(
                 tool = Tool.ERASER,
                 currentTool = currentTool,
-                icon = Icons.AutoMirrored.Filled.Backspace,
+                icon = Icons.Default.AutoFixNormal,
                 description = "橡皮擦",
                 temporary = temporaryEraser,
                 onToolChange = onToolChange
             )
             ColorPicker(currentColor, onColorChange)
-            WidthPicker(currentWidthStep, onWidthChange)
+            WidthPicker(currentWidthStep, currentColor, onWidthChange)
             IconButton(onClick = onZoomDecrease, enabled = zoomPercent > 100) {
                 Icon(Icons.Default.Remove, contentDescription = "缩小")
             }
@@ -128,7 +128,7 @@ fun TopToolbar(
                 Icon(Icons.Default.Delete, contentDescription = "清空")
             }
             IconButton(onClick = onExport) {
-                Icon(Icons.Default.ContentCopy, contentDescription = "导出到剪贴板")
+                Icon(Icons.Default.Share, contentDescription = "分享作品")
             }
             IconButton(onClick = onSave) {
                 Icon(Icons.Default.Save, contentDescription = "保存到相册")
