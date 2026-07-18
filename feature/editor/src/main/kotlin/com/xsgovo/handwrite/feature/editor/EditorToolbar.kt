@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.AutoFixNormal
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.MoreVert
@@ -54,6 +55,7 @@ fun EditorToolbar(
     state: EditorUiState,
     onLibrary: () -> Unit,
     onSettings: () -> Unit,
+    onExport: () -> Unit,
     onTool: (EditorTool) -> Unit,
     onColorSlot: (Int) -> Unit,
     onWidth: (Int) -> Unit,
@@ -78,6 +80,9 @@ fun EditorToolbar(
         ) {
             IconButton(onClick = onLibrary) {
                 Icon(Icons.Default.FolderOpen, contentDescription = "文档库")
+            }
+            IconButton(onClick = onExport, enabled = state.documentId != null) {
+                Icon(Icons.Default.FileDownload, contentDescription = "导出")
             }
             ToolButton(EditorTool.PEN, state.tool, onTool, Icons.Default.Edit, "画笔")
             ToolButton(EditorTool.ERASER, state.tool, onTool, Icons.Default.AutoFixNormal, "橡皮擦")

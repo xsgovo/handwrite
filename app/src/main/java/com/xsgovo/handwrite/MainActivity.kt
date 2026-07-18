@@ -13,6 +13,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.xsgovo.handwrite.core.designsystem.HandwriteTheme
 import com.xsgovo.handwrite.feature.editor.EditorRoute
+import com.xsgovo.handwrite.feature.export.ExportRoute
 import com.xsgovo.handwrite.feature.library.LibraryRoute
 import com.xsgovo.handwrite.feature.settings.SettingsRoute
 import dagger.hilt.android.AndroidEntryPoint
@@ -30,6 +31,9 @@ private data object LibraryDestination
 
 @Serializable
 private data object SettingsDestination
+
+@Serializable
+private data class ExportDestination(val documentId: Long)
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -57,6 +61,9 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onSettings = { navController.navigate(SettingsDestination) { launchSingleTop = true } },
+                            onExport = { documentId ->
+                                navController.navigate(ExportDestination(documentId)) { launchSingleTop = true }
+                            },
                             onExitApplication = ::finishAndRemoveTask,
                         )
                     }
@@ -78,6 +85,13 @@ class MainActivity : ComponentActivity() {
                     }
                     composable<SettingsDestination> {
                         SettingsRoute(onBack = { navController.popBackStack() })
+                    }
+                    composable<ExportDestination> { backStackEntry ->
+                        val destination = backStackEntry.toRoute<ExportDestination>()
+                        ExportRoute(
+                            documentId = destination.documentId,
+                            onBack = { navController.popBackStack() },
+                        )
                     }
                 }
             }

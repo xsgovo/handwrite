@@ -32,6 +32,7 @@ fun EditorRoute(
     documentId: Long?,
     onLibrary: () -> Unit,
     onSettings: () -> Unit,
+    onExport: (Long) -> Unit,
     onExitApplication: () -> Unit,
     viewModel: EditorViewModel = hiltViewModel(),
 ) {
@@ -73,6 +74,7 @@ fun EditorRoute(
                 state = state,
                 onLibrary = onLibrary,
                 onSettings = onSettings,
+                onExport = { state.documentId?.value?.let(onExport) },
                 onTool = viewModel::setTool,
                 onColorSlot = viewModel::selectColorSlot,
                 onWidth = viewModel::setWidthStep,

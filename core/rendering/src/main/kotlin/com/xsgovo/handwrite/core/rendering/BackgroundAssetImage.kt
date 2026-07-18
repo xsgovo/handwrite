@@ -34,20 +34,20 @@ fun rememberBackgroundAssetImage(
         withContext(Dispatchers.IO) {
             runCatching {
                 when (asset.kind) {
-                    BackgroundAssetKind.IMAGE -> decodeImage(resource.absolutePath)
-                    BackgroundAssetKind.PDF -> decodePdf(resource.absolutePath, asset.pdfPageIndex ?: 0)
+                    BackgroundAssetKind.IMAGE -> decodeImage(resource.absolutePath, PREVIEW_DECODE_EDGE)
+                    BackgroundAssetKind.PDF -> decodePdf(resource.absolutePath, asset.pdfPageIndex ?: 0, PREVIEW_DECODE_EDGE)
                 }.asImageBitmap()
             }.getOrNull()
         }
     }
 }
 
-private fun decodeImage(path: String): Bitmap {
+internal fun decodeImage(path: String, maximumEdge: Int): Bitmap {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(path, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("Unsupported image")
     var sampleSize = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > MAX_DECODE_EDGE) sampleSize *= 2
+    while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > maximumEdge) sampleSize *= 2
     val options = BitmapFactory.Options().apply {
         inSampleSize = sampleSize
         inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -55,12 +55,12 @@ private fun decodeImage(path: String): Bitmap {
     return BitmapFactory.decodeFile(path, options) ?: throw IOException("Unable to decode image")
 }
 
-private fun decodePdf(path: String, pageIndex: Int): Bitmap {
+internal fun decodePdf(path: String, pageIndex: Int, maximumEdge: Int): Bitmap {
     ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
         PdfRenderer(descriptor).use { renderer ->
             if (pageIndex !in 0 until renderer.pageCount) throw IOException("PDF page is unavailable")
             renderer.openPage(pageIndex).use { page ->
-                val scale = (MAX_DECODE_EDGE.toFloat() / maxOf(page.width, page.height)).coerceAtMost(1f)
+                val scale = (maximumEdge.toFloat() / maxOf(page.width, page.height)).coerceAtMost(1f)
                 val bitmap = Bitmap.createBitmap(
                     (page.width * scale).toInt().coerceAtLeast(1),
                     (page.height * scale).toInt().coerceAtLeast(1),
@@ -74,4 +74,4 @@ private fun decodePdf(path: String, pageIndex: Int): Bitmap {
     }
 }
 
-private const val MAX_DECODE_EDGE = 2_048
+private const val PREVIEW_DECODE_EDGE = 2_048

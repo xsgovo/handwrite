@@ -24,6 +24,7 @@ dependencies {
     implementation(project(":feature:editor"))
     implementation(project(":feature:library"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:export"))
     implementation(platform(libs.androidx.compose.bom))
 
     implementation(libs.androidx.core.ktx)
