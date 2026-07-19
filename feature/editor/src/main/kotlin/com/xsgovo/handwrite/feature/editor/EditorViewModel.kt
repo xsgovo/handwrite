@@ -242,6 +242,9 @@ class EditorViewModel @Inject constructor(
     }
 
     fun setBackground(background: PageBackground) {
+        if (background !is PageBackground.Asset) {
+            updateSettings { it.copy(defaultBackground = background) }
+        }
         if (background == mutableState.value.background) return
         if (mutableState.value.documentId == null) {
             mutableState.update { it.copy(background = background) }

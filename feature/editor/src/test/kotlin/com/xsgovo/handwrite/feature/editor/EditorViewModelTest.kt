@@ -83,15 +83,17 @@ class EditorViewModelTest {
     }
 
     @Test
-    fun changingThePaperPatternDoesNotCreateAnEmptyDocument() = runTest(dispatcher) {
+    fun changingThePaperPatternPersistsTheDefaultWithoutCreatingADocument() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
-        val viewModel = createViewModel(repository)
+        val settings = FakeSettingsRepository()
+        val viewModel = createViewModel(repository, settings)
 
         viewModel.setBackground(PageBackground.Pattern(PatternType.GRID))
         advanceUntilIdle()
 
         assertEquals(0, repository.createCount)
         assertEquals(null, viewModel.state.value.documentId)
+        assertEquals(PageBackground.Pattern(PatternType.GRID), settings.value.defaultBackground)
     }
 
     @Test

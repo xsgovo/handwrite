@@ -160,7 +160,6 @@ fun EditorToolbar(
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(
                         text = { Text("白色背景") },
-                        leadingIcon = { Icon(Icons.Default.GridOn, contentDescription = null) },
                         onClick = { menuExpanded = false; onBackground(PageBackground.Solid()) },
                     )
                     DropdownMenuItem(
