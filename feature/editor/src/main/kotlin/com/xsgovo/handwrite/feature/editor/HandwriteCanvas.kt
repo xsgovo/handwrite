@@ -26,21 +26,21 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.ink.authoring.compose.InProgressStrokes
-import androidx.ink.strokes.StrokeInput
 import androidx.ink.strokes.Stroke
+import androidx.ink.strokes.StrokeInput
 import com.xsgovo.handwrite.core.model.BrushId
 import com.xsgovo.handwrite.core.model.ElementId
 import com.xsgovo.handwrite.core.model.InputMode
 import com.xsgovo.handwrite.core.model.LogicalPoint
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.PageBackground
+import com.xsgovo.handwrite.core.model.PagePattern
 import com.xsgovo.handwrite.core.model.PatternType
 import com.xsgovo.handwrite.core.model.PressureSensitivity
 import com.xsgovo.handwrite.core.model.SideButtonAction
@@ -69,7 +69,7 @@ fun HandwriteCanvas(
     pressureSensitivity: PressureSensitivity,
     sideButtonAction: SideButtonAction,
     onZoomChanged: (Int) -> Unit,
-    onStrokeFinished: (List<StrokeSample>, onCompleted: () -> Unit) -> Unit,
+    onStrokesFinished: (List<List<StrokeSample>>, onCompleted: () -> Unit) -> Unit,
     onEraseFinished: (Set<ElementId>, onCompleted: () -> Unit) -> Unit,
     onToggleEraser: () -> Unit,
     onUndo: () -> Unit,
@@ -87,7 +87,7 @@ fun HandwriteCanvas(
     val currentTransform by rememberUpdatedState(transform)
     val currentZoom by rememberUpdatedState(zoomPercent)
     val currentStrokes by rememberUpdatedState(strokes)
-    val strokeCallback by rememberUpdatedState(onStrokeFinished)
+    val strokesCallback by rememberUpdatedState(onStrokesFinished)
     val zoomCallback by rememberUpdatedState(onZoomChanged)
     val eraseCallback by rememberUpdatedState(onEraseFinished)
     val toggleEraserCallback by rememberUpdatedState(onToggleEraser)
@@ -119,14 +119,10 @@ fun HandwriteCanvas(
             var previousCentroid: Offset? = null
             var previousSpan = 0f
             var gestureZoom = currentZoom
-            var startedInside = false
             var sideActionHandled = false
             do {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 val pressed = event.changes.filter { it.pressed }
-                event.changes.firstOrNull { it.changedToDownIgnoreConsumed() }?.let { down ->
-                    startedInside = currentTransform.pageRect.contains(down.position)
-                }
 
                 val motionEvent = event.motionEvent
                 val sidePressed = motionEvent?.buttonState?.and(
@@ -162,21 +158,23 @@ fun HandwriteCanvas(
                     val change = pressed.firstOrNull() ?: event.changes.firstOrNull()
                     if (change != null) {
                         val erasing = tool == EditorTool.ERASER || change.type == PointerType.Eraser || sideForEraser
-                        val unsupportedPointer = inputMode == InputMode.STYLUS && change.type != PointerType.Stylus &&
-                            change.type != PointerType.Eraser
+                        val navigationPointer = isSingleFingerNavigationPointer(
+                            inputMode = inputMode,
+                            pointerType = change.type,
+                            rawToolType = motionEvent?.takeIf { it.pointerCount > 0 }?.getToolType(0),
+                        )
                         when {
                             sidePressed && sideButtonAction != SideButtonAction.TEMPORARY_ERASER -> {
                                 change.consume()
+                            }
+                            navigationPointer -> {
+                                change.consume()
+                                pan += change.positionChange()
                             }
                             erasing -> {
                                 change.consume()
                                 currentTransform.toLogical(change.position)?.let(::eraseAt)
                             }
-                            unsupportedPointer -> {
-                                change.consume()
-                                pan += change.positionChange()
-                            }
-                            !startedInside -> change.consume()
                         }
                     }
                 }
@@ -209,6 +207,7 @@ fun HandwriteCanvas(
             null
         }
     }
+    val currentWetBrush by rememberUpdatedState(wetBrush)
     val maskPath = remember(canvasSize, transform.pageRect) {
         Path().apply {
             fillType = PathFillType.EvenOdd
@@ -230,7 +229,7 @@ fun HandwriteCanvas(
             drawRect(background.baseColor(), topLeft = page.topLeft, size = page.size)
             clipRect(page.left, page.top, page.right, page.bottom) {
                 when (background) {
-                    is PageBackground.Pattern -> drawPattern(background, page)
+                    is PageBackground.Pattern -> drawPattern(background, page, transform.scale)
                     is PageBackground.Asset -> backgroundImage?.let { image ->
                         val scale = background.transform.scalePermille / 1_000f
                         val translation = Offset(
@@ -262,6 +261,7 @@ fun HandwriteCanvas(
         }
         InProgressStrokes(
             defaultBrush = wetBrush,
+            nextBrush = { currentWetBrush },
             maskPath = maskPath,
             onStrokesFinished = { completed ->
                 completed.forEach { stroke ->
@@ -270,7 +270,7 @@ fun HandwriteCanvas(
                         val scratch = StrokeInput()
                         repeat(stroke.inputs.size) { index ->
                             stroke.inputs.populate(index, scratch)
-                            val point = currentTransform.toLogicalClamped(Offset(scratch.x, scratch.y))
+                            val point = currentTransform.toLogicalUnclamped(Offset(scratch.x, scratch.y))
                             val tilt = scratch.toTiltVector()
                             add(
                                 StrokeSample(
@@ -287,9 +287,10 @@ fun HandwriteCanvas(
                                 ),
                             )
                         }
-                    }.distinctBy { it.point }
-                    if (samples.isNotEmpty()) {
-                        strokeCallback(samples) {
+                    }
+                    val clippedStrokes = clipStrokeToPage(samples, pageSize)
+                    if (clippedStrokes.isNotEmpty()) {
+                        strokesCallback(clippedStrokes) {
                             pendingStrokes = pendingStrokes.filterNot { it === stroke }
                         }
                     } else {
@@ -302,6 +303,116 @@ fun HandwriteCanvas(
 }
 
 private const val LOG_TAG = "HandwriteCanvas"
+
+internal fun isSingleFingerNavigationPointer(
+    inputMode: InputMode,
+    pointerType: PointerType,
+    rawToolType: Int?,
+): Boolean = inputMode == InputMode.STYLUS &&
+    pointerType != PointerType.Stylus &&
+    pointerType != PointerType.Eraser &&
+    rawToolType != MotionEvent.TOOL_TYPE_STYLUS &&
+    rawToolType != MotionEvent.TOOL_TYPE_ERASER
+
+internal fun clipStrokeToPage(
+    samples: List<StrokeSample>,
+    pageSize: LogicalSize,
+): List<List<StrokeSample>> {
+    if (samples.isEmpty()) return emptyList()
+    if (samples.size == 1) return if (pageSize.contains(samples.single().point)) listOf(samples) else emptyList()
+
+    val clippedStrokes = mutableListOf<List<StrokeSample>>()
+    val activeStroke = mutableListOf<StrokeSample>()
+
+    fun append(sample: StrokeSample) {
+        if (activeStroke.lastOrNull()?.point != sample.point) activeStroke += sample
+    }
+
+    fun finishSegment() {
+        if (activeStroke.size >= 2) clippedStrokes += activeStroke.toList()
+        activeStroke.clear()
+    }
+
+    samples.zipWithNext().forEach { (first, second) ->
+        val clipped = clipSegmentToPage(first, second, pageSize)
+        if (clipped == null) {
+            finishSegment()
+        } else {
+            append(clipped.first)
+            append(clipped.second)
+            if (clipped.secondParameter < 1.0) finishSegment()
+        }
+    }
+    finishSegment()
+    return clippedStrokes
+}
+
+private data class ClippedSegment(
+    val first: StrokeSample,
+    val second: StrokeSample,
+    val secondParameter: Double,
+)
+
+private fun clipSegmentToPage(
+    first: StrokeSample,
+    second: StrokeSample,
+    pageSize: LogicalSize,
+): ClippedSegment? {
+    val x0 = first.point.x.toDouble()
+    val y0 = first.point.y.toDouble()
+    val dx = second.point.x - first.point.x.toDouble()
+    val dy = second.point.y - first.point.y.toDouble()
+    val boundaries = listOf(
+        -dx to x0,
+        dx to pageSize.width - x0,
+        -dy to y0,
+        dy to pageSize.height - y0,
+    )
+    var entry = 0.0
+    var exit = 1.0
+    boundaries.forEach { (delta, distance) ->
+        if (delta == 0.0) {
+            if (distance < 0.0) return null
+        } else {
+            val parameter = distance / delta
+            if (delta < 0.0) {
+                entry = maxOf(entry, parameter)
+            } else {
+                exit = minOf(exit, parameter)
+            }
+        }
+    }
+    if (entry > exit || exit < 0.0 || entry > 1.0) return null
+    val firstParameter = entry.coerceIn(0.0, 1.0)
+    val secondParameter = exit.coerceIn(0.0, 1.0)
+    return ClippedSegment(
+        first = first.interpolate(second, firstParameter, pageSize),
+        second = first.interpolate(second, secondParameter, pageSize),
+        secondParameter = secondParameter,
+    )
+}
+
+private fun StrokeSample.interpolate(
+    other: StrokeSample,
+    parameter: Double,
+    pageSize: LogicalSize,
+): StrokeSample = StrokeSample(
+    point = LogicalPoint(
+        (point.x + (other.point.x - point.x) * parameter).roundToInt().coerceIn(0, pageSize.width),
+        (point.y + (other.point.y - point.y) * parameter).roundToInt().coerceIn(0, pageSize.height),
+    ),
+    pressure = (pressure + (other.pressure - pressure) * parameter).roundToInt()
+        .coerceIn(0, StrokeSample.MAX_PRESSURE),
+    elapsedMillis = (elapsedMillis + (other.elapsedMillis - elapsedMillis) * parameter).roundToInt()
+        .coerceAtLeast(0),
+    tiltX = interpolateTilt(tiltX, other.tiltX, parameter),
+    tiltY = interpolateTilt(tiltY, other.tiltY, parameter),
+)
+
+private fun interpolateTilt(first: Int?, second: Int?, parameter: Double): Int? = when {
+    first == null || second == null -> if (parameter < 0.5) first else second
+    else -> (first + (second - first) * parameter).roundToInt()
+}
 
 private data class CanvasPageTransform(
     val pageSize: LogicalSize,
@@ -316,6 +427,11 @@ private data class CanvasPageTransform(
     fun toLogicalClamped(point: Offset): LogicalPoint = LogicalPoint(
         ((point.x - pageRect.left) / scale).roundToInt().coerceIn(0, pageSize.width),
         ((point.y - pageRect.top) / scale).roundToInt().coerceIn(0, pageSize.height),
+    )
+
+    fun toLogicalUnclamped(point: Offset): LogicalPoint = LogicalPoint(
+        ((point.x - pageRect.left) / scale).roundToInt(),
+        ((point.y - pageRect.top) / scale).roundToInt(),
     )
 
     companion object {
@@ -348,9 +464,10 @@ private fun PageBackground.baseColor(): Color = when (this) {
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPattern(
     pattern: PageBackground.Pattern,
     page: Rect,
+    scale: Float,
 ) {
     val color = Color(0x2F60746B)
-    val step = 28f
+    val step = PagePattern.LOGICAL_SPACING * scale
     var y = page.top + step
     while (y < page.bottom) {
         drawLine(color, Offset(page.left, y), Offset(page.right, y), strokeWidth = 1f)

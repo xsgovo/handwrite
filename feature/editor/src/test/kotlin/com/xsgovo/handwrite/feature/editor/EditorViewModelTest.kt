@@ -1,5 +1,7 @@
 package com.xsgovo.handwrite.feature.editor
 
+import android.view.MotionEvent
+import androidx.compose.ui.input.pointer.PointerType
 import com.xsgovo.handwrite.core.document.DocumentCommand
 import com.xsgovo.handwrite.core.document.BackgroundResourceRepository
 import com.xsgovo.handwrite.core.document.DocumentRepository
@@ -11,6 +13,7 @@ import com.xsgovo.handwrite.core.document.SettingsRepository
 import com.xsgovo.handwrite.core.document.ResourceInput
 import com.xsgovo.handwrite.core.document.StoredResource
 import com.xsgovo.handwrite.core.model.AppSettings
+import com.xsgovo.handwrite.core.model.BackgroundAssetKind
 import com.xsgovo.handwrite.core.model.DisplayName
 import com.xsgovo.handwrite.core.model.Document
 import com.xsgovo.handwrite.core.model.DocumentId
@@ -20,11 +23,13 @@ import com.xsgovo.handwrite.core.model.DomainFailure
 import com.xsgovo.handwrite.core.model.ResourceId
 import com.xsgovo.handwrite.core.model.LogicalPoint
 import com.xsgovo.handwrite.core.model.LogicalSize
+import com.xsgovo.handwrite.core.model.LogicalCanvas
 import com.xsgovo.handwrite.core.model.OperationId
 import com.xsgovo.handwrite.core.model.Page
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PageId
+import com.xsgovo.handwrite.core.model.PatternType
 import com.xsgovo.handwrite.core.model.StrokeSample
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,6 +42,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -75,6 +81,18 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun changingThePaperPatternDoesNotCreateAnEmptyDocument() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+
+        viewModel.setBackground(PageBackground.Pattern(PatternType.GRID))
+        advanceUntilIdle()
+
+        assertEquals(0, repository.createCount)
+        assertEquals(null, viewModel.state.value.documentId)
+    }
+
+    @Test
     fun strokeCompletionIsAcknowledgedAfterTheStrokeIsVisible() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val viewModel = createViewModel(repository)
@@ -106,7 +124,42 @@ class EditorViewModelTest {
     }
 
     @Test
-    fun undoHistoryIsKeptInsideCurrentViewModelSession() = runTest(dispatcher) {
+    fun erasingTheLastStrokeDiscardsTheEmptyDocument() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+
+        viewModel.eraseElements(setOf(viewModel.state.value.strokes.single().id))
+        advanceUntilIdle()
+
+        assertEquals(1, repository.deleteCount)
+        assertEquals(null, viewModel.state.value.documentId)
+    }
+
+    @Test
+    fun assetBackgroundKeepsTheDocumentWhenItsLastStrokeIsErased() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        viewModel.setBackground(
+            PageBackground.Asset(
+                resourceId = ResourceId(1),
+                kind = BackgroundAssetKind.IMAGE,
+            ),
+        )
+        advanceUntilIdle()
+
+        viewModel.eraseElements(setOf(viewModel.state.value.strokes.single().id))
+        advanceUntilIdle()
+
+        assertEquals(0, repository.deleteCount)
+        assertNotNull(viewModel.state.value.documentId)
+    }
+
+    @Test
+    fun undoingTheLastStrokeDiscardsTheEmptyDocument() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val viewModel = createViewModel(repository)
         viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
@@ -116,13 +169,56 @@ class EditorViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.state.value.strokes.isEmpty())
-        assertTrue(viewModel.state.value.canRedo)
-
-        val reopened = createViewModel(repository)
-        reopened.openDocument(1)
-        advanceUntilIdle()
-        assertTrue(!reopened.state.value.canUndo && !reopened.state.value.canRedo)
+        assertEquals(1, repository.deleteCount)
+        assertEquals(null, viewModel.state.value.documentId)
+        assertTrue(!viewModel.state.value.canUndo && !viewModel.state.value.canRedo)
     }
+
+    @Test
+    fun strokeStartingOutsideThePageIsPersistedFromItsEntryPoint() {
+        val clipped = clipStrokeToPage(
+            samples = listOf(sample(-100, 400), sample(400, 400)),
+            pageSize = squarePage(),
+        )
+
+        assertEquals(1, clipped.size)
+        assertEquals(LogicalPoint(0, 400), clipped.single().first().point)
+        assertEquals(LogicalPoint(400, 400), clipped.single().last().point)
+    }
+
+    @Test
+    fun leavingAndReenteringThePageSplitsTheStroke() {
+        val clipped = clipStrokeToPage(
+            samples = listOf(sample(100, 400), sample(70_000, 400), sample(100, 400)),
+            pageSize = squarePage(),
+        )
+
+        assertEquals(2, clipped.size)
+        assertEquals(LogicalPoint(LogicalCanvas.LONG_EDGE, 400), clipped.first().last().point)
+        assertEquals(LogicalPoint(LogicalCanvas.LONG_EDGE, 400), clipped.last().first().point)
+    }
+
+    @Test
+    fun onlyNonStylusPointersNavigateInStylusMode() {
+        assertTrue(
+            isSingleFingerNavigationPointer(
+                inputMode = com.xsgovo.handwrite.core.model.InputMode.STYLUS,
+                pointerType = PointerType.Touch,
+                rawToolType = MotionEvent.TOOL_TYPE_FINGER,
+            ),
+        )
+        assertFalse(
+            isSingleFingerNavigationPointer(
+                inputMode = com.xsgovo.handwrite.core.model.InputMode.STYLUS,
+                pointerType = PointerType.Stylus,
+                rawToolType = MotionEvent.TOOL_TYPE_STYLUS,
+            ),
+        )
+    }
+
+    private fun sample(x: Int, y: Int): StrokeSample = StrokeSample(LogicalPoint(x, y))
+
+    private fun squarePage(): LogicalSize = LogicalSize(LogicalCanvas.LONG_EDGE, LogicalCanvas.LONG_EDGE)
 
     private fun createViewModel(repository: FakeDocumentRepository): EditorViewModel = EditorViewModel(
         documents = repository,
@@ -173,6 +269,8 @@ class EditorViewModelTest {
         private val page = MutableStateFlow<PageContent?>(null)
         var createCount = 0
             private set
+        var deleteCount = 0
+            private set
 
         override fun observeDocuments(): Flow<List<Document>> = MutableStateFlow(emptyList())
         override fun observeDocument(documentId: DocumentId): Flow<Document?> = document
@@ -202,7 +300,12 @@ class EditorViewModelTest {
         override suspend fun renameDocument(documentId: DocumentId, name: DisplayName): DomainResult<Unit> =
             DomainResult.Success(Unit)
 
-        override suspend fun deleteDocument(documentId: DocumentId): DomainResult<Unit> = DomainResult.Success(Unit)
+        override suspend fun deleteDocument(documentId: DocumentId): DomainResult<Unit> {
+            deleteCount++
+            document.value = null
+            page.value = null
+            return DomainResult.Success(Unit)
+        }
 
         override suspend fun createPage(
             documentId: DocumentId,

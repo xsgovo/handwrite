@@ -163,7 +163,12 @@ class EditorViewModel @Inject constructor(
     }
 
     fun commitStroke(samples: List<StrokeSample>, onCompleted: () -> Unit = {}) {
-        if (samples.isEmpty()) {
+        commitStrokes(listOf(samples), onCompleted)
+    }
+
+    fun commitStrokes(strokeSamples: List<List<StrokeSample>>, onCompleted: () -> Unit = {}) {
+        val nonEmptyStrokes = strokeSamples.filter { it.isNotEmpty() }
+        if (nonEmptyStrokes.isEmpty()) {
             onCompleted()
             return
         }
@@ -175,20 +180,23 @@ class EditorViewModel @Inject constructor(
                     return@withLock
                 }
                 val current = mutableState.value
-                val stroke = StrokeElement(
-                    id = ElementId(nextElementId.incrementAndGet()),
-                    pageId = target.second,
-                    orderKey = (current.elements.maxOfOrNull(PageElement::orderKey) ?: 0L) + ORDER_STEP,
-                    style = BrushStyle(
-                        id = current.activeBrushId,
-                        argb = current.activeColor,
-                        width = current.activeWidth,
-                        pressureSensitivity = current.pressureSensitivity,
-                    ),
-                    samples = samples,
-                )
+                val firstOrderKey = (current.elements.maxOfOrNull(PageElement::orderKey) ?: 0L) + ORDER_STEP
+                val strokes = nonEmptyStrokes.mapIndexed { index, samples ->
+                    StrokeElement(
+                        id = ElementId(nextElementId.incrementAndGet()),
+                        pageId = target.second,
+                        orderKey = firstOrderKey + index * ORDER_STEP,
+                        style = BrushStyle(
+                            id = current.activeBrushId,
+                            argb = current.activeColor,
+                            width = current.activeWidth,
+                            pressureSensitivity = current.pressureSensitivity,
+                        ),
+                        samples = samples,
+                    )
+                }
                 commit(
-                    DocumentCommand.ReplaceElements(target.first, target.second, emptyList(), listOf(stroke)),
+                    DocumentCommand.ReplaceElements(target.first, target.second, emptyList(), strokes),
                     recordHistory = true,
                 )
                 onCompleted()
@@ -215,10 +223,13 @@ class EditorViewModel @Inject constructor(
                     onCompleted()
                     return@withLock
                 }
-                commit(
-                    DocumentCommand.ReplaceElements(documentId, pageId, removed, emptyList()),
-                    recordHistory = true,
-                )
+                if (commit(
+                        DocumentCommand.ReplaceElements(documentId, pageId, removed, emptyList()),
+                        recordHistory = true,
+                    )
+                ) {
+                    discardDocumentIfCanvasIsEmpty(documentId)
+                }
                 onCompleted()
             }
         }
@@ -232,14 +243,20 @@ class EditorViewModel @Inject constructor(
 
     fun setBackground(background: PageBackground) {
         if (background == mutableState.value.background) return
+        if (mutableState.value.documentId == null) {
+            mutableState.update { it.copy(background = background) }
+            return
+        }
         viewModelScope.launch {
             writeMutex.withLock {
                 val target = ensureDocument() ?: return@withLock
                 val before = mutableState.value.background
-                commit(
+                if (commit(
                     DocumentCommand.UpdateBackground(target.first, target.second, before, background),
                     recordHistory = true,
-                )
+                )) {
+                    discardDocumentIfCanvasIsEmpty(target.first)
+                }
             }
         }
     }
@@ -278,7 +295,10 @@ class EditorViewModel @Inject constructor(
         val command = history.commandToUndo() ?: return
         viewModelScope.launch {
             writeMutex.withLock {
-                if (commit(command, recordHistory = false)) history.confirmUndo()
+                if (commit(command, recordHistory = false)) {
+                    history.confirmUndo()
+                    discardDocumentIfCanvasIsEmpty(command.documentId)
+                }
                 updateHistoryState()
             }
         }
@@ -288,7 +308,10 @@ class EditorViewModel @Inject constructor(
         val command = history.commandToRedo() ?: return
         viewModelScope.launch {
             writeMutex.withLock {
-                if (commit(command, recordHistory = false)) history.confirmRedo()
+                if (commit(command, recordHistory = false)) {
+                    history.confirmRedo()
+                    discardDocumentIfCanvasIsEmpty(command.documentId)
+                }
                 updateHistoryState()
             }
         }
@@ -399,6 +422,45 @@ class EditorViewModel @Inject constructor(
                 }
                 is DomainResult.Failure -> effectsChannel.send(EditorUiEffect.ShowMessage("背景文件已丢失"))
             }
+        }
+    }
+
+    private suspend fun discardDocumentIfCanvasIsEmpty(documentId: DocumentId) {
+        val snapshot = when (val loaded = documents.loadSnapshot(documentId)) {
+            is DomainResult.Success -> loaded.value
+            is DomainResult.Failure -> return
+        }
+        val hasCanvasContent = snapshot.pages.any { page ->
+            page.elements.isNotEmpty() || page.page.background is PageBackground.Asset
+        }
+        if (hasCanvasContent) return
+
+        when (documents.deleteDocument(documentId)) {
+            is DomainResult.Success -> {
+                observationJob?.cancel()
+                pageJob?.cancel()
+                resourceJob?.cancel()
+                openedDocumentId = null
+                observedPageId = null
+                history.clear()
+                mutableState.update { current ->
+                    if (current.documentId == documentId) {
+                        current.copy(
+                            documentId = null,
+                            pageId = null,
+                            documentName = "新文档",
+                            elements = emptyList(),
+                            backgroundResource = null,
+                            canUndo = false,
+                            canRedo = false,
+                            isSaving = false,
+                        )
+                    } else {
+                        current
+                    }
+                }
+            }
+            is DomainResult.Failure -> effectsChannel.send(EditorUiEffect.ShowMessage("无法丢弃空白文档"))
         }
     }
 

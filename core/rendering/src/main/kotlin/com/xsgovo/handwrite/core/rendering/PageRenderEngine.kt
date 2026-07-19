@@ -12,6 +12,7 @@ import com.xsgovo.handwrite.core.model.BrushBlendMode
 import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageContent
+import com.xsgovo.handwrite.core.model.PagePattern
 import com.xsgovo.handwrite.core.model.PatternType
 import com.xsgovo.handwrite.core.model.StrokeElement
 import kotlin.math.roundToInt
@@ -44,7 +45,9 @@ class PageRenderEngine(
             canvas.drawColor(background.baseColor(forceOpaque))
         }
 
-        if (background is PageBackground.Pattern) drawPattern(canvas, width, height, background.type)
+        if (background is PageBackground.Pattern) {
+            drawPattern(canvas, width, height, page.size.width, page.size.height, background.type)
+        }
         if (background is PageBackground.Asset) {
             val resource = resources.find(background.resourceId)
             if (resource is DomainResult.Success) {
@@ -80,22 +83,30 @@ private fun PageBackground.baseColor(forceOpaque: Boolean): Int = when (this) {
     is PageBackground.Asset -> Color.WHITE
 }
 
-private fun drawPattern(canvas: Canvas, width: Int, height: Int, type: PatternType) {
+private fun drawPattern(
+    canvas: Canvas,
+    width: Int,
+    height: Int,
+    logicalWidth: Int,
+    logicalHeight: Int,
+    type: PatternType,
+) {
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0x2F60746B
         strokeWidth = 1f
     }
-    val step = (minOf(width, height) / 16f).coerceAtLeast(12f)
-    var y = step
+    val horizontalStep = PagePattern.LOGICAL_SPACING * width.toFloat() / logicalWidth
+    val verticalStep = PagePattern.LOGICAL_SPACING * height.toFloat() / logicalHeight
+    var y = verticalStep
     while (y < height) {
         canvas.drawLine(0f, y, width.toFloat(), y, paint)
-        y += step
+        y += verticalStep
     }
     if (type == PatternType.GRID) {
-        var x = step
+        var x = horizontalStep
         while (x < width) {
             canvas.drawLine(x, 0f, x, height.toFloat(), paint)
-            x += step
+            x += horizontalStep
         }
     }
 }

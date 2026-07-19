@@ -104,7 +104,7 @@ fun EditorRoute(
             pressureSensitivity = state.pressureSensitivity,
             sideButtonAction = state.sideButtonAction,
             onZoomChanged = viewModel::setZoom,
-            onStrokeFinished = viewModel::commitStroke,
+            onStrokesFinished = viewModel::commitStrokes,
             onEraseFinished = viewModel::eraseElements,
             onToggleEraser = viewModel::toggleEraser,
             onUndo = viewModel::undo,

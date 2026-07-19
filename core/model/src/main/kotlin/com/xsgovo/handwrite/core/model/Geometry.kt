@@ -6,6 +6,10 @@ object LogicalCanvas {
     const val LONG_EDGE = 65_535
 }
 
+object PagePattern {
+    const val LOGICAL_SPACING = LogicalCanvas.LONG_EDGE / 25
+}
+
 data class LogicalPoint(
     val x: Int,
     val y: Int,
