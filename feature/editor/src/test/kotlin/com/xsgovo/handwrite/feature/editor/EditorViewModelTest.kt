@@ -115,6 +115,26 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun widthStepIsClampedAndPersisted() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val settings = FakeSettingsRepository()
+        val viewModel = createViewModel(repository, settings)
+        advanceUntilIdle()
+
+        viewModel.setWidthStep(0)
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.state.value.widthStep)
+        assertEquals(1, settings.value.widthStep)
+
+        viewModel.setWidthStep(100)
+        advanceUntilIdle()
+
+        assertEquals(100, viewModel.state.value.widthStep)
+        assertEquals(100, settings.value.widthStep)
+    }
+
+    @Test
     fun strokeCompletionIsAcknowledgedAfterTheStrokeIsVisible() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val viewModel = createViewModel(repository)
@@ -257,10 +277,13 @@ class EditorViewModelTest {
 
     private fun squarePage(): LogicalSize = LogicalSize(LogicalCanvas.LONG_EDGE, LogicalCanvas.LONG_EDGE)
 
-    private fun createViewModel(repository: FakeDocumentRepository): EditorViewModel = EditorViewModel(
+    private fun createViewModel(
+        repository: FakeDocumentRepository,
+        settings: FakeSettingsRepository = FakeSettingsRepository(),
+    ): EditorViewModel = EditorViewModel(
         documents = repository,
         commands = DurableCommandExecutor(repository, InMemoryJournal()),
-        settingsRepository = FakeSettingsRepository(),
+        settingsRepository = settings,
         backgroundResources = FakeBackgroundResources(),
         clock = EpochClock { 1_700_000_000_000 },
     )
@@ -277,6 +300,7 @@ class EditorViewModelTest {
 
     private class FakeSettingsRepository : SettingsRepository {
         private val mutableSettings = MutableStateFlow(AppSettings())
+        val value: AppSettings get() = mutableSettings.value
         override val settings: Flow<AppSettings> = mutableSettings
 
         override suspend fun update(transform: (AppSettings) -> AppSettings): DomainResult<Unit> {

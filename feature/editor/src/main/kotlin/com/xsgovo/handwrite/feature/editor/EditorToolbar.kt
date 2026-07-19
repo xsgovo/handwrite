@@ -7,11 +7,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -25,11 +27,13 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -37,6 +41,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,6 +55,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PatternType
+import kotlin.math.roundToInt
+
+private val BRUSH_WIDTH_PRESETS = listOf(25, 50, 75)
 
 @Composable
 fun EditorToolbar(
@@ -71,6 +79,8 @@ fun EditorToolbar(
 ) {
     val scrollState = rememberScrollState()
     var menuExpanded by remember { mutableStateOf(false) }
+    var widthPanelExpanded by remember { mutableStateOf(false) }
+    var pendingWidthStep by remember { mutableStateOf(state.widthStep.toFloat()) }
     Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -99,21 +109,50 @@ fun EditorToolbar(
             state.colorSlots.forEachIndexed { index, argb ->
                 ColorSwatch(Color(argb), selected = index == state.activeColorSlot) { onColorSlot(index) }
             }
+            BRUSH_WIDTH_PRESETS.forEach { preset ->
+                BrushWidthPresetButton(
+                    step = preset,
+                    selected = state.widthStep == preset,
+                    onClick = { onWidth(preset) },
+                )
+            }
+            Box {
+                IconButton(
+                    onClick = {
+                        pendingWidthStep = state.widthStep.toFloat()
+                        widthPanelExpanded = true
+                    },
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = "精细调节笔宽")
+                }
+                DropdownMenu(
+                    expanded = widthPanelExpanded,
+                    onDismissRequest = { widthPanelExpanded = false },
+                ) {
+                    Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Text("笔宽 ${pendingWidthStep.roundToInt()}", style = MaterialTheme.typography.titleSmall)
+                        Slider(
+                            value = pendingWidthStep,
+                            onValueChange = { pendingWidthStep = it },
+                            onValueChangeFinished = { onWidth(pendingWidthStep.roundToInt()) },
+                            valueRange = 1f..100f,
+                            steps = 98,
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("1", style = MaterialTheme.typography.labelSmall)
+                            Text("100", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "画布选项")
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    Text("笔宽 ${state.widthStep}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(12.dp, 6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
-                        IconButton(onClick = { onWidth(state.widthStep - 5) }, enabled = state.widthStep > 1) {
-                            Icon(Icons.Default.Remove, contentDescription = "减小笔宽")
-                        }
-                        IconButton(onClick = { onWidth(state.widthStep + 5) }, enabled = state.widthStep < 100) {
-                            Icon(Icons.Default.Add, contentDescription = "增大笔宽")
-                        }
-                    }
-                    HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text("白色背景") },
                         leadingIcon = { Icon(Icons.Default.GridOn, contentDescription = null) },
@@ -162,6 +201,35 @@ fun EditorToolbar(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BrushWidthPresetButton(
+    step: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = if (selected) {
+            Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+        } else {
+            Modifier
+        },
+    ) {
+        Icon(
+            imageVector = Icons.Default.Circle,
+            contentDescription = "${step}档笔宽",
+            modifier = Modifier.size(
+                when (step) {
+                    25 -> 8.dp
+                    50 -> 14.dp
+                    else -> 20.dp
+                },
+            ),
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
