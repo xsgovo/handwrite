@@ -9,6 +9,15 @@ android {
     namespace = "com.xsgovo.handwrite.core.data"
 }
 
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        val capitalizedName = variant.name.replaceFirstChar(Char::uppercase)
+        variant.sources.java?.addStaticSourceDirectory(
+            "build/generated/java/generate${capitalizedName}Proto/java",
+        )
+    }
+}
+
 room {
     schemaDirectory("$projectDir/schemas")
 }

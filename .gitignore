@@ -12,7 +12,6 @@
 /build
 **/build/
 /captures
-/.kotlin
+**/.kotlin/
 .externalNativeBuild
 .cxx
-local.properties

@@ -13,7 +13,6 @@ plugins {
 val jvmModules = listOf(
     ":core:model",
     ":core:document",
-    ":core:testing",
 )
 
 val androidModules = listOf(
