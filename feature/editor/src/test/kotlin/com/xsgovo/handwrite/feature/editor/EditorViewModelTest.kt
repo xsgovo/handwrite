@@ -214,6 +214,18 @@ class EditorViewModelTest {
                 rawToolType = MotionEvent.TOOL_TYPE_STYLUS,
             ),
         )
+        assertTrue(
+            shouldCaptureTouchNavigation(
+                inputMode = com.xsgovo.handwrite.core.model.InputMode.STYLUS,
+                rawToolType = MotionEvent.TOOL_TYPE_FINGER,
+            ),
+        )
+        assertFalse(
+            shouldCaptureTouchNavigation(
+                inputMode = com.xsgovo.handwrite.core.model.InputMode.STYLUS,
+                rawToolType = MotionEvent.TOOL_TYPE_STYLUS,
+            ),
+        )
     }
 
     private fun sample(x: Int, y: Int): StrokeSample = StrokeSample(LogicalPoint(x, y))

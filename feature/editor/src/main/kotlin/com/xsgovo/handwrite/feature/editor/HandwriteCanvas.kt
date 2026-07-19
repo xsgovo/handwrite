@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
@@ -80,6 +81,11 @@ fun HandwriteCanvas(
     var pendingErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
     var pendingStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    var interopNavigationActive by remember { mutableStateOf(false) }
+    var interopPreviousCentroid by remember { mutableStateOf<Offset?>(null) }
+    var interopPreviousSpan by remember { mutableStateOf(0f) }
+    var interopPreviousPointerCount by remember { mutableStateOf(0) }
+    var interopZoom by remember { mutableStateOf(zoomPercent) }
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
@@ -112,6 +118,92 @@ fun HandwriteCanvas(
             .map(StrokeElement::id)
             .toSet()
         if (hits.isNotEmpty()) erasedIds = erasedIds + hits
+    }
+
+    fun resetInteropNavigation() {
+        interopNavigationActive = false
+        interopPreviousCentroid = null
+        interopPreviousSpan = 0f
+        interopPreviousPointerCount = 0
+    }
+
+    fun updateInteropNavigation(event: MotionEvent, excludedPointerIndex: Int? = null) {
+        val pointers = buildList {
+            repeat(event.pointerCount) { index ->
+                if (index != excludedPointerIndex) add(Offset(event.getX(index), event.getY(index)))
+            }
+        }
+        if (pointers.isEmpty()) return
+
+        val centroid = pointers.reduce(Offset::plus) / pointers.size.toFloat()
+        val span = if (pointers.size >= 2) {
+            hypot(
+                pointers[0].x - pointers[1].x,
+                pointers[0].y - pointers[1].y,
+            )
+        } else {
+            0f
+        }
+        if (interopPreviousPointerCount == pointers.size) {
+            interopPreviousCentroid?.let { pan += centroid - it }
+            if (interopPreviousSpan > 0f && span > 0f) {
+                interopZoom = (interopZoom * span / interopPreviousSpan).roundToInt().coerceIn(100, 400)
+                zoomCallback(interopZoom)
+            }
+        } else {
+            interopZoom = currentZoom
+        }
+        interopPreviousCentroid = centroid
+        interopPreviousSpan = span
+        interopPreviousPointerCount = pointers.size
+    }
+
+    val touchNavigationModifier = Modifier.pointerInteropFilter { event ->
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (!shouldCaptureTouchNavigation(inputMode, event.getToolType(event.actionIndex))) {
+                    false
+                } else {
+                    interopNavigationActive = true
+                    interopZoom = currentZoom
+                    updateInteropNavigation(event)
+                    true
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!interopNavigationActive) {
+                    false
+                } else {
+                    updateInteropNavigation(event)
+                    true
+                }
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (!interopNavigationActive) {
+                    false
+                } else {
+                    updateInteropNavigation(event)
+                    true
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (!interopNavigationActive) {
+                    false
+                } else {
+                    updateInteropNavigation(event, event.actionIndex)
+                    true
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (!interopNavigationActive) {
+                    false
+                } else {
+                    resetInteropNavigation()
+                    true
+                }
+            }
+            else -> interopNavigationActive
+        }
     }
 
     val gestureModifier = Modifier.pointerInput(tool, inputMode, sideButtonAction) {
@@ -164,6 +256,7 @@ fun HandwriteCanvas(
                             rawToolType = motionEvent?.takeIf { it.pointerCount > 0 }?.getToolType(0),
                         )
                         when {
+                            interopNavigationActive -> change.consume()
                             sidePressed && sideButtonAction != SideButtonAction.TEMPORARY_ERASER -> {
                                 change.consume()
                             }
@@ -221,6 +314,7 @@ fun HandwriteCanvas(
             .fillMaxSize()
             .background(Color(0xFFE8EBE8))
             .onSizeChanged { canvasSize = it }
+            .then(touchNavigationModifier)
             .then(gestureModifier),
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -313,6 +407,11 @@ internal fun isSingleFingerNavigationPointer(
     pointerType != PointerType.Eraser &&
     rawToolType != MotionEvent.TOOL_TYPE_STYLUS &&
     rawToolType != MotionEvent.TOOL_TYPE_ERASER
+
+internal fun shouldCaptureTouchNavigation(inputMode: InputMode, rawToolType: Int): Boolean =
+    inputMode == InputMode.STYLUS &&
+        rawToolType != MotionEvent.TOOL_TYPE_STYLUS &&
+        rawToolType != MotionEvent.TOOL_TYPE_ERASER
 
 internal fun clipStrokeToPage(
     samples: List<StrokeSample>,
