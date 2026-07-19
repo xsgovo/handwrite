@@ -95,6 +95,19 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun sharingATemporaryPageDoesNotCreateADocument() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        val request = viewModel.state.value.toShareRequest()
+
+        assertEquals(0, repository.createCount)
+        assertEquals(DocumentId(0), request.pageContent.page.documentId)
+        assertEquals(PageId(0), request.pageContent.page.id)
+    }
+
+    @Test
     fun strokeCompletionIsAcknowledgedAfterTheStrokeIsVisible() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val viewModel = createViewModel(repository)

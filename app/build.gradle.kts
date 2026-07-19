@@ -20,6 +20,7 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:document"))
     implementation(project(":core:model"))
+    implementation(project(":core:rendering"))
     implementation(project(":core:designsystem"))
     implementation(project(":feature:editor"))
     implementation(project(":feature:library"))

@@ -18,6 +18,7 @@ import com.xsgovo.handwrite.feature.library.LibraryRoute
 import com.xsgovo.handwrite.feature.settings.SettingsRoute
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.UUID
+import javax.inject.Inject
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -37,6 +38,9 @@ private data class ExportDestination(val documentId: Long)
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject
+    lateinit var pageImageSharer: PageImageSharer
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -64,6 +68,7 @@ class MainActivity : ComponentActivity() {
                             onExport = { documentId ->
                                 navController.navigate(ExportDestination(documentId)) { launchSingleTop = true }
                             },
+                            onShare = { request -> pageImageSharer.share(request, settings) },
                             onExitApplication = ::finishAndRemoveTask,
                         )
                     }

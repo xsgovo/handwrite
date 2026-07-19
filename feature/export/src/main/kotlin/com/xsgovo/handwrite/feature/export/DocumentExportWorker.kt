@@ -17,6 +17,7 @@ import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.ExportResolution
 import com.xsgovo.handwrite.core.model.ImageFormat
 import com.xsgovo.handwrite.core.model.PageContent
+import com.xsgovo.handwrite.core.rendering.PageImageEncoder
 import com.xsgovo.handwrite.core.rendering.PageRenderEngine
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -83,13 +84,7 @@ private suspend fun writePageImage(
     quality: CompressionQuality,
 ) {
     val page = snapshot.pages.firstOrNull { it.page.id == snapshot.document.lastActivePageId } ?: snapshot.pages.first()
-    val (width, height) = page.outputSize(resolution.longEdge())
-    val bitmap = renderer.renderPage(page, width, height, forceOpaque = imageFormat.isLossy())
-    try {
-        if (!bitmap.compress(imageFormat.compressFormat(), quality.percent(), output)) throw IOException("Encoding failed")
-    } finally {
-        bitmap.recycle()
-    }
+    PageImageEncoder(renderer).write(page, output, imageFormat, resolution, quality)
 }
 
 private suspend fun writeLongImage(

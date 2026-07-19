@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -56,6 +57,8 @@ fun EditorToolbar(
     onLibrary: () -> Unit,
     onSettings: () -> Unit,
     onExport: () -> Unit,
+    onShare: () -> Unit,
+    isSharing: Boolean,
     onTool: (EditorTool) -> Unit,
     onColorSlot: (Int) -> Unit,
     onWidth: (Int) -> Unit,
@@ -83,6 +86,13 @@ fun EditorToolbar(
             }
             IconButton(onClick = onExport, enabled = state.documentId != null) {
                 Icon(Icons.Default.FileDownload, contentDescription = "导出")
+            }
+            IconButton(onClick = onShare, enabled = !state.isSaving && !isSharing) {
+                if (isSharing) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Share, contentDescription = "分享当前页面图片")
+                }
             }
             ToolButton(EditorTool.PEN, state.tool, onTool, Icons.Default.Edit, "画笔")
             ToolButton(EditorTool.ERASER, state.tool, onTool, Icons.Default.AutoFixNormal, "橡皮擦")

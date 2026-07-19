@@ -18,6 +18,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,6 +27,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
 import com.xsgovo.handwrite.core.rendering.rememberBackgroundAssetImage
 import java.io.FileNotFoundException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @Composable
 fun EditorRoute(
@@ -33,12 +36,15 @@ fun EditorRoute(
     onLibrary: () -> Unit,
     onSettings: () -> Unit,
     onExport: (Long) -> Unit,
+    onShare: suspend (EditorShareRequest) -> Result<Unit>,
     onExitApplication: () -> Unit,
     viewModel: EditorViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var confirmClear by remember { mutableStateOf(false) }
+    var isSharing by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val backgroundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
@@ -75,6 +81,24 @@ fun EditorRoute(
                 onLibrary = onLibrary,
                 onSettings = onSettings,
                 onExport = { state.documentId?.value?.let(onExport) },
+                onShare = {
+                    if (!isSharing) {
+                        val request = state.toShareRequest()
+                        isSharing = true
+                        scope.launch {
+                            val shared = try {
+                                onShare(request).isSuccess
+                            } catch (exception: CancellationException) {
+                                throw exception
+                            } catch (exception: Exception) {
+                                false
+                            }
+                            isSharing = false
+                            if (!shared) snackbar.showSnackbar("分享图片失败")
+                        }
+                    }
+                },
+                isSharing = isSharing,
                 onTool = viewModel::setTool,
                 onColorSlot = viewModel::selectColorSlot,
                 onWidth = viewModel::setWidthStep,
