@@ -2,6 +2,8 @@ package com.xsgovo.handwrite.feature.editor
 
 import android.view.MotionEvent
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntSize
 import com.xsgovo.handwrite.core.document.DocumentCommand
 import com.xsgovo.handwrite.core.document.BackgroundResourceRepository
 import com.xsgovo.handwrite.core.document.DocumentRepository
@@ -214,18 +216,21 @@ class EditorViewModelTest {
                 rawToolType = MotionEvent.TOOL_TYPE_STYLUS,
             ),
         )
-        assertTrue(
-            shouldCaptureTouchNavigation(
-                inputMode = com.xsgovo.handwrite.core.model.InputMode.STYLUS,
-                rawToolType = MotionEvent.TOOL_TYPE_FINGER,
-            ),
+    }
+
+    @Test
+    fun canvasPanClampsAtTheVisibleOverflow() {
+        val transform = CanvasPageTransform.create(
+            canvas = IntSize(400, 400),
+            page = squarePage(),
+            zoom = 2f,
+            pan = Offset.Zero,
         )
-        assertFalse(
-            shouldCaptureTouchNavigation(
-                inputMode = com.xsgovo.handwrite.core.model.InputMode.STYLUS,
-                rawToolType = MotionEvent.TOOL_TYPE_STYLUS,
-            ),
-        )
+
+        val clamped = transform.clampPan(Offset(10_000f, -10_000f))
+
+        assertEquals(transform.panLimit.x, clamped.x, 0f)
+        assertEquals(-transform.panLimit.y, clamped.y, 0f)
     }
 
     private fun sample(x: Int, y: Int): StrokeSample = StrokeSample(LogicalPoint(x, y))

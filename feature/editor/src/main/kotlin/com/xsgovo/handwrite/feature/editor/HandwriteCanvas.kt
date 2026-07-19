@@ -83,7 +83,6 @@ fun HandwriteCanvas(
     var pendingErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
     var pendingStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     var pan by remember { mutableStateOf(Offset.Zero) }
-    val interopNavigation = remember { InteropNavigationState() }
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
@@ -97,8 +96,8 @@ fun HandwriteCanvas(
     val toggleEraserCallback by rememberUpdatedState(onToggleEraser)
     val undoCallback by rememberUpdatedState(onUndo)
 
-    LaunchedEffect(zoomPercent) {
-        if (zoomPercent == 100) pan = Offset.Zero
+    LaunchedEffect(zoomPercent, canvasSize, pageSize) {
+        pan = if (zoomPercent == 100) Offset.Zero else transform.clampPan(pan)
     }
 
     fun eraseAt(point: LogicalPoint) {
@@ -118,90 +117,15 @@ fun HandwriteCanvas(
         if (hits.isNotEmpty()) erasedIds = erasedIds + hits
     }
 
-    fun resetInteropNavigation() {
-        interopNavigation.reset()
+    fun applyPanDelta(delta: Offset) {
+        if (delta != Offset.Zero) pan = currentTransform.clampPan(pan + delta)
     }
 
-    fun updateInteropNavigation(event: MotionEvent, excludedPointerIndex: Int? = null) {
-        val pointers = buildList {
-            repeat(event.pointerCount) { index ->
-                if (index != excludedPointerIndex) add(Offset(event.getX(index), event.getY(index)))
-            }
-        }
-        if (pointers.isEmpty()) return
-
-        val centroid = pointers.reduce(Offset::plus) / pointers.size.toFloat()
-        val span = if (pointers.size >= 2) {
-            hypot(
-                pointers[0].x - pointers[1].x,
-                pointers[0].y - pointers[1].y,
-            )
-        } else {
-            0f
-        }
-        if (interopNavigation.previousPointerCount == pointers.size) {
-            interopNavigation.previousCentroid?.let { pan += centroid - it }
-            if (interopNavigation.previousSpan > 0f && span > 0f) {
-                interopNavigation.zoom = (interopNavigation.zoom * span / interopNavigation.previousSpan)
-                    .roundToInt()
-                    .coerceIn(100, 400)
-                zoomCallback(interopNavigation.zoom)
-            }
-        } else {
-            interopNavigation.zoom = currentZoom
-        }
-        interopNavigation.previousCentroid = centroid
-        interopNavigation.previousSpan = span
-        interopNavigation.previousPointerCount = pointers.size
-    }
-
-    val touchNavigationModifier = Modifier.pointerInteropFilter { event ->
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                if (!shouldCaptureTouchNavigation(inputMode, event.getToolType(event.actionIndex))) {
-                    false
-                } else {
-                    containingView.requestUnbufferedDispatch(event)
-                    interopNavigation.active = true
-                    interopNavigation.zoom = currentZoom
-                    updateInteropNavigation(event)
-                    true
-                }
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (!interopNavigation.active) {
-                    false
-                } else {
-                    updateInteropNavigation(event)
-                    true
-                }
-            }
-            MotionEvent.ACTION_POINTER_DOWN -> {
-                if (!interopNavigation.active) {
-                    false
-                } else {
-                    updateInteropNavigation(event)
-                    true
-                }
-            }
-            MotionEvent.ACTION_POINTER_UP -> {
-                if (!interopNavigation.active) {
-                    false
-                } else {
-                    updateInteropNavigation(event, event.actionIndex)
-                    true
-                }
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (!interopNavigation.active) {
-                    false
-                } else {
-                    resetInteropNavigation()
-                    true
-                }
-            }
-            else -> interopNavigation.active
-        }
+    // Keep unbuffered dispatch for Ink's low-latency pointerInput processing. Actual gesture
+    // handling stays in Compose so touch navigation and Ink observe a deterministic event order.
+    val unbufferedDispatchModifier = Modifier.pointerInteropFilter { event ->
+        containingView.requestUnbufferedDispatch(event)
+        false
     }
 
     val gestureModifier = Modifier.pointerInput(tool, inputMode, sideButtonAction) {
@@ -235,7 +159,7 @@ fun HandwriteCanvas(
                         pressed[0].position.x - pressed[1].position.x,
                         pressed[0].position.y - pressed[1].position.y,
                     )
-                    previousCentroid?.let { pan += centroid - it }
+                    previousCentroid?.let { applyPanDelta(centroid - it) }
                     if (previousSpan > 0f && span > 0f) {
                         gestureZoom = (gestureZoom * span / previousSpan).roundToInt().coerceIn(100, 400)
                         zoomCallback(gestureZoom)
@@ -254,13 +178,13 @@ fun HandwriteCanvas(
                             rawToolType = motionEvent?.takeIf { it.pointerCount > 0 }?.getToolType(0),
                         )
                         when {
-                            interopNavigation.active -> change.consume()
                             sidePressed && sideButtonAction != SideButtonAction.TEMPORARY_ERASER -> {
                                 change.consume()
                             }
                             navigationPointer -> {
+                                val delta = change.positionChange()
                                 change.consume()
-                                pan += change.positionChange()
+                                applyPanDelta(delta)
                             }
                             erasing -> {
                                 change.consume()
@@ -312,8 +236,8 @@ fun HandwriteCanvas(
             .fillMaxSize()
             .background(Color(0xFFE8EBE8))
             .onSizeChanged { canvasSize = it }
-            .then(touchNavigationModifier)
-            .then(gestureModifier),
+            .then(gestureModifier)
+            .then(unbufferedDispatchModifier),
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val page = transform.pageRect
@@ -396,21 +320,6 @@ fun HandwriteCanvas(
 
 private const val LOG_TAG = "HandwriteCanvas"
 
-private class InteropNavigationState {
-    var active: Boolean = false
-    var previousCentroid: Offset? = null
-    var previousSpan: Float = 0f
-    var previousPointerCount: Int = 0
-    var zoom: Int = 100
-
-    fun reset() {
-        active = false
-        previousCentroid = null
-        previousSpan = 0f
-        previousPointerCount = 0
-    }
-}
-
 internal fun isSingleFingerNavigationPointer(
     inputMode: InputMode,
     pointerType: PointerType,
@@ -420,11 +329,6 @@ internal fun isSingleFingerNavigationPointer(
     pointerType != PointerType.Eraser &&
     rawToolType != MotionEvent.TOOL_TYPE_STYLUS &&
     rawToolType != MotionEvent.TOOL_TYPE_ERASER
-
-internal fun shouldCaptureTouchNavigation(inputMode: InputMode, rawToolType: Int): Boolean =
-    inputMode == InputMode.STYLUS &&
-        rawToolType != MotionEvent.TOOL_TYPE_STYLUS &&
-        rawToolType != MotionEvent.TOOL_TYPE_ERASER
 
 internal fun clipStrokeToPage(
     samples: List<StrokeSample>,
@@ -526,11 +430,17 @@ private fun interpolateTilt(first: Int?, second: Int?, parameter: Double): Int? 
     else -> (first + (second - first) * parameter).roundToInt()
 }
 
-private data class CanvasPageTransform(
+internal data class CanvasPageTransform(
     val pageSize: LogicalSize,
     val scale: Float,
     val pageRect: Rect,
+    val panLimit: Offset,
 ) {
+    fun clampPan(pan: Offset): Offset = Offset(
+        pan.x.coerceIn(-panLimit.x, panLimit.x),
+        pan.y.coerceIn(-panLimit.y, panLimit.y),
+    )
+
     fun toLogical(point: Offset): LogicalPoint? {
         if (!pageRect.contains(point)) return null
         return toLogicalClamped(point)
@@ -548,7 +458,9 @@ private data class CanvasPageTransform(
 
     companion object {
         fun create(canvas: IntSize, page: LogicalSize, zoom: Float, pan: Offset): CanvasPageTransform {
-            if (canvas.width == 0 || canvas.height == 0) return CanvasPageTransform(page, 1f, Rect.Zero)
+            if (canvas.width == 0 || canvas.height == 0) {
+                return CanvasPageTransform(page, 1f, Rect.Zero, Offset.Zero)
+            }
             val padding = 24f
             val fit = minOf(
                 (canvas.width - padding * 2) / page.width,
@@ -561,7 +473,12 @@ private data class CanvasPageTransform(
             val overflowY = ((height - canvas.height) / 2f + padding).coerceAtLeast(0f)
             val left = (canvas.width - width) / 2f + pan.x.coerceIn(-overflowX, overflowX)
             val top = (canvas.height - height) / 2f + pan.y.coerceIn(-overflowY, overflowY)
-            return CanvasPageTransform(page, scale, Rect(left, top, left + width, top + height))
+            return CanvasPageTransform(
+                pageSize = page,
+                scale = scale,
+                pageRect = Rect(left, top, left + width, top + height),
+                panLimit = Offset(overflowX, overflowY),
+            )
         }
     }
 }
