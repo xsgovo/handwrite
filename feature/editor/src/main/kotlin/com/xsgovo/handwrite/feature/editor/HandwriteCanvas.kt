@@ -2,11 +2,28 @@ package com.xsgovo.handwrite.feature.editor
 
 import android.view.MotionEvent
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -31,8 +49,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import androidx.ink.authoring.compose.InProgressStrokes
 import androidx.ink.strokes.Stroke
 import androidx.ink.strokes.StrokeInput
@@ -50,10 +70,12 @@ import com.xsgovo.handwrite.core.model.StrokeElement
 import com.xsgovo.handwrite.core.model.StrokeSample
 import com.xsgovo.handwrite.core.rendering.InkDocumentRenderer
 import com.xsgovo.handwrite.core.rendering.createInkBrush
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -83,6 +105,9 @@ fun HandwriteCanvas(
     var pendingErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
     var pendingStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    var zoomControlsVisible by remember { mutableStateOf(false) }
+    var zoomGestureActive by remember { mutableStateOf(false) }
+    var zoomControlInteraction by remember { mutableStateOf(0) }
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
@@ -98,6 +123,19 @@ fun HandwriteCanvas(
 
     LaunchedEffect(zoomPercent, canvasSize, pageSize) {
         pan = if (zoomPercent == 100) Offset.Zero else transform.clampPan(pan)
+    }
+    LaunchedEffect(zoomGestureActive, zoomControlInteraction) {
+        if (zoomGestureActive) {
+            zoomControlsVisible = true
+        } else if (zoomControlsVisible) {
+            delay(ZOOM_CONTROLS_HIDE_DELAY_MILLIS)
+            zoomControlsVisible = false
+        }
+    }
+
+    fun keepZoomControlsVisible() {
+        zoomControlsVisible = true
+        zoomControlInteraction++
     }
 
     fun eraseAt(point: LogicalPoint) {
@@ -134,6 +172,7 @@ fun HandwriteCanvas(
             var previousSpan = 0f
             var gestureZoom = currentZoom
             var sideActionHandled = false
+            var zoomGestureDetected = false
             do {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 val pressed = event.changes.filter { it.pressed }
@@ -161,8 +200,19 @@ fun HandwriteCanvas(
                     )
                     previousCentroid?.let { applyPanDelta(centroid - it) }
                     if (previousSpan > 0f && span > 0f) {
-                        gestureZoom = (gestureZoom * span / previousSpan).roundToInt().coerceIn(100, 400)
-                        zoomCallback(gestureZoom)
+                        val scaleChange = span / previousSpan
+                        val nextZoom = (gestureZoom * scaleChange).roundToInt().coerceIn(100, 400)
+                        if (nextZoom != gestureZoom || abs(scaleChange - 1f) >= ZOOM_GESTURE_SCALE_THRESHOLD) {
+                            if (!zoomGestureDetected) {
+                                zoomGestureDetected = true
+                                zoomGestureActive = true
+                                zoomControlsVisible = true
+                            }
+                        }
+                        if (nextZoom != gestureZoom) {
+                            gestureZoom = nextZoom
+                            zoomCallback(gestureZoom)
+                        }
                     }
                     previousCentroid = centroid
                     previousSpan = span
@@ -194,6 +244,8 @@ fun HandwriteCanvas(
                     }
                 }
             } while (event.changes.any { it.pressed })
+
+            if (zoomGestureDetected) zoomGestureActive = false
 
             if (erasedIds.isNotEmpty()) {
                 val completed = erasedIds
@@ -235,90 +287,156 @@ fun HandwriteCanvas(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFFE8EBE8))
-            .onSizeChanged { canvasSize = it }
-            .then(gestureModifier)
-            .then(unbufferedDispatchModifier),
+            .onSizeChanged { canvasSize = it },
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val page = transform.pageRect
-            drawRect(Color(0x26000000), topLeft = page.topLeft + Offset(0f, 3f), size = page.size)
-            drawRect(background.baseColor(), topLeft = page.topLeft, size = page.size)
-            clipRect(page.left, page.top, page.right, page.bottom) {
-                when (background) {
-                    is PageBackground.Pattern -> drawPattern(background, page, transform.scale)
-                    is PageBackground.Asset -> backgroundImage?.let { image ->
-                        val scale = background.transform.scalePermille / 1_000f
-                        val translation = Offset(
-                            background.transform.translation.x * transform.scale,
-                            background.transform.translation.y * transform.scale,
-                        )
-                        withTransform({
-                            translate(translation.x, translation.y)
-                            rotate(background.transform.rotationMilliDegrees / 1_000f, page.center)
-                            scale(scale, scale, page.center)
-                        }) {
-                            drawImage(
-                                image = image,
-                                dstOffset = IntOffset(page.left.roundToInt(), page.top.roundToInt()),
-                                dstSize = IntSize(page.width.roundToInt(), page.height.roundToInt()),
+        Box(
+            Modifier
+                .fillMaxSize()
+                .then(gestureModifier)
+                .then(unbufferedDispatchModifier),
+        ) {
+            Canvas(Modifier.fillMaxSize()) {
+                val page = transform.pageRect
+                drawRect(Color(0x26000000), topLeft = page.topLeft + Offset(0f, 3f), size = page.size)
+                drawRect(background.baseColor(), topLeft = page.topLeft, size = page.size)
+                clipRect(page.left, page.top, page.right, page.bottom) {
+                    when (background) {
+                        is PageBackground.Pattern -> drawPattern(background, page, transform.scale)
+                        is PageBackground.Asset -> backgroundImage?.let { image ->
+                            val scale = background.transform.scalePermille / 1_000f
+                            val translation = Offset(
+                                background.transform.translation.x * transform.scale,
+                                background.transform.translation.y * transform.scale,
                             )
+                            withTransform({
+                                translate(translation.x, translation.y)
+                                rotate(background.transform.rotationMilliDegrees / 1_000f, page.center)
+                                scale(scale, scale, page.center)
+                            }) {
+                                drawImage(
+                                    image = image,
+                                    dstOffset = IntOffset(page.left.roundToInt(), page.top.roundToInt()),
+                                    dstSize = IntSize(page.width.roundToInt(), page.height.roundToInt()),
+                                )
+                            }
                         }
+                        else -> Unit
                     }
-                    else -> Unit
+                    inkRenderer.draw(this, preparedStrokes, transform.scale, page.left, page.top)
                 }
-                inkRenderer.draw(this, preparedStrokes, transform.scale, page.left, page.top)
             }
-        }
-        Canvas(Modifier.fillMaxSize()) {
-            val page = transform.pageRect
-            clipRect(page.left, page.top, page.right, page.bottom) {
-                inkRenderer.drawInProgress(this, pendingStrokes)
+            Canvas(Modifier.fillMaxSize()) {
+                val page = transform.pageRect
+                clipRect(page.left, page.top, page.right, page.bottom) {
+                    inkRenderer.drawInProgress(this, pendingStrokes)
+                }
             }
-        }
-        InProgressStrokes(
-            defaultBrush = wetBrush,
-            nextBrush = { currentWetBrush },
-            maskPath = maskPath,
-            onStrokesFinished = { completed ->
-                completed.forEach { stroke ->
-                    pendingStrokes = pendingStrokes + stroke
-                    val samples = buildList {
-                        val scratch = StrokeInput()
-                        repeat(stroke.inputs.size) { index ->
-                            stroke.inputs.populate(index, scratch)
-                            val point = currentTransform.toLogicalUnclamped(Offset(scratch.x, scratch.y))
-                            val tilt = scratch.toTiltVector()
-                            add(
-                                StrokeSample(
-                                    point = point,
-                                    pressure = if (scratch.hasPressure) {
-                                        (scratch.pressure * StrokeSample.MAX_PRESSURE).roundToInt()
-                                            .coerceIn(0, StrokeSample.MAX_PRESSURE)
-                                    } else {
-                                        StrokeSample.MAX_PRESSURE
-                                    },
-                                    elapsedMillis = scratch.elapsedTimeMillis.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(),
-                                    tiltX = tilt?.first,
-                                    tiltY = tilt?.second,
-                                ),
-                            )
+            InProgressStrokes(
+                defaultBrush = wetBrush,
+                nextBrush = { currentWetBrush },
+                maskPath = maskPath,
+                onStrokesFinished = { completed ->
+                    completed.forEach { stroke ->
+                        pendingStrokes = pendingStrokes + stroke
+                        val samples = buildList {
+                            val scratch = StrokeInput()
+                            repeat(stroke.inputs.size) { index ->
+                                stroke.inputs.populate(index, scratch)
+                                val point = currentTransform.toLogicalUnclamped(Offset(scratch.x, scratch.y))
+                                val tilt = scratch.toTiltVector()
+                                add(
+                                    StrokeSample(
+                                        point = point,
+                                        pressure = if (scratch.hasPressure) {
+                                            (scratch.pressure * StrokeSample.MAX_PRESSURE).roundToInt()
+                                                .coerceIn(0, StrokeSample.MAX_PRESSURE)
+                                        } else {
+                                            StrokeSample.MAX_PRESSURE
+                                        },
+                                        elapsedMillis = scratch.elapsedTimeMillis
+                                            .coerceIn(0, Int.MAX_VALUE.toLong()).toInt(),
+                                        tiltX = tilt?.first,
+                                        tiltY = tilt?.second,
+                                    ),
+                                )
+                            }
                         }
-                    }
-                    val clippedStrokes = clipStrokeToPage(samples, pageSize)
-                    if (clippedStrokes.isNotEmpty()) {
-                        strokesCallback(clippedStrokes) {
+                        val clippedStrokes = clipStrokeToPage(samples, pageSize)
+                        if (clippedStrokes.isNotEmpty()) {
+                            strokesCallback(clippedStrokes) {
+                                pendingStrokes = pendingStrokes.filterNot { it === stroke }
+                            }
+                        } else {
                             pendingStrokes = pendingStrokes.filterNot { it === stroke }
                         }
-                    } else {
-                        pendingStrokes = pendingStrokes.filterNot { it === stroke }
                     }
-                }
+                },
+            )
+        }
+        ZoomControlsOverlay(
+            visible = zoomControlsVisible,
+            zoomPercent = zoomPercent,
+            onZoomOut = {
+                keepZoomControlsVisible()
+                zoomCallback((currentZoom - ZOOM_BUTTON_STEP).coerceAtLeast(MIN_ZOOM_PERCENT))
             },
+            onZoomIn = {
+                keepZoomControlsVisible()
+                zoomCallback((currentZoom + ZOOM_BUTTON_STEP).coerceAtMost(MAX_ZOOM_PERCENT))
+            },
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
         )
     }
 }
 
 private const val LOG_TAG = "HandwriteCanvas"
+private const val MIN_ZOOM_PERCENT = 100
+private const val MAX_ZOOM_PERCENT = 400
+private const val ZOOM_BUTTON_STEP = 25
+private const val ZOOM_GESTURE_SCALE_THRESHOLD = 0.005f
+private const val ZOOM_CONTROLS_HIDE_DELAY_MILLIS = 1_800L
+
+@Composable
+private fun ZoomControlsOverlay(
+    visible: Boolean,
+    zoomPercent: Int,
+    onZoomOut: () -> Unit,
+    onZoomIn: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(),
+        exit = fadeOut(),
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            shape = RoundedCornerShape(8.dp),
+            tonalElevation = 4.dp,
+            shadowElevation = 4.dp,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.height(48.dp),
+            ) {
+                IconButton(onClick = onZoomOut, enabled = zoomPercent > MIN_ZOOM_PERCENT) {
+                    Icon(Icons.Default.Remove, contentDescription = "缩小页面")
+                }
+                Text(
+                    text = "$zoomPercent%",
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(64.dp),
+                )
+                IconButton(onClick = onZoomIn, enabled = zoomPercent < MAX_ZOOM_PERCENT) {
+                    Icon(Icons.Default.Add, contentDescription = "放大页面")
+                }
+            }
+        }
+    }
+}
 
 internal fun isSingleFingerNavigationPointer(
     inputMode: InputMode,

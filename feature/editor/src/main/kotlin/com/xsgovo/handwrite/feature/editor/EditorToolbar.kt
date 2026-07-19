@@ -29,10 +29,8 @@ import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -69,7 +67,6 @@ fun EditorToolbar(
     onTool: (EditorTool) -> Unit,
     onColorSlot: (Int) -> Unit,
     onWidth: (Int) -> Unit,
-    onZoom: (Int) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onClear: () -> Unit,
@@ -182,13 +179,6 @@ fun EditorToolbar(
                         onClick = { menuExpanded = false; onSettings() },
                     )
                 }
-            }
-            IconButton(onClick = { onZoom(state.zoomPercent - 25) }, enabled = state.zoomPercent > 100) {
-                Icon(Icons.Default.Remove, contentDescription = "缩小")
-            }
-            Text("${state.zoomPercent}%", style = MaterialTheme.typography.labelMedium)
-            IconButton(onClick = { onZoom(state.zoomPercent + 25) }, enabled = state.zoomPercent < 400) {
-                Icon(Icons.Default.Add, contentDescription = "放大")
             }
             IconButton(onClick = onUndo, enabled = state.canUndo) {
                 Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "撤销")

@@ -102,7 +102,6 @@ fun EditorRoute(
                 onTool = viewModel::setTool,
                 onColorSlot = viewModel::selectColorSlot,
                 onWidth = viewModel::setWidthStep,
-                onZoom = viewModel::setZoom,
                 onUndo = viewModel::undo,
                 onRedo = viewModel::redo,
                 onClear = { confirmClear = true },
