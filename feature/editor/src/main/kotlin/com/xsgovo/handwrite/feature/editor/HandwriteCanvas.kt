@@ -30,6 +30,7 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.ink.authoring.compose.InProgressStrokes
@@ -76,6 +77,7 @@ fun HandwriteCanvas(
     onUndo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val containingView = LocalView.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var erasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
     var pendingErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
@@ -164,6 +166,7 @@ fun HandwriteCanvas(
                 if (!shouldCaptureTouchNavigation(inputMode, event.getToolType(event.actionIndex))) {
                     false
                 } else {
+                    containingView.requestUnbufferedDispatch(event)
                     interopNavigationActive = true
                     interopZoom = currentZoom
                     updateInteropNavigation(event)
