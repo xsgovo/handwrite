@@ -108,6 +108,13 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun sharingIsBlockedWhileSavingOrAlreadySharing() {
+        assertTrue(canStartShare(isSaving = false, isSharing = false))
+        assertFalse(canStartShare(isSaving = true, isSharing = false))
+        assertFalse(canStartShare(isSaving = false, isSharing = true))
+    }
+
+    @Test
     fun strokeCompletionIsAcknowledgedAfterTheStrokeIsVisible() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val viewModel = createViewModel(repository)

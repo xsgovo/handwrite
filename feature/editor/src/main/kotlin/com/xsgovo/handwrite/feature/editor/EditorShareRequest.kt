@@ -10,6 +10,8 @@ data class EditorShareRequest(
     val pageContent: PageContent,
 )
 
+internal fun canStartShare(isSaving: Boolean, isSharing: Boolean): Boolean = !isSaving && !isSharing
+
 internal fun EditorUiState.toShareRequest(): EditorShareRequest {
     val activePageId = pageId ?: elements.firstOrNull()?.pageId ?: PageId(0)
     return EditorShareRequest(

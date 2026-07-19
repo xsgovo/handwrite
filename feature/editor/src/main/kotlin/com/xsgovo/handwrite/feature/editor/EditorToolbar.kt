@@ -87,7 +87,7 @@ fun EditorToolbar(
             IconButton(onClick = onExport, enabled = state.documentId != null) {
                 Icon(Icons.Default.FileDownload, contentDescription = "导出")
             }
-            IconButton(onClick = onShare, enabled = !state.isSaving && !isSharing) {
+            IconButton(onClick = onShare, enabled = !isSharing) {
                 if (isSharing) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {

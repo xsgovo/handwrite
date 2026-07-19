@@ -82,7 +82,7 @@ fun EditorRoute(
                 onSettings = onSettings,
                 onExport = { state.documentId?.value?.let(onExport) },
                 onShare = {
-                    if (!isSharing) {
+                    if (canStartShare(state.isSaving, isSharing)) {
                         val request = state.toShareRequest()
                         isSharing = true
                         scope.launch {
