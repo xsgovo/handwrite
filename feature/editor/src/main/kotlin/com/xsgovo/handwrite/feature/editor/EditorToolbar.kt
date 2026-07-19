@@ -52,9 +52,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PatternType
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val BRUSH_WIDTH_PRESETS = listOf(25, 50, 75)
+
+internal fun selectedBrushWidthPreset(widthStep: Int): Int =
+    BRUSH_WIDTH_PRESETS.minBy { preset -> abs(preset - widthStep.coerceIn(1, 100)) }
 
 @Composable
 fun EditorToolbar(
@@ -78,6 +82,7 @@ fun EditorToolbar(
     var widthPanelExpanded by remember { mutableStateOf(false) }
     var widthPanelPreset by remember { mutableStateOf<Int?>(null) }
     var pendingWidthStep by remember { mutableStateOf(state.widthStep.toFloat()) }
+    val selectedWidthPreset = selectedBrushWidthPreset(state.widthStep)
     Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -110,9 +115,9 @@ fun EditorToolbar(
                 Box {
                     BrushWidthPresetButton(
                         step = preset,
-                        selected = state.widthStep == preset,
+                        selected = selectedWidthPreset == preset,
                         onClick = {
-                            if (state.widthStep == preset) {
+                            if (selectedWidthPreset == preset) {
                                 pendingWidthStep = state.widthStep.toFloat()
                                 widthPanelPreset = preset
                                 widthPanelExpanded = true
