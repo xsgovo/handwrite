@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.ink.authoring.compose.InProgressStrokes
 import androidx.ink.strokes.StrokeInput
+import androidx.ink.strokes.Stroke
 import com.xsgovo.handwrite.core.model.BrushId
 import com.xsgovo.handwrite.core.model.ElementId
 import com.xsgovo.handwrite.core.model.InputMode
@@ -68,14 +69,16 @@ fun HandwriteCanvas(
     pressureSensitivity: PressureSensitivity,
     sideButtonAction: SideButtonAction,
     onZoomChanged: (Int) -> Unit,
-    onStrokeFinished: (List<StrokeSample>) -> Unit,
-    onEraseFinished: (Set<ElementId>) -> Unit,
+    onStrokeFinished: (List<StrokeSample>, onCompleted: () -> Unit) -> Unit,
+    onEraseFinished: (Set<ElementId>, onCompleted: () -> Unit) -> Unit,
     onToggleEraser: () -> Unit,
     onUndo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var erasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
+    var pendingErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
+    var pendingStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
@@ -84,6 +87,7 @@ fun HandwriteCanvas(
     val currentTransform by rememberUpdatedState(transform)
     val currentZoom by rememberUpdatedState(zoomPercent)
     val currentStrokes by rememberUpdatedState(strokes)
+    val strokeCallback by rememberUpdatedState(onStrokeFinished)
     val zoomCallback by rememberUpdatedState(onZoomChanged)
     val eraseCallback by rememberUpdatedState(onEraseFinished)
     val toggleEraserCallback by rememberUpdatedState(onToggleEraser)
@@ -96,7 +100,7 @@ fun HandwriteCanvas(
     fun eraseAt(point: LogicalPoint) {
         val radius = (900f / (currentZoom / 100f)).coerceAtLeast(180f)
         val hits = currentStrokes.asSequence()
-            .filterNot { it.id in erasedIds }
+            .filterNot { it.id in erasedIds || it.id in pendingErasedIds }
             .filter { stroke ->
                 stroke.samples.any { candidate ->
                     hypot(
@@ -181,13 +185,18 @@ fun HandwriteCanvas(
             if (erasedIds.isNotEmpty()) {
                 val completed = erasedIds
                 erasedIds = emptySet()
-                eraseCallback(completed)
+                pendingErasedIds = pendingErasedIds + completed
+                eraseCallback(completed) {
+                    pendingErasedIds = pendingErasedIds - completed
+                }
             }
         }
     }
 
     val inkRenderer = remember { InkDocumentRenderer() }
-    val visibleStrokes = remember(strokes, erasedIds) { strokes.filterNot { it.id in erasedIds } }
+    val visibleStrokes = remember(strokes, erasedIds, pendingErasedIds) {
+        strokes.filterNot { it.id in erasedIds || it.id in pendingErasedIds }
+    }
     val preparedStrokes = remember(visibleStrokes) {
         runCatching { inkRenderer.prepare(visibleStrokes) }
             .onFailure { error -> Log.e(LOG_TAG, "Unable to prepare persisted Ink stroke", error) }
@@ -245,11 +254,18 @@ fun HandwriteCanvas(
                 inkRenderer.draw(this, preparedStrokes, transform.scale, page.left, page.top)
             }
         }
+        Canvas(Modifier.fillMaxSize()) {
+            val page = transform.pageRect
+            clipRect(page.left, page.top, page.right, page.bottom) {
+                inkRenderer.drawInProgress(this, pendingStrokes)
+            }
+        }
         InProgressStrokes(
             defaultBrush = wetBrush,
             maskPath = maskPath,
             onStrokesFinished = { completed ->
                 completed.forEach { stroke ->
+                    pendingStrokes = pendingStrokes + stroke
                     val samples = buildList {
                         val scratch = StrokeInput()
                         repeat(stroke.inputs.size) { index ->
@@ -272,7 +288,13 @@ fun HandwriteCanvas(
                             )
                         }
                     }.distinctBy { it.point }
-                    if (samples.isNotEmpty()) onStrokeFinished(samples)
+                    if (samples.isNotEmpty()) {
+                        strokeCallback(samples) {
+                            pendingStrokes = pendingStrokes.filterNot { it === stroke }
+                        }
+                    } else {
+                        pendingStrokes = pendingStrokes.filterNot { it === stroke }
+                    }
                 }
             },
         )

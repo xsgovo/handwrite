@@ -48,6 +48,14 @@ class InkDocumentRenderer {
             }
         }
     }
+
+    fun drawInProgress(scope: DrawScope, strokes: List<Stroke>) {
+        if (strokes.isEmpty()) return
+        scope.drawIntoCanvas { canvas ->
+            val nativeCanvas = canvas.nativeCanvas
+            strokes.forEach { stroke -> renderer.draw(nativeCanvas, stroke, Matrix()) }
+        }
+    }
 }
 
 fun createInkBrush(

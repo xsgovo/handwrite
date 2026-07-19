@@ -75,6 +75,37 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun strokeCompletionIsAcknowledgedAfterTheStrokeIsVisible() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        var strokeCountAtCompletion = 0
+
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200)))) {
+            strokeCountAtCompletion = viewModel.state.value.strokes.size
+        }
+        advanceUntilIdle()
+
+        assertEquals(1, strokeCountAtCompletion)
+    }
+
+    @Test
+    fun eraseCompletionIsAcknowledgedAfterTheStrokeIsRemoved() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val strokeId = viewModel.state.value.strokes.single().id
+        var strokeCountAtCompletion = -1
+
+        viewModel.eraseElements(setOf(strokeId)) {
+            strokeCountAtCompletion = viewModel.state.value.strokes.size
+        }
+        advanceUntilIdle()
+
+        assertEquals(0, strokeCountAtCompletion)
+    }
+
+    @Test
     fun undoHistoryIsKeptInsideCurrentViewModelSession() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val viewModel = createViewModel(repository)

@@ -162,11 +162,18 @@ class EditorViewModel @Inject constructor(
         updateSettings { it.copy(widthStep = value) }
     }
 
-    fun commitStroke(samples: List<StrokeSample>) {
-        if (samples.isEmpty()) return
+    fun commitStroke(samples: List<StrokeSample>, onCompleted: () -> Unit = {}) {
+        if (samples.isEmpty()) {
+            onCompleted()
+            return
+        }
         viewModelScope.launch {
             writeMutex.withLock {
-                val target = ensureDocument() ?: return@withLock
+                val target = ensureDocument()
+                if (target == null) {
+                    onCompleted()
+                    return@withLock
+                }
                 val current = mutableState.value
                 val stroke = StrokeElement(
                     id = ElementId(nextElementId.incrementAndGet()),
@@ -184,23 +191,35 @@ class EditorViewModel @Inject constructor(
                     DocumentCommand.ReplaceElements(target.first, target.second, emptyList(), listOf(stroke)),
                     recordHistory = true,
                 )
+                onCompleted()
             }
         }
     }
 
-    fun eraseElements(ids: Set<ElementId>) {
-        if (ids.isEmpty()) return
+    fun eraseElements(ids: Set<ElementId>, onCompleted: () -> Unit = {}) {
+        if (ids.isEmpty()) {
+            onCompleted()
+            return
+        }
         viewModelScope.launch {
             writeMutex.withLock {
                 val current = mutableState.value
-                val documentId = current.documentId ?: return@withLock
-                val pageId = current.pageId ?: return@withLock
+                val documentId = current.documentId
+                val pageId = current.pageId
+                if (documentId == null || pageId == null) {
+                    onCompleted()
+                    return@withLock
+                }
                 val removed = current.elements.filter { it.id in ids }
-                if (removed.isEmpty()) return@withLock
+                if (removed.isEmpty()) {
+                    onCompleted()
+                    return@withLock
+                }
                 commit(
                     DocumentCommand.ReplaceElements(documentId, pageId, removed, emptyList()),
                     recordHistory = true,
                 )
+                onCompleted()
             }
         }
     }
