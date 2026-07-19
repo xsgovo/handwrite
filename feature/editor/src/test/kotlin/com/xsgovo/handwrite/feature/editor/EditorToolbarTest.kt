@@ -1,17 +1,15 @@
 package com.xsgovo.handwrite.feature.editor
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EditorToolbarTest {
     @Test
-    fun customWidthSelectsNearestPresetWithoutReplacingItsValue() {
-        assertEquals(25, selectedBrushWidthPreset(1))
-        assertEquals(25, selectedBrushWidthPreset(37))
-        assertEquals(50, selectedBrushWidthPreset(38))
-        assertEquals(50, selectedBrushWidthPreset(62))
-        assertEquals(75, selectedBrushWidthPreset(63))
-        assertEquals(75, selectedBrushWidthPreset(73))
-        assertEquals(75, selectedBrushWidthPreset(100))
+    fun iconSizeTracksTheFullWidthRange() {
+        assertEquals(4f, brushWidthIconSizeDp(1), 0f)
+        assertEquals(24f, brushWidthIconSizeDp(100), 0.001f)
+        assertTrue(brushWidthIconSizeDp(25) < brushWidthIconSizeDp(50))
+        assertTrue(brushWidthIconSizeDp(50) < brushWidthIconSizeDp(75))
     }
 }

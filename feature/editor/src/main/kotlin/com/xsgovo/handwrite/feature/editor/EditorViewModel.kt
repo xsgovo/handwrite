@@ -72,7 +72,8 @@ data class EditorUiState(
     val inputMode: InputMode = InputMode.FINGER,
     val colorSlots: List<Int> = AppSettings.DEFAULT_COLOR_SLOTS,
     val activeColorSlot: Int = 0,
-    val widthStep: Int = 50,
+    val widthSteps: List<Int> = AppSettings.DEFAULT_WIDTH_STEPS,
+    val activeWidthSlot: Int = 1,
     val activeBrushId: BrushId = BrushId.MONOLINE,
     val pressureSensitivity: PressureSensitivity = PressureSensitivity.STANDARD,
     val sideButtonAction: SideButtonAction = SideButtonAction.TEMPORARY_ERASER,
@@ -84,7 +85,8 @@ data class EditorUiState(
 ) {
     val strokes: List<StrokeElement> get() = elements.filterIsInstance<StrokeElement>()
     val activeColor: Int get() = colorSlots[activeColorSlot]
-    val activeWidth: Int get() = 16 + widthStep.coerceIn(1, 100) * 8
+    val widthStep: Int get() = widthSteps[activeWidthSlot]
+    val activeWidth: Int get() = 16 + widthStep * 8
 }
 
 sealed interface EditorUiEffect {
@@ -120,7 +122,8 @@ class EditorViewModel @Inject constructor(
                         inputMode = settings.inputMode,
                         colorSlots = settings.colorSlots,
                         activeColorSlot = settings.activeColorSlot,
-                        widthStep = settings.widthStep,
+                        widthSteps = settings.widthSteps,
+                        activeWidthSlot = settings.activeWidthSlot,
                         activeBrushId = settings.activeBrushId,
                         pressureSensitivity = settings.pressureSensitivity,
                         sideButtonAction = settings.sideButtonAction,
@@ -158,8 +161,17 @@ class EditorViewModel @Inject constructor(
 
     fun setWidthStep(step: Int) {
         val value = step.coerceIn(1, 100)
-        mutableState.update { it.copy(widthStep = value) }
-        updateSettings { it.copy(widthStep = value) }
+        val current = mutableState.value
+        val slot = current.activeWidthSlot
+        val widths = current.widthSteps.toMutableList().apply { this[slot] = value }
+        mutableState.update { it.copy(widthSteps = widths) }
+        updateSettings { it.copy(widthSteps = widths, activeWidthSlot = slot) }
+    }
+
+    fun selectWidthSlot(index: Int) {
+        if (index !in mutableState.value.widthSteps.indices) return
+        mutableState.update { it.copy(activeWidthSlot = index) }
+        updateSettings { it.copy(activeWidthSlot = index) }
     }
 
     fun commitStroke(samples: List<StrokeSample>, onCompleted: () -> Unit = {}) {

@@ -101,6 +101,7 @@ fun EditorRoute(
                 isSharing = isSharing,
                 onTool = viewModel::setTool,
                 onColorSlot = viewModel::selectColorSlot,
+                onWidthSlot = viewModel::selectWidthSlot,
                 onWidth = viewModel::setWidthStep,
                 onUndo = viewModel::undo,
                 onRedo = viewModel::redo,

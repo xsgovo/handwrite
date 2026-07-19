@@ -18,9 +18,11 @@ message AppSettingsPayload {
   string active_brush_id = 9;
   repeated fixed32 color_slots = 10;
   uint32 active_color_slot = 11;
-  uint32 width_step = 12;
+  reserved 12;
   PageTemplateSetting default_page_template = 13;
   DefaultBackgroundSetting default_background = 14;
+  repeated uint32 width_steps = 15;
+  optional uint32 active_width_slot = 16;
 }
 
 enum InputMode { INPUT_MODE_UNSPECIFIED = 0; INPUT_MODE_FINGER = 1; INPUT_MODE_STYLUS = 2; }

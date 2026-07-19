@@ -28,7 +28,8 @@ class AppSettingsMapperTest {
             pressureSensitivity = PressureSensitivity.LOW,
             colorSlots = listOf(0x00112233, 0xFFCCBBAA.toInt()),
             activeColorSlot = 1,
-            widthStep = 73,
+            widthSteps = listOf(12, 73, 94),
+            activeWidthSlot = 1,
             defaultBackground = PageBackground.Pattern(PatternType.LINED),
         )
 

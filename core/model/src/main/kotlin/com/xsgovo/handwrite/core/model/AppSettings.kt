@@ -12,19 +12,25 @@ data class AppSettings(
     val activeBrushId: BrushId = BrushId.MONOLINE,
     val colorSlots: List<Int> = DEFAULT_COLOR_SLOTS,
     val activeColorSlot: Int = 0,
-    val widthStep: Int = 50,
+    val widthSteps: List<Int> = DEFAULT_WIDTH_STEPS,
+    val activeWidthSlot: Int = 1,
     val defaultPageTemplate: PageTemplate = PageTemplate.LEGACY_PORTRAIT,
     val defaultBackground: PageBackground = PageBackground.Solid(),
 ) {
     init {
         require(colorSlots.isNotEmpty())
         require(activeColorSlot in colorSlots.indices)
-        require(widthStep in 1..100)
+        require(widthSteps.size == DEFAULT_WIDTH_STEPS.size)
+        require(widthSteps.all { it in 1..100 })
+        require(activeWidthSlot in widthSteps.indices)
         require(defaultBackground !is PageBackground.Asset)
     }
 
+    val activeWidthStep: Int get() = widthSteps[activeWidthSlot]
+
     companion object {
         val DEFAULT_COLOR_SLOTS = listOf(0xFF1F1F1F.toInt(), 0xFFE53935.toInt(), 0xFF2E7D32.toInt())
+        val DEFAULT_WIDTH_STEPS = listOf(25, 50, 75)
     }
 }
 

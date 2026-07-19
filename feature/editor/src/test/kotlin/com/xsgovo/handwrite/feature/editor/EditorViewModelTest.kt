@@ -117,23 +117,52 @@ class EditorViewModelTest {
     }
 
     @Test
-    fun widthStepIsClampedAndPersisted() = runTest(dispatcher) {
+    fun activeWidthSlotIsCustomizedAndPersistedWithoutChangingFocus() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val settings = FakeSettingsRepository()
         val viewModel = createViewModel(repository, settings)
         advanceUntilIdle()
 
+        viewModel.selectWidthSlot(2)
         viewModel.setWidthStep(0)
         advanceUntilIdle()
 
+        assertEquals(2, viewModel.state.value.activeWidthSlot)
+        assertEquals(listOf(25, 50, 1), viewModel.state.value.widthSteps)
         assertEquals(1, viewModel.state.value.widthStep)
-        assertEquals(1, settings.value.widthStep)
+        assertEquals(2, settings.value.activeWidthSlot)
+        assertEquals(listOf(25, 50, 1), settings.value.widthSteps)
 
         viewModel.setWidthStep(100)
         advanceUntilIdle()
 
+        assertEquals(2, viewModel.state.value.activeWidthSlot)
+        assertEquals(listOf(25, 50, 100), viewModel.state.value.widthSteps)
         assertEquals(100, viewModel.state.value.widthStep)
-        assertEquals(100, settings.value.widthStep)
+        assertEquals(listOf(25, 50, 100), settings.value.widthSteps)
+    }
+
+    @Test
+    fun allWidthSlotsAreCustomizedAndRestoredIndependently() = runTest(dispatcher) {
+        val settings = FakeSettingsRepository()
+        val firstViewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        listOf(12, 63, 94).forEachIndexed { index, step ->
+            firstViewModel.selectWidthSlot(index)
+            firstViewModel.setWidthStep(step)
+        }
+        advanceUntilIdle()
+
+        val restoredViewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        assertEquals(listOf(12, 63, 94), restoredViewModel.state.value.widthSteps)
+        assertEquals(2, restoredViewModel.state.value.activeWidthSlot)
+        restoredViewModel.selectWidthSlot(0)
+        assertEquals(12, restoredViewModel.state.value.widthStep)
+        restoredViewModel.selectWidthSlot(1)
+        assertEquals(63, restoredViewModel.state.value.widthStep)
     }
 
     @Test
@@ -143,16 +172,20 @@ class EditorViewModelTest {
         advanceUntilIdle()
 
         firstViewModel.selectColorSlot(2)
+        firstViewModel.selectWidthSlot(2)
         firstViewModel.setWidthStep(73)
         advanceUntilIdle()
 
         assertEquals(2, settings.value.activeColorSlot)
-        assertEquals(73, settings.value.widthStep)
+        assertEquals(2, settings.value.activeWidthSlot)
+        assertEquals(listOf(25, 50, 73), settings.value.widthSteps)
 
         val restoredViewModel = createViewModel(FakeDocumentRepository(), settings)
         advanceUntilIdle()
 
         assertEquals(settings.value.colorSlots[2], restoredViewModel.state.value.activeColor)
+        assertEquals(2, restoredViewModel.state.value.activeWidthSlot)
+        assertEquals(listOf(25, 50, 73), restoredViewModel.state.value.widthSteps)
         assertEquals(600, restoredViewModel.state.value.activeWidth)
 
         restoredViewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))

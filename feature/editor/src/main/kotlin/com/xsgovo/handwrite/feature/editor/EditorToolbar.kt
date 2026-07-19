@@ -49,16 +49,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PatternType
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val BRUSH_WIDTH_PRESETS = listOf(25, 50, 75)
-
-internal fun selectedBrushWidthPreset(widthStep: Int): Int =
-    BRUSH_WIDTH_PRESETS.minBy { preset -> abs(preset - widthStep.coerceIn(1, 100)) }
+internal fun brushWidthIconSizeDp(widthStep: Int): Float =
+    4f + (widthStep.coerceIn(1, 100) - 1) * (20f / 99f)
 
 @Composable
 fun EditorToolbar(
@@ -70,6 +68,7 @@ fun EditorToolbar(
     isSharing: Boolean,
     onTool: (EditorTool) -> Unit,
     onColorSlot: (Int) -> Unit,
+    onWidthSlot: (Int) -> Unit,
     onWidth: (Int) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
@@ -80,9 +79,8 @@ fun EditorToolbar(
     val scrollState = rememberScrollState()
     var menuExpanded by remember { mutableStateOf(false) }
     var widthPanelExpanded by remember { mutableStateOf(false) }
-    var widthPanelPreset by remember { mutableStateOf<Int?>(null) }
+    var widthPanelSlot by remember { mutableStateOf<Int?>(null) }
     var pendingWidthStep by remember { mutableStateOf(state.widthStep.toFloat()) }
-    val selectedWidthPreset = selectedBrushWidthPreset(state.widthStep)
     Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -111,27 +109,29 @@ fun EditorToolbar(
             state.colorSlots.forEachIndexed { index, argb ->
                 ColorSwatch(Color(argb), selected = index == state.activeColorSlot) { onColorSlot(index) }
             }
-            BRUSH_WIDTH_PRESETS.forEach { preset ->
+            state.widthSteps.forEachIndexed { index, step ->
                 Box {
+                    val panelIsOpen = widthPanelExpanded && widthPanelSlot == index
+                    val displayedStep = if (panelIsOpen) pendingWidthStep.roundToInt() else step
                     BrushWidthPresetButton(
-                        step = preset,
-                        selected = selectedWidthPreset == preset,
+                        step = displayedStep,
+                        selected = state.activeWidthSlot == index,
                         onClick = {
-                            if (selectedWidthPreset == preset) {
-                                pendingWidthStep = state.widthStep.toFloat()
-                                widthPanelPreset = preset
+                            if (state.activeWidthSlot == index) {
+                                pendingWidthStep = state.widthSteps[index].toFloat()
+                                widthPanelSlot = index
                                 widthPanelExpanded = true
                             } else {
-                                widthPanelPreset = null
+                                widthPanelSlot = null
                                 widthPanelExpanded = false
-                                onWidth(preset)
+                                onWidthSlot(index)
                             }
                         },
                     )
                     DropdownMenu(
-                        expanded = widthPanelExpanded && widthPanelPreset == preset,
+                        expanded = panelIsOpen,
                         onDismissRequest = {
-                            widthPanelPreset = null
+                            widthPanelSlot = null
                             widthPanelExpanded = false
                         },
                     ) {
@@ -220,15 +220,21 @@ private fun BrushWidthPresetButton(
         Icon(
             imageVector = Icons.Default.Circle,
             contentDescription = "${step}档笔宽",
-            modifier = Modifier.size(
-                when (step) {
-                    25 -> 8.dp
-                    50 -> 14.dp
-                    else -> 20.dp
-                },
-            ),
-            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(brushWidthIconSizeDp(step).dp),
+            tint = MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun BrushWidthPresetButtonPreview() {
+    MaterialTheme {
+        Row {
+            listOf(1, 50, 100).forEachIndexed { index, step ->
+                BrushWidthPresetButton(step = step, selected = index == 1, onClick = {})
+            }
+        }
     }
 }
 

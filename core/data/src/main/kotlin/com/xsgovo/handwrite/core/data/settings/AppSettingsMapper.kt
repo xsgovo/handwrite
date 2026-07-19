@@ -18,6 +18,15 @@ internal fun AppSettingsPayload.toDomain(): AppSettings {
     val defaults = AppSettings()
     val colors = colorSlotsList.takeIf { it.isNotEmpty() } ?: defaults.colorSlots
     val activeSlot = activeColorSlot.coerceIn(colors.indices)
+    val widths = widthStepsList
+        .takeIf { it.size == defaults.widthSteps.size }
+        ?.map { it.coerceIn(1, 100) }
+        ?: defaults.widthSteps
+    val activeWidth = if (hasActiveWidthSlot()) {
+        activeWidthSlot.coerceIn(widths.indices)
+    } else {
+        defaults.activeWidthSlot
+    }
     return AppSettings(
         inputMode = if (inputMode == com.xsgovo.handwrite.core.data.settings.InputMode.INPUT_MODE_STYLUS) InputMode.STYLUS else InputMode.FINGER,
         themeMode = when (themeMode) {
@@ -55,7 +64,8 @@ internal fun AppSettingsPayload.toDomain(): AppSettings {
         activeBrushId = BrushId(activeBrushId.ifBlank { defaults.activeBrushId.value }),
         colorSlots = colors,
         activeColorSlot = activeSlot,
-        widthStep = widthStep.coerceIn(1, 100).takeIf { widthStep != 0 } ?: defaults.widthStep,
+        widthSteps = widths,
+        activeWidthSlot = activeWidth,
         defaultPageTemplate = when (defaultPageTemplate) {
             PageTemplateSetting.PAGE_TEMPLATE_THREE_BY_FOUR -> PageTemplate.THREE_BY_FOUR
             PageTemplateSetting.PAGE_TEMPLATE_FOUR_BY_THREE -> PageTemplate.FOUR_BY_THREE
@@ -121,7 +131,8 @@ internal fun AppSettings.toProto(): AppSettingsPayload = AppSettingsPayload.newB
     .setActiveBrushId(activeBrushId.value)
     .addAllColorSlots(colorSlots)
     .setActiveColorSlot(activeColorSlot)
-    .setWidthStep(widthStep)
+    .addAllWidthSteps(widthSteps)
+    .setActiveWidthSlot(activeWidthSlot)
     .setDefaultPageTemplate(
         when (defaultPageTemplate) {
             PageTemplate.LEGACY_PORTRAIT -> PageTemplateSetting.PAGE_TEMPLATE_LEGACY_PORTRAIT
