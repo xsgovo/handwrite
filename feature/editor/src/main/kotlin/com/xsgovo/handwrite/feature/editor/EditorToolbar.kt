@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -80,6 +79,7 @@ fun EditorToolbar(
     val scrollState = rememberScrollState()
     var menuExpanded by remember { mutableStateOf(false) }
     var widthPanelExpanded by remember { mutableStateOf(false) }
+    var widthPanelPreset by remember { mutableStateOf<Int?>(null) }
     var pendingWidthStep by remember { mutableStateOf(state.widthStep.toFloat()) }
     Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
         Row(
@@ -110,40 +110,45 @@ fun EditorToolbar(
                 ColorSwatch(Color(argb), selected = index == state.activeColorSlot) { onColorSlot(index) }
             }
             BRUSH_WIDTH_PRESETS.forEach { preset ->
-                BrushWidthPresetButton(
-                    step = preset,
-                    selected = state.widthStep == preset,
-                    onClick = { onWidth(preset) },
-                )
-            }
-            Box {
-                IconButton(
-                    onClick = {
-                        pendingWidthStep = state.widthStep.toFloat()
-                        widthPanelExpanded = true
-                    },
-                ) {
-                    Icon(Icons.Default.Tune, contentDescription = "精细调节笔宽")
-                }
-                DropdownMenu(
-                    expanded = widthPanelExpanded,
-                    onDismissRequest = { widthPanelExpanded = false },
-                ) {
-                    Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text("笔宽 ${pendingWidthStep.roundToInt()}", style = MaterialTheme.typography.titleSmall)
-                        Slider(
-                            value = pendingWidthStep,
-                            onValueChange = { pendingWidthStep = it },
-                            onValueChangeFinished = { onWidth(pendingWidthStep.roundToInt()) },
-                            valueRange = 1f..100f,
-                            steps = 98,
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("1", style = MaterialTheme.typography.labelSmall)
-                            Text("100", style = MaterialTheme.typography.labelSmall)
+                Box {
+                    BrushWidthPresetButton(
+                        step = preset,
+                        selected = state.widthStep == preset,
+                        onClick = {
+                            if (state.widthStep == preset) {
+                                pendingWidthStep = state.widthStep.toFloat()
+                                widthPanelPreset = preset
+                                widthPanelExpanded = true
+                            } else {
+                                widthPanelPreset = null
+                                widthPanelExpanded = false
+                                onWidth(preset)
+                            }
+                        },
+                    )
+                    DropdownMenu(
+                        expanded = widthPanelExpanded && widthPanelPreset == preset,
+                        onDismissRequest = {
+                            widthPanelPreset = null
+                            widthPanelExpanded = false
+                        },
+                    ) {
+                        Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text("笔宽 ${pendingWidthStep.roundToInt()}", style = MaterialTheme.typography.titleSmall)
+                            Slider(
+                                value = pendingWidthStep,
+                                onValueChange = { pendingWidthStep = it },
+                                onValueChangeFinished = { onWidth(pendingWidthStep.roundToInt()) },
+                                valueRange = 1f..100f,
+                                steps = 98,
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("1", style = MaterialTheme.typography.labelSmall)
+                                Text("100", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
