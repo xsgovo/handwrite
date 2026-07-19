@@ -83,11 +83,7 @@ fun HandwriteCanvas(
     var pendingErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
     var pendingStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     var pan by remember { mutableStateOf(Offset.Zero) }
-    var interopNavigationActive by remember { mutableStateOf(false) }
-    var interopPreviousCentroid by remember { mutableStateOf<Offset?>(null) }
-    var interopPreviousSpan by remember { mutableStateOf(0f) }
-    var interopPreviousPointerCount by remember { mutableStateOf(0) }
-    var interopZoom by remember { mutableStateOf(zoomPercent) }
+    val interopNavigation = remember { InteropNavigationState() }
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
@@ -123,10 +119,7 @@ fun HandwriteCanvas(
     }
 
     fun resetInteropNavigation() {
-        interopNavigationActive = false
-        interopPreviousCentroid = null
-        interopPreviousSpan = 0f
-        interopPreviousPointerCount = 0
+        interopNavigation.reset()
     }
 
     fun updateInteropNavigation(event: MotionEvent, excludedPointerIndex: Int? = null) {
@@ -146,18 +139,20 @@ fun HandwriteCanvas(
         } else {
             0f
         }
-        if (interopPreviousPointerCount == pointers.size) {
-            interopPreviousCentroid?.let { pan += centroid - it }
-            if (interopPreviousSpan > 0f && span > 0f) {
-                interopZoom = (interopZoom * span / interopPreviousSpan).roundToInt().coerceIn(100, 400)
-                zoomCallback(interopZoom)
+        if (interopNavigation.previousPointerCount == pointers.size) {
+            interopNavigation.previousCentroid?.let { pan += centroid - it }
+            if (interopNavigation.previousSpan > 0f && span > 0f) {
+                interopNavigation.zoom = (interopNavigation.zoom * span / interopNavigation.previousSpan)
+                    .roundToInt()
+                    .coerceIn(100, 400)
+                zoomCallback(interopNavigation.zoom)
             }
         } else {
-            interopZoom = currentZoom
+            interopNavigation.zoom = currentZoom
         }
-        interopPreviousCentroid = centroid
-        interopPreviousSpan = span
-        interopPreviousPointerCount = pointers.size
+        interopNavigation.previousCentroid = centroid
+        interopNavigation.previousSpan = span
+        interopNavigation.previousPointerCount = pointers.size
     }
 
     val touchNavigationModifier = Modifier.pointerInteropFilter { event ->
@@ -167,14 +162,14 @@ fun HandwriteCanvas(
                     false
                 } else {
                     containingView.requestUnbufferedDispatch(event)
-                    interopNavigationActive = true
-                    interopZoom = currentZoom
+                    interopNavigation.active = true
+                    interopNavigation.zoom = currentZoom
                     updateInteropNavigation(event)
                     true
                 }
             }
             MotionEvent.ACTION_MOVE -> {
-                if (!interopNavigationActive) {
+                if (!interopNavigation.active) {
                     false
                 } else {
                     updateInteropNavigation(event)
@@ -182,7 +177,7 @@ fun HandwriteCanvas(
                 }
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
-                if (!interopNavigationActive) {
+                if (!interopNavigation.active) {
                     false
                 } else {
                     updateInteropNavigation(event)
@@ -190,7 +185,7 @@ fun HandwriteCanvas(
                 }
             }
             MotionEvent.ACTION_POINTER_UP -> {
-                if (!interopNavigationActive) {
+                if (!interopNavigation.active) {
                     false
                 } else {
                     updateInteropNavigation(event, event.actionIndex)
@@ -198,14 +193,14 @@ fun HandwriteCanvas(
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (!interopNavigationActive) {
+                if (!interopNavigation.active) {
                     false
                 } else {
                     resetInteropNavigation()
                     true
                 }
             }
-            else -> interopNavigationActive
+            else -> interopNavigation.active
         }
     }
 
@@ -259,7 +254,7 @@ fun HandwriteCanvas(
                             rawToolType = motionEvent?.takeIf { it.pointerCount > 0 }?.getToolType(0),
                         )
                         when {
-                            interopNavigationActive -> change.consume()
+                            interopNavigation.active -> change.consume()
                             sidePressed && sideButtonAction != SideButtonAction.TEMPORARY_ERASER -> {
                                 change.consume()
                             }
@@ -400,6 +395,21 @@ fun HandwriteCanvas(
 }
 
 private const val LOG_TAG = "HandwriteCanvas"
+
+private class InteropNavigationState {
+    var active: Boolean = false
+    var previousCentroid: Offset? = null
+    var previousSpan: Float = 0f
+    var previousPointerCount: Int = 0
+    var zoom: Int = 100
+
+    fun reset() {
+        active = false
+        previousCentroid = null
+        previousSpan = 0f
+        previousPointerCount = 0
+    }
+}
 
 internal fun isSingleFingerNavigationPointer(
     inputMode: InputMode,
