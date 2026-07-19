@@ -150,6 +150,15 @@ fun EditorToolbar(
                     }
                 }
             }
+            IconButton(onClick = onUndo, enabled = state.canUndo) {
+                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "撤销")
+            }
+            IconButton(onClick = onRedo, enabled = state.canRedo) {
+                Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "重做")
+            }
+            IconButton(onClick = onClear, enabled = state.elements.isNotEmpty()) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = "清空页面")
+            }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "画布选项")
@@ -179,15 +188,6 @@ fun EditorToolbar(
                         onClick = { menuExpanded = false; onSettings() },
                     )
                 }
-            }
-            IconButton(onClick = onUndo, enabled = state.canUndo) {
-                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "撤销")
-            }
-            IconButton(onClick = onRedo, enabled = state.canRedo) {
-                Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "重做")
-            }
-            IconButton(onClick = onClear, enabled = state.elements.isNotEmpty()) {
-                Icon(Icons.Default.DeleteSweep, contentDescription = "清空页面")
             }
             if (state.isSaving) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {

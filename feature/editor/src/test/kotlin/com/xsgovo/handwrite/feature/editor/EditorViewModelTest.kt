@@ -137,6 +137,33 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun selectedPenColorAndWidthArePersistedAndRestored() = runTest(dispatcher) {
+        val settings = FakeSettingsRepository()
+        val firstViewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        firstViewModel.selectColorSlot(2)
+        firstViewModel.setWidthStep(73)
+        advanceUntilIdle()
+
+        assertEquals(2, settings.value.activeColorSlot)
+        assertEquals(73, settings.value.widthStep)
+
+        val restoredViewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        assertEquals(settings.value.colorSlots[2], restoredViewModel.state.value.activeColor)
+        assertEquals(600, restoredViewModel.state.value.activeWidth)
+
+        restoredViewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+
+        val style = restoredViewModel.state.value.strokes.single().style
+        assertEquals(settings.value.colorSlots[2], style.argb)
+        assertEquals(600, style.width)
+    }
+
+    @Test
     fun strokeCompletionIsAcknowledgedAfterTheStrokeIsVisible() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val viewModel = createViewModel(repository)
