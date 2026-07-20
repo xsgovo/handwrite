@@ -221,6 +221,7 @@ fun HandwriteCanvas(
                     previousSpan = 0f
                     val change = pressed.firstOrNull() ?: event.changes.firstOrNull()
                     if (change != null) {
+                        val contactActive = isPointerContactActive(change.pressed, change.previousPressed)
                         val erasing = tool == EditorTool.ERASER || change.type == PointerType.Eraser || sideForEraser
                         val navigationPointer = isSingleFingerNavigationPointer(
                             inputMode = inputMode,
@@ -236,7 +237,7 @@ fun HandwriteCanvas(
                                 change.consume()
                                 applyPanDelta(delta)
                             }
-                            erasing -> {
+                            erasing && contactActive -> {
                                 change.consume()
                                 currentTransform.toLogical(change.position)?.let(::eraseAt)
                             }
@@ -447,6 +448,9 @@ internal fun isSingleFingerNavigationPointer(
     pointerType != PointerType.Eraser &&
     rawToolType != MotionEvent.TOOL_TYPE_STYLUS &&
     rawToolType != MotionEvent.TOOL_TYPE_ERASER
+
+internal fun isPointerContactActive(pressed: Boolean, previousPressed: Boolean): Boolean =
+    pressed || previousPressed
 
 internal fun clipStrokeToPage(
     samples: List<StrokeSample>,

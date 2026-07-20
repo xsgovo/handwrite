@@ -321,6 +321,13 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun sideButtonHoverDoesNotCountAsEraserContact() {
+        assertFalse(isPointerContactActive(pressed = false, previousPressed = false))
+        assertTrue(isPointerContactActive(pressed = true, previousPressed = false))
+        assertTrue(isPointerContactActive(pressed = false, previousPressed = true))
+    }
+
+    @Test
     fun canvasPanClampsAtTheVisibleOverflow() {
         val transform = CanvasPageTransform.create(
             canvas = IntSize(400, 400),
