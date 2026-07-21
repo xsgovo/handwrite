@@ -11,6 +11,7 @@ import androidx.ink.rendering.android.canvas.CanvasStrokeRenderer
 import androidx.ink.strokes.MutableStrokeInputBatch
 import androidx.ink.strokes.Stroke
 import com.xsgovo.handwrite.core.model.BrushId
+import com.xsgovo.handwrite.core.model.ElementId
 import com.xsgovo.handwrite.core.model.StrokeElement
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -18,8 +19,10 @@ import kotlin.math.hypot
 
 class InkDocumentRenderer {
     private val renderer = CanvasStrokeRenderer.create()
+    private val strokeCache = StableIdCache<ElementId, Stroke>()
 
-    fun prepare(strokes: List<StrokeElement>): List<Stroke> = strokes.map(::toInkStroke)
+    fun prepare(strokes: List<StrokeElement>): List<Stroke> =
+        strokeCache.update(strokes, StrokeElement::id, ::toInkStroke)
 
     fun draw(
         scope: DrawScope,
@@ -49,12 +52,53 @@ class InkDocumentRenderer {
         }
     }
 
-    fun drawInProgress(scope: DrawScope, strokes: List<Stroke>) {
+    fun drawInProgress(
+        scope: DrawScope,
+        strokes: List<Stroke>,
+        scale: Float,
+        left: Float,
+        top: Float,
+    ) {
         if (strokes.isEmpty()) return
+        val transform = Matrix().apply {
+            setValues(
+                floatArrayOf(
+                    scale, 0f, left,
+                    0f, scale, top,
+                    0f, 0f, 1f,
+                ),
+            )
+        }
         scope.drawIntoCanvas { canvas ->
             val nativeCanvas = canvas.nativeCanvas
-            strokes.forEach { stroke -> renderer.draw(nativeCanvas, stroke, Matrix()) }
+            val saveCount = nativeCanvas.save()
+            try {
+                nativeCanvas.concat(transform)
+                strokes.forEach { stroke -> renderer.draw(nativeCanvas, stroke, transform) }
+            } finally {
+                nativeCanvas.restoreToCount(saveCount)
+            }
         }
+    }
+}
+
+internal class StableIdCache<Key, Value> {
+    private val entries = mutableMapOf<Key, Value>()
+
+    fun <Source> update(
+        sources: List<Source>,
+        keyOf: (Source) -> Key,
+        create: (Source) -> Value,
+    ): List<Value> {
+        val activeKeys = HashSet<Key>(sources.size)
+        val values = ArrayList<Value>(sources.size)
+        sources.forEach { source ->
+            val key = keyOf(source)
+            activeKeys += key
+            values += entries.getOrPut(key) { create(source) }
+        }
+        entries.keys.retainAll(activeKeys)
+        return values
     }
 }
 

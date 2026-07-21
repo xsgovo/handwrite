@@ -342,6 +342,26 @@ class EditorViewModelTest {
         assertEquals(-transform.panLimit.y, clamped.y, 0f)
     }
 
+    @Test
+    fun pointerEventsMapDirectlyIntoLogicalPageCoordinates() {
+        val transform = CanvasPageTransform.create(
+            canvas = IntSize(800, 600),
+            page = squarePage(),
+            zoom = 2f,
+            pan = Offset(35f, -20f),
+        )
+        val logicalPoint = Offset(12_345f, 54_321f)
+        val canvasPoint = Offset(
+            transform.pageRect.left + logicalPoint.x * transform.scale,
+            transform.pageRect.top + logicalPoint.y * transform.scale,
+        )
+
+        val mapped = transform.pointerEventToLogicalTransform().map(canvasPoint)
+
+        assertEquals(logicalPoint.x, mapped.x, 0.01f)
+        assertEquals(logicalPoint.y, mapped.y, 0.01f)
+    }
+
     private fun sample(x: Int, y: Int): StrokeSample = StrokeSample(LogicalPoint(x, y))
 
     private fun squarePage(): LogicalSize = LogicalSize(LogicalCanvas.LONG_EDGE, LogicalCanvas.LONG_EDGE)

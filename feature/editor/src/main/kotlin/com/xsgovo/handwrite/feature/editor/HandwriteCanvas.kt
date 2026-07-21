@@ -38,17 +38,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -99,7 +98,6 @@ fun HandwriteCanvas(
     onUndo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val containingView = LocalView.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var erasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
     var pendingErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
@@ -111,6 +109,9 @@ fun HandwriteCanvas(
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
+    }
+    val pointerEventToLogicalTransform = remember(transform) {
+        transform.pointerEventToLogicalTransform()
     }
     val currentTransform by rememberUpdatedState(transform)
     val currentZoom by rememberUpdatedState(zoomPercent)
@@ -157,13 +158,6 @@ fun HandwriteCanvas(
 
     fun applyPanDelta(delta: Offset) {
         if (delta != Offset.Zero) pan = currentTransform.clampPan(pan + delta)
-    }
-
-    // Keep unbuffered dispatch for Ink's low-latency pointerInput processing. Actual gesture
-    // handling stays in Compose so touch navigation and Ink observe a deterministic event order.
-    val unbufferedDispatchModifier = Modifier.pointerInteropFilter { event ->
-        containingView.requestUnbufferedDispatch(event)
-        false
     }
 
     val gestureModifier = Modifier.pointerInput(tool, inputMode, sideButtonAction) {
@@ -268,9 +262,9 @@ fun HandwriteCanvas(
             .onFailure { error -> Log.e(LOG_TAG, "Unable to prepare persisted Ink stroke", error) }
             .getOrDefault(emptyList())
     }
-    val wetBrush = remember(activeBrushId, activeColor, activeWidth, transform.scale, tool) {
+    val wetBrush = remember(activeBrushId, activeColor, activeWidth, tool) {
         if (tool == EditorTool.PEN) {
-            createInkBrush(activeBrushId, activeColor, activeWidth * transform.scale)
+            createInkBrush(activeBrushId, activeColor, activeWidth.toFloat())
         } else {
             null
         }
@@ -293,8 +287,7 @@ fun HandwriteCanvas(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(gestureModifier)
-                .then(unbufferedDispatchModifier),
+                .then(gestureModifier),
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val page = transform.pageRect
@@ -329,25 +322,34 @@ fun HandwriteCanvas(
             Canvas(Modifier.fillMaxSize()) {
                 val page = transform.pageRect
                 clipRect(page.left, page.top, page.right, page.bottom) {
-                    inkRenderer.drawInProgress(this, pendingStrokes)
+                    inkRenderer.drawInProgress(
+                        this,
+                        pendingStrokes,
+                        transform.scale,
+                        page.left,
+                        page.top,
+                    )
                 }
             }
             InProgressStrokes(
                 defaultBrush = wetBrush,
                 nextBrush = { currentWetBrush },
+                pointerEventToWorldTransform = pointerEventToLogicalTransform,
                 maskPath = maskPath,
                 onStrokesFinished = { completed ->
-                    completed.forEach { stroke ->
-                        pendingStrokes = pendingStrokes + stroke
+                    pendingStrokes = pendingStrokes + completed
+                    val clippedStrokes = completed.flatMap { stroke ->
                         val samples = buildList {
                             val scratch = StrokeInput()
                             repeat(stroke.inputs.size) { index ->
                                 stroke.inputs.populate(index, scratch)
-                                val point = currentTransform.toLogicalUnclamped(Offset(scratch.x, scratch.y))
                                 val tilt = scratch.toTiltVector()
                                 add(
                                     StrokeSample(
-                                        point = point,
+                                        point = LogicalPoint(
+                                            scratch.x.roundToInt(),
+                                            scratch.y.roundToInt(),
+                                        ),
                                         pressure = if (scratch.hasPressure) {
                                             (scratch.pressure * StrokeSample.MAX_PRESSURE).roundToInt()
                                                 .coerceIn(0, StrokeSample.MAX_PRESSURE)
@@ -362,14 +364,17 @@ fun HandwriteCanvas(
                                 )
                             }
                         }
-                        val clippedStrokes = clipStrokeToPage(samples, pageSize)
-                        if (clippedStrokes.isNotEmpty()) {
-                            strokesCallback(clippedStrokes) {
-                                pendingStrokes = pendingStrokes.filterNot { it === stroke }
-                            }
-                        } else {
-                            pendingStrokes = pendingStrokes.filterNot { it === stroke }
+                        clipStrokeToPage(samples, pageSize)
+                    }
+                    val removeCompletedFromPending = {
+                        pendingStrokes = pendingStrokes.filterNot { pending ->
+                            completed.any { it === pending }
                         }
+                    }
+                    if (clippedStrokes.isNotEmpty()) {
+                        strokesCallback(clippedStrokes, removeCompletedFromPending)
+                    } else {
+                        removeCompletedFromPending()
                     }
                 },
             )
@@ -573,10 +578,12 @@ internal data class CanvasPageTransform(
         ((point.y - pageRect.top) / scale).roundToInt().coerceIn(0, pageSize.height),
     )
 
-    fun toLogicalUnclamped(point: Offset): LogicalPoint = LogicalPoint(
-        ((point.x - pageRect.left) / scale).roundToInt(),
-        ((point.y - pageRect.top) / scale).roundToInt(),
-    )
+    fun pointerEventToLogicalTransform(): Matrix = Matrix().apply {
+        this[0, 0] = 1f / scale
+        this[1, 1] = 1f / scale
+        this[3, 0] = -pageRect.left / scale
+        this[3, 1] = -pageRect.top / scale
+    }
 
     companion object {
         fun create(canvas: IntSize, page: LogicalSize, zoom: Float, pan: Offset): CanvasPageTransform {
