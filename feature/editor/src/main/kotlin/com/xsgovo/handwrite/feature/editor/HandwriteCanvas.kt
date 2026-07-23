@@ -40,7 +40,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -272,9 +271,21 @@ fun HandwriteCanvas(
     val currentWetBrush by rememberUpdatedState(wetBrush)
     val maskPath = remember(canvasSize, transform.pageRect) {
         Path().apply {
-            fillType = PathFillType.EvenOdd
-            addRect(Rect(0f, 0f, canvasSize.width.toFloat(), canvasSize.height.toFloat()))
-            addRect(transform.pageRect)
+            val canvasWidth = canvasSize.width.toFloat()
+            val canvasHeight = canvasSize.height.toFloat()
+            val pageLeft = transform.pageRect.left.coerceIn(0f, canvasWidth)
+            val pageTop = transform.pageRect.top.coerceIn(0f, canvasHeight)
+            val pageRight = transform.pageRect.right.coerceIn(0f, canvasWidth)
+            val pageBottom = transform.pageRect.bottom.coerceIn(0f, canvasHeight)
+
+            fun addMaskRect(left: Float, top: Float, right: Float, bottom: Float) {
+                if (right > left && bottom > top) addRect(Rect(left, top, right, bottom))
+            }
+
+            addMaskRect(0f, 0f, canvasWidth, pageTop)
+            addMaskRect(0f, pageBottom, canvasWidth, canvasHeight)
+            addMaskRect(0f, pageTop, pageLeft, pageBottom)
+            addMaskRect(pageRight, pageTop, canvasWidth, pageBottom)
         }
     }
 

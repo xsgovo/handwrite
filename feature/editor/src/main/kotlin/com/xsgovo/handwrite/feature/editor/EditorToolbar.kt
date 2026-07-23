@@ -194,11 +194,6 @@ fun EditorToolbar(
                     )
                 }
             }
-            if (state.isSaving) {
-                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                }
-            }
         }
     }
 }
