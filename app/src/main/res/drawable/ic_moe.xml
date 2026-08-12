@@ -1,0 +1,137 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 背景：温和的浅绿底色 -->
+    <path
+        android:pathData="M0,0h108v108h-108z"
+        android:fillColor="#C1D8B7"/>
+
+    <!-- 背景装饰：四角小花朵装饰 -->
+    <path
+        android:pathData="M12,10 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 M15,7 a3,3 0 1,1 0,6 a3,3 0 1,1 0,-6"
+        android:fillColor="#708260"
+        android:strokeAlpha="0.8"/>
+    <path
+        android:pathData="M90,10 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 M93,7 a3,3 0 1,1 0,6 a3,3 0 1,1 0,-6"
+        android:fillColor="#708260"
+        android:strokeAlpha="0.8"/>
+
+    <!-- 后发（底发） -->
+    <path
+        android:pathData="M22,50 C18,65 20,88 28,102 C35,108 73,108 80,102 C88,88 90,65 86,50 Z"
+        android:fillColor="#969E8F"/>
+
+    <!-- 衣服与领口 -->
+    <path
+        android:pathData="M32,88 L76,88 L82,108 L26,108 Z"
+        android:fillColor="#343835"/>
+    <!-- 白领 -->
+    <path
+        android:pathData="M42,88 L54,98 L66,88 Z"
+        android:fillColor="#F4F4F0"/>
+    <!-- 绿色蝴蝶结 -->
+    <path
+        android:pathData="M51,94 C46,90 42,94 48,97 Z M57,94 C62,90 66,94 60,97 Z"
+        android:fillColor="#536544"/>
+    <path
+        android:pathData="M52,95 L50,103 M56,95 L58,103"
+        android:strokeColor="#536544"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"/>
+
+    <!-- 脸部 -->
+    <path
+        android:pathData="M31,48 C31,35 41,36 54,36 C67,36 77,35 77,48 C77,68 67,82 54,82 C41,82 31,68 31,48 Z"
+        android:fillColor="#FFF0E6"/>
+
+    <!-- 腮红 -->
+    <ellipse
+        android:cx="36"
+        android:cy="63"
+        android:rx="5"
+        android:ry="2.5"
+        android:fillColor="#FFB3B3"
+        android:fillAlpha="0.6"/>
+    <ellipse
+        android:cx="72"
+        android:cy="63"
+        android:rx="5"
+        android:ry="2.5"
+        android:fillColor="#FFB3B3"
+        android:fillAlpha="0.6"/>
+
+    <!-- 左眼（大红眼+高光） -->
+    <ellipse
+        android:cx="43"
+        android:cy="54"
+        android:rx="7"
+        android:ry="9"
+        android:fillColor="#C03328"/>
+    <ellipse
+        android:cx="43"
+        android:cy="56"
+        android:rx="4"
+        android:ry="5"
+        android:fillColor="#7A1810"/>
+    <circle
+        android:cx="41"
+        android:cy="50"
+        android:r="2.5"
+        android:fillColor="#FFFFFF"/>
+
+    <!-- 右眼（大红眼+高光） -->
+    <ellipse
+        android:cx="65"
+        android:cy="54"
+        android:rx="7"
+        android:ry="9"
+        android:fillColor="#C03328"/>
+    <ellipse
+        android:cx="65"
+        android:cy="56"
+        android:rx="4"
+        android:ry="5"
+        android:fillColor="#7A1810"/>
+    <circle
+        android:cx="63"
+        android:cy="50"
+        android:r="2.5"
+        android:fillColor="#FFFFFF"/>
+
+    <!-- 张开的可爱嘴巴 -->
+    <path
+        android:pathData="M48,65 Q54,63 60,65 Q54,75 48,65 Z"
+        android:fillColor="#B83A32"/>
+
+    <!-- 前发 / 刘海 -->
+    <path
+        android:pathData="M25,48 C22,35 32,22 54,22 C76,22 86,35 83,48 C81,42 74,38 70,44 C67,37 59,36 54,42 C49,36 41,37 38,44 C34,38 27,42 25,48 Z"
+        android:fillColor="#A1A899"/>
+
+    <!-- 侧发鬓角 -->
+    <path
+        android:pathData="M23,45 C20,55 24,68 22,76 C26,70 28,58 29,48 Z"
+        android:fillColor="#969E8F"/>
+    <path
+        android:pathData="M85,45 C88,55 84,68 86,76 C82,70 80,58 79,48 Z"
+        android:fillColor="#969E8F"/>
+
+    <!-- 头顶标志性呆毛 (Ahoge) -->
+    <path
+        android:pathData="M54,23 C50,15 56,8 65,11 C58,13 54,18 56,23 Z"
+        android:fillColor="#969E8F"/>
+
+    <!-- 深绿发夹 -->
+    <rect
+        android:x="66"
+        android:y="33"
+        android:width="11"
+        android:height="5"
+        android:rx="2.5"
+        android:ry="2.5"
+        android:fillColor="#4D5D3B"/>
+
+</vector>
