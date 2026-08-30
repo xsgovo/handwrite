@@ -56,5 +56,4 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit4)
-    testImplementation(libs.androidx.room.testing)
 }
