@@ -7,6 +7,12 @@ plugins {
 
 android {
     namespace = "com.xsgovo.handwrite.core.data"
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 androidComponents {
