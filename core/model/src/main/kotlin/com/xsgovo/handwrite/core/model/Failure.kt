@@ -4,12 +4,7 @@ sealed interface DomainFailure {
     data object StorageFull : DomainFailure
     data object DocumentNotFound : DomainFailure
     data object PageNotFound : DomainFailure
-    data object LastPageCannotBeDeleted : DomainFailure
-    data object NameConflict : DomainFailure
     data object DatabaseUnavailable : DomainFailure
-    data class UnsupportedPackageVersion(val version: Int) : DomainFailure
-    data class InvalidPackage(val reason: String) : DomainFailure
-    data object ExportTargetUnavailable : DomainFailure
     data object ResourceNotFound : DomainFailure
     data object InvalidResource : DomainFailure
 }

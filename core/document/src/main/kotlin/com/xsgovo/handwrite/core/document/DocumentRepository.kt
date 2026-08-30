@@ -17,8 +17,6 @@ interface DocumentRepository {
 
     fun observeDocument(documentId: DocumentId): Flow<Document?>
 
-    fun observePages(documentId: DocumentId): Flow<List<Page>>
-
     fun observePage(pageId: PageId): Flow<PageContent?>
 
     suspend fun loadSnapshot(documentId: DocumentId): DomainResult<DocumentSnapshot>
@@ -30,25 +28,7 @@ interface DocumentRepository {
         nowEpochMillis: Long,
     ): DomainResult<DocumentId>
 
-    suspend fun renameDocument(
-        documentId: DocumentId,
-        name: DisplayName,
-    ): DomainResult<Unit>
-
     suspend fun deleteDocument(documentId: DocumentId): DomainResult<Unit>
-
-    suspend fun createPage(
-        documentId: DocumentId,
-        size: LogicalSize,
-        background: PageBackground,
-    ): DomainResult<PageId>
-
-    suspend fun deletePage(pageId: PageId): DomainResult<Unit>
-
-    suspend fun setLastActivePage(
-        documentId: DocumentId,
-        pageId: PageId,
-    ): DomainResult<Unit>
 
     suspend fun apply(command: DocumentCommand): DomainResult<Unit>
 }

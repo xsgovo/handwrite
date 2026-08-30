@@ -1,27 +1,10 @@
 package com.xsgovo.handwrite.core.model
 
-data class Folder(
-    val id: FolderId,
-    val name: DisplayName,
-    val parentId: FolderId?,
-    val depth: Int,
-) {
-    init {
-        require(depth in 1..MAX_FOLDER_DEPTH)
-    }
-
-    companion object {
-        const val MAX_FOLDER_DEPTH = 10
-    }
-}
-
 data class Document(
     val id: DocumentId,
     val name: DisplayName,
-    val folderId: FolderId?,
     val createdAtEpochMillis: Long,
     val modifiedAtEpochMillis: Long,
-    val isFavorite: Boolean = false,
     val lastActivePageId: PageId,
 ) {
     init {

@@ -4,22 +4,11 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-
 @Entity(
     tableName = "library_items",
-    foreignKeys = [
-        ForeignKey(
-            entity = LibraryItemEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["parentFolderId"],
-            onDelete = ForeignKey.NO_ACTION,
-        ),
-    ],
     indices = [
-        Index(value = ["normalizedName"], unique = true),
-        Index(value = ["parentFolderId"]),
+        Index(value = ["normalizedName"]),
         Index(value = ["kind"]),
-        Index(value = ["isFavorite", "modifiedAtEpochMillis"]),
     ],
 )
 data class LibraryItemEntity(
@@ -27,16 +16,12 @@ data class LibraryItemEntity(
     val kind: String,
     val name: String,
     val normalizedName: String,
-    val parentFolderId: Long?,
-    val depth: Int,
     val createdAtEpochMillis: Long,
     val modifiedAtEpochMillis: Long,
-    val isFavorite: Boolean,
 )
 
 object LibraryItemKinds {
     const val DOCUMENT = "DOCUMENT"
-    const val FOLDER = "FOLDER"
 }
 
 @Entity(

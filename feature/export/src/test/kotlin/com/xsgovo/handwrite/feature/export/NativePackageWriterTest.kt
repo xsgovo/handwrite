@@ -75,7 +75,7 @@ class NativePackageWriterTest {
             samples = listOf(StrokeSample(LogicalPoint(10, 20))),
         )
         return DocumentSnapshot(
-            document = Document(documentId, name, null, 1, 1, lastActivePageId = pageId),
+            document = Document(documentId, name, 1, 1, lastActivePageId = pageId),
             pages = listOf(PageContent(page, listOf(stroke))),
         )
     }

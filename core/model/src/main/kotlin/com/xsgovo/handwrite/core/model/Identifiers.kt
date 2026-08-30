@@ -10,9 +10,6 @@ value class PageId(val value: Long)
 value class ElementId(val value: Long)
 
 @JvmInline
-value class FolderId(val value: Long)
-
-@JvmInline
 value class ResourceId(val value: Long)
 
 @JvmInline

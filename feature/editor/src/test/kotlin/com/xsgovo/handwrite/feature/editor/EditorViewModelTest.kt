@@ -403,7 +403,6 @@ class EditorViewModelTest {
 
         override fun observeDocuments(): Flow<List<Document>> = MutableStateFlow(emptyList())
         override fun observeDocument(documentId: DocumentId): Flow<Document?> = document
-        override fun observePages(documentId: DocumentId): Flow<List<Page>> = MutableStateFlow(listOfNotNull(page.value?.page))
         override fun observePage(pageId: PageId): Flow<PageContent?> = page
 
         override suspend fun loadSnapshot(documentId: DocumentId): DomainResult<DocumentSnapshot> {
@@ -421,13 +420,10 @@ class EditorViewModelTest {
             createCount++
             val documentId = DocumentId(1)
             val pageId = PageId(2)
-            document.value = Document(documentId, name, null, nowEpochMillis, nowEpochMillis, lastActivePageId = pageId)
+            document.value = Document(documentId, name, nowEpochMillis, nowEpochMillis, lastActivePageId = pageId)
             page.value = PageContent(Page(pageId, documentId, 1_024, size, background), emptyList())
             return DomainResult.Success(documentId)
         }
-
-        override suspend fun renameDocument(documentId: DocumentId, name: DisplayName): DomainResult<Unit> =
-            DomainResult.Success(Unit)
 
         override suspend fun deleteDocument(documentId: DocumentId): DomainResult<Unit> {
             deleteCount++
@@ -435,17 +431,6 @@ class EditorViewModelTest {
             page.value = null
             return DomainResult.Success(Unit)
         }
-
-        override suspend fun createPage(
-            documentId: DocumentId,
-            size: LogicalSize,
-            background: PageBackground,
-        ): DomainResult<PageId> = DomainResult.Success(PageId(3))
-
-        override suspend fun deletePage(pageId: PageId): DomainResult<Unit> = DomainResult.Success(Unit)
-
-        override suspend fun setLastActivePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit> =
-            DomainResult.Success(Unit)
 
         override suspend fun apply(command: DocumentCommand): DomainResult<Unit> {
             val current = page.value ?: return DomainResult.Success(Unit)

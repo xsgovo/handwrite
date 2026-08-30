@@ -5,7 +5,6 @@ import com.xsgovo.handwrite.core.model.DisplayName
 import com.xsgovo.handwrite.core.model.Document
 import com.xsgovo.handwrite.core.model.DocumentId
 import com.xsgovo.handwrite.core.model.ElementId
-import com.xsgovo.handwrite.core.model.FolderId
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.NameResult
 import com.xsgovo.handwrite.core.model.Page
@@ -20,10 +19,8 @@ internal fun DocumentBundle.toDomain(): Document {
     return Document(
         id = DocumentId(item.id),
         name = validName.name,
-        folderId = item.parentFolderId?.let(::FolderId),
         createdAtEpochMillis = item.createdAtEpochMillis,
         modifiedAtEpochMillis = item.modifiedAtEpochMillis,
-        isFavorite = item.isFavorite,
         lastActivePageId = PageId(state.lastActivePageId),
     )
 }

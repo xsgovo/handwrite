@@ -338,41 +338,33 @@ class EditorViewModel @Inject constructor(
         if (current.documentId != null && current.pageId != null) return current.documentId to current.pageId
 
         mutableState.update { it.copy(isSaving = true) }
-        val nameBase = "未命名 ${NAME_FORMAT.format(Instant.ofEpochMilli(clock.nowMillis()))}"
-        repeat(100) { attempt ->
-            val displayName = (DisplayName.create(if (attempt == 0) nameBase else "$nameBase ${attempt + 1}") as NameResult.Valid).name
-            when (
-                val created = documents.createDocument(
-                    displayName,
-                    current.pageSize,
-                    current.background,
-                    clock.nowMillis(),
-                )
-            ) {
-                is DomainResult.Success -> {
-                    val document = documents.observeDocument(created.value).filterNotNull().first()
-                    openedDocumentId = created.value
-                    mutableState.update {
-                        it.copy(
-                            documentId = created.value,
-                            pageId = document.lastActivePageId,
-                            documentName = document.name.value,
-                            isSaving = false,
-                        )
-                    }
-                    observeDocument(created.value)
-                    return created.value to document.lastActivePageId
+        val name = when (
+            val result = DisplayName.create("未命名 ${NAME_FORMAT.format(Instant.ofEpochMilli(clock.nowMillis()))}")
+        ) {
+            is NameResult.Valid -> result.name
+            is NameResult.Invalid -> error("Generated document name is invalid: ${result.problem}")
+        }
+        when (val created = documents.createDocument(name, current.pageSize, current.background, clock.nowMillis())) {
+            is DomainResult.Success -> {
+                val document = documents.observeDocument(created.value).filterNotNull().first()
+                openedDocumentId = created.value
+                mutableState.update {
+                    it.copy(
+                        documentId = created.value,
+                        pageId = document.lastActivePageId,
+                        documentName = document.name.value,
+                        isSaving = false,
+                    )
                 }
-                is DomainResult.Failure -> if (created.error != DomainFailure.NameConflict) {
-                    showWriteFailure(created.error)
-                    mutableState.update { it.copy(isSaving = false) }
-                    return null
-                }
+                observeDocument(created.value)
+                return created.value to document.lastActivePageId
+            }
+            is DomainResult.Failure -> {
+                showWriteFailure(created.error)
+                mutableState.update { it.copy(isSaving = false) }
+                return null
             }
         }
-        mutableState.update { it.copy(isSaving = false) }
-        effectsChannel.send(EditorUiEffect.ShowMessage("无法生成唯一文档名称"))
-        return null
     }
 
     private fun observeDocument(documentId: DocumentId) {
