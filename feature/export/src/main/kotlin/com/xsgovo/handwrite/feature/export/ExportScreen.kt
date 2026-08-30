@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +17,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +24,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -86,18 +85,21 @@ fun ExportRoute(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { paddingValues ->
         Column(
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 20.dp),
         ) {
-            Text(state.documentName, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 12.dp))
+            Text(
+                state.documentName,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
             DocumentExportFormat.entries.forEach { format ->
-                ExportFormatRow(
+                ExportFormatCard(
                     format = format,
                     selected = state.format == format,
                     enabled = !state.isExporting,
                     onClick = { viewModel.setFormat(format) },
                 )
-                HorizontalDivider()
             }
             Button(
                 enabled = !state.isExporting,
@@ -124,21 +126,34 @@ fun ExportRoute(
 }
 
 @Composable
-private fun ExportFormatRow(
+private fun ExportFormatCard(
     format: DocumentExportFormat,
     selected: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 8.dp),
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.large,
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        contentColor = if (selected) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
     ) {
-        RadioButton(selected = selected, onClick = onClick, enabled = enabled)
-        Text(format.label(), modifier = Modifier.padding(start = 8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            RadioButton(selected = selected, onClick = null, enabled = enabled)
+            Text(format.label(), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 4.dp))
+        }
     }
 }
 

@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.ink.authoring.compose.InProgressStrokes
 import androidx.ink.strokes.Stroke
 import androidx.ink.strokes.StrokeInput
+import com.xsgovo.handwrite.core.designsystem.LocalHandwriteColors
 import com.xsgovo.handwrite.core.model.BrushId
 import com.xsgovo.handwrite.core.model.ElementId
 import com.xsgovo.handwrite.core.model.InputMode
@@ -292,7 +293,7 @@ fun HandwriteCanvas(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFE8EBE8))
+            .background(LocalHandwriteColors.current.canvasDesk)
             .onSizeChanged { canvasSize = it },
     ) {
         Box(
@@ -428,10 +429,10 @@ private fun ZoomControlsOverlay(
         exit = fadeOut(),
     ) {
         Surface(
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-            shape = RoundedCornerShape(8.dp),
-            tonalElevation = 4.dp,
-            shadowElevation = 4.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 3.dp,
+            shadowElevation = 2.dp,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

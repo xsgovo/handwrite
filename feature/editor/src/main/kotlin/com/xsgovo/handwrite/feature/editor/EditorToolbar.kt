@@ -37,6 +37,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -81,15 +82,18 @@ fun EditorToolbar(
     var widthPanelExpanded by remember { mutableStateOf(false) }
     var widthPanelSlot by remember { mutableStateOf<Int?>(null) }
     var pendingWidthStep by remember { mutableStateOf(state.widthStep.toFloat()) }
-    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
+                .height(64.dp)
                 .horizontalScroll(scrollState)
-                .padding(horizontal = 6.dp),
+                .padding(horizontal = 8.dp),
         ) {
             IconButton(onClick = onLibrary) {
                 Icon(Icons.Default.FolderOpen, contentDescription = "文档库")
@@ -206,6 +210,14 @@ private fun BrushWidthPresetButton(
 ) {
     IconButton(
         onClick = onClick,
+        colors = if (selected) {
+            IconButtonDefaults.iconButtonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        } else {
+            IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
         modifier = if (selected) {
             Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
         } else {
@@ -216,7 +228,6 @@ private fun BrushWidthPresetButton(
             imageVector = Icons.Default.Circle,
             contentDescription = "${step}档笔宽",
             modifier = Modifier.size(brushWidthIconSizeDp(step).dp),
-            tint = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -241,12 +252,19 @@ private fun ToolButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
 ) {
-    IconButton(onClick = { onTool(tool) }) {
-        Icon(
-            icon,
-            contentDescription = description,
-            tint = if (tool == selectedTool) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    val selected = tool == selectedTool
+    IconButton(
+        onClick = { onTool(tool) },
+        colors = if (selected) {
+            IconButtonDefaults.iconButtonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        } else {
+            IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    ) {
+        Icon(icon, contentDescription = description)
     }
 }
 
@@ -254,9 +272,15 @@ private fun ToolButton(
 private fun ColorSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(34.dp)
-            .padding(4.dp)
-            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)
+            .size(40.dp)
+            .padding(5.dp)
+            .then(
+                if (selected) {
+                    Modifier.border(2.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                } else {
+                    Modifier
+                },
+            )
             .padding(3.dp)
             .background(color, CircleShape)
             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), CircleShape)

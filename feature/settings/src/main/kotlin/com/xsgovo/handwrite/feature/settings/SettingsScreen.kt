@@ -1,6 +1,8 @@
 package com.xsgovo.handwrite.feature.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,10 +14,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -29,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
@@ -63,70 +66,82 @@ fun SettingsRoute(
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState()),
         ) {
-            SectionTitle("输入")
-            ToggleRow(
-                title = "仅手写笔输入",
-                subtitle = "开启后忽略手指绘制",
-                checked = settings.inputMode == InputMode.STYLUS,
-                onChecked = { viewModel.setInputMode(if (it) InputMode.STYLUS else InputMode.FINGER) },
-            )
-            MenuRow(
-                title = "笔侧键动作",
-                selected = sideButtonLabel(settings.sideButtonAction),
-                options = SideButtonAction.entries,
-                label = ::sideButtonLabel,
-                onSelect = viewModel::setSideButtonAction,
-            )
-            HorizontalDivider()
+            SettingSection("输入") {
+                ToggleRow(
+                    title = "仅手写笔输入",
+                    subtitle = "开启后忽略手指绘制",
+                    checked = settings.inputMode == InputMode.STYLUS,
+                    onChecked = { viewModel.setInputMode(if (it) InputMode.STYLUS else InputMode.FINGER) },
+                )
+                MenuRow(
+                    title = "笔侧键动作",
+                    selected = sideButtonLabel(settings.sideButtonAction),
+                    options = SideButtonAction.entries,
+                    label = ::sideButtonLabel,
+                    onSelect = viewModel::setSideButtonAction,
+                )
+            }
 
-            SectionTitle("外观")
-            MenuRow(
-                title = "主题",
-                selected = themeLabel(settings.themeMode),
-                options = ThemeMode.entries,
-                label = ::themeLabel,
-                onSelect = viewModel::setThemeMode,
-            )
-            HorizontalDivider()
+            SettingSection("外观") {
+                MenuRow(
+                    title = "主题",
+                    selected = themeLabel(settings.themeMode),
+                    options = ThemeMode.entries,
+                    label = ::themeLabel,
+                    onSelect = viewModel::setThemeMode,
+                )
+            }
 
-            SectionTitle("导出")
-            MenuRow(
-                title = "图片编码",
-                selected = imageFormatLabel(settings.imageFormat),
-                options = ImageFormat.entries,
-                label = ::imageFormatLabel,
-                onSelect = viewModel::setImageFormat,
-            )
-            MenuRow(
-                title = "压缩质量",
-                selected = compressionLabel(settings.compressionQuality),
-                options = CompressionQuality.entries,
-                label = ::compressionLabel,
-                onSelect = viewModel::setCompressionQuality,
-            )
-            HorizontalDivider()
+            SettingSection("导出") {
+                MenuRow(
+                    title = "图片编码",
+                    selected = imageFormatLabel(settings.imageFormat),
+                    options = ImageFormat.entries,
+                    label = ::imageFormatLabel,
+                    onSelect = viewModel::setImageFormat,
+                )
+                MenuRow(
+                    title = "压缩质量",
+                    selected = compressionLabel(settings.compressionQuality),
+                    options = CompressionQuality.entries,
+                    label = ::compressionLabel,
+                    onSelect = viewModel::setCompressionQuality,
+                )
+            }
 
-            SectionTitle("导航")
-            ToggleRow(
-                title = "返回键进入文档库",
-                subtitle = "关闭时从画布直接退出应用",
-                checked = settings.backBehavior == BackBehavior.OPEN_LIBRARY,
-                onChecked = {
-                    viewModel.setBackBehavior(if (it) BackBehavior.OPEN_LIBRARY else BackBehavior.EXIT_APP)
-                },
-            )
+            SettingSection("导航") {
+                ToggleRow(
+                    title = "返回键进入文档库",
+                    subtitle = "关闭时从画布直接退出应用",
+                    checked = settings.backBehavior == BackBehavior.OPEN_LIBRARY,
+                    onChecked = {
+                        viewModel.setBackBehavior(if (it) BackBehavior.OPEN_LIBRARY else BackBehavior.EXIT_APP)
+                    },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+private fun SettingSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Text(
-        text,
+        title,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 6.dp),
+        modifier = Modifier.padding(start = 32.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
     )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.large),
+    ) {
+        content()
+    }
 }
 
 @Composable
@@ -140,6 +155,7 @@ private fun ToggleRow(
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
         trailingContent = { Switch(checked = checked, onCheckedChange = onChecked) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
 }
 
@@ -167,7 +183,7 @@ private fun <T> MenuRow(
                 }
             }
         },
-        modifier = Modifier.fillMaxWidth(),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
 }
 
