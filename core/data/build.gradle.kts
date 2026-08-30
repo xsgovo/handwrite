@@ -49,7 +49,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.datastore)
     implementation(libs.protobuf.javalite)
     implementation(libs.hilt.android)
