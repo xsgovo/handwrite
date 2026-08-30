@@ -120,9 +120,3 @@ data class ResourceEntity(
     val byteSize: Long,
     val referenceCount: Long,
 )
-
-@Entity(tableName = "applied_operations")
-data class AppliedOperationEntity(
-    @PrimaryKey val operationId: String,
-    val appliedAtEpochMillis: Long,
-)

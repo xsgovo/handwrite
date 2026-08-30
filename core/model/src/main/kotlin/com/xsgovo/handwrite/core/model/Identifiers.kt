@@ -16,13 +16,6 @@ value class FolderId(val value: Long)
 value class ResourceId(val value: Long)
 
 @JvmInline
-value class OperationId(val value: String) {
-    init {
-        require(value.isNotBlank())
-    }
-}
-
-@JvmInline
 value class BrushId(val value: String) {
     init {
         require(value.isNotBlank())

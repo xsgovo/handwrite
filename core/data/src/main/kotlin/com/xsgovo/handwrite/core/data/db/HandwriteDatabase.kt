@@ -10,9 +10,8 @@ import androidx.room.RoomDatabase
         PageEntity::class,
         PageElementEntity::class,
         ResourceEntity::class,
-        AppliedOperationEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class HandwriteDatabase : RoomDatabase() {

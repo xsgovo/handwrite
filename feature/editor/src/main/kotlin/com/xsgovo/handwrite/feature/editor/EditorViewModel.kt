@@ -6,10 +6,8 @@ import com.xsgovo.handwrite.core.document.CommandHistory
 import com.xsgovo.handwrite.core.document.BackgroundResourceRepository
 import com.xsgovo.handwrite.core.document.DocumentCommand
 import com.xsgovo.handwrite.core.document.DocumentRepository
-import com.xsgovo.handwrite.core.document.DurableCommandExecutor
 import com.xsgovo.handwrite.core.document.EpochClock
 import com.xsgovo.handwrite.core.document.HistoryLimits
-import com.xsgovo.handwrite.core.document.PendingCommand
 import com.xsgovo.handwrite.core.document.SettingsRepository
 import com.xsgovo.handwrite.core.document.ResourceInput
 import com.xsgovo.handwrite.core.document.StoredResource
@@ -27,7 +25,6 @@ import com.xsgovo.handwrite.core.model.ElementId
 import com.xsgovo.handwrite.core.model.InputMode
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.NameResult
-import com.xsgovo.handwrite.core.model.OperationId
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageElement
 import com.xsgovo.handwrite.core.model.PageId
@@ -40,7 +37,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -96,7 +92,6 @@ sealed interface EditorUiEffect {
 @HiltViewModel
 class EditorViewModel @Inject constructor(
     private val documents: DocumentRepository,
-    private val commands: DurableCommandExecutor,
     private val settingsRepository: SettingsRepository,
     private val backgroundResources: BackgroundResourceRepository,
     private val clock: EpochClock,
@@ -481,8 +476,7 @@ class EditorViewModel @Inject constructor(
 
     private suspend fun commit(command: DocumentCommand, recordHistory: Boolean): Boolean {
         mutableState.update { it.copy(isSaving = true) }
-        val result = commands.execute(PendingCommand(OperationId(UUID.randomUUID().toString()), command))
-        return when (result) {
+        return when (val result = documents.apply(command)) {
             is DomainResult.Success -> {
                 applyLocally(command)
                 if (recordHistory) history.recordCommitted(command)
@@ -522,7 +516,7 @@ class EditorViewModel @Inject constructor(
         val message = when (failure) {
             DomainFailure.StorageFull -> "存储空间不足"
             DomainFailure.DocumentNotFound, DomainFailure.PageNotFound -> "文档已不存在"
-            else -> "保存失败，操作将在下次启动时恢复"
+            else -> "保存失败，请重试"
         }
         effectsChannel.send(EditorUiEffect.ShowMessage(message))
     }

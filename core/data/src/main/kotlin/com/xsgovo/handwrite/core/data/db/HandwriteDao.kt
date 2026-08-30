@@ -22,9 +22,6 @@ interface HandwriteDao {
     suspend fun insertElements(elements: List<PageElementEntity>)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
-    suspend fun insertAppliedOperation(operation: AppliedOperationEntity)
-
-    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertResource(resource: ResourceEntity): Long
 
     @Transaction
@@ -49,9 +46,6 @@ interface HandwriteDao {
     @Transaction
     @Query("SELECT * FROM pages WHERE documentId = :documentId ORDER BY orderKey ASC")
     suspend fun findPageBundles(documentId: Long): List<PageBundle>
-
-    @Query("SELECT COUNT(*) FROM applied_operations WHERE operationId = :operationId")
-    suspend fun hasAppliedOperation(operationId: String): Int
 
     @Query("SELECT documentId FROM pages WHERE id = :pageId")
     suspend fun findDocumentIdForPage(pageId: Long): Long?

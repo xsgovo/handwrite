@@ -4,7 +4,6 @@ import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteException
 import androidx.room.withTransaction
 import com.xsgovo.handwrite.core.data.codec.PayloadCodec
-import com.xsgovo.handwrite.core.data.db.AppliedOperationEntity
 import com.xsgovo.handwrite.core.data.db.DocumentStateEntity
 import com.xsgovo.handwrite.core.data.db.HandwriteDao
 import com.xsgovo.handwrite.core.data.db.HandwriteDatabase
@@ -23,7 +22,6 @@ import com.xsgovo.handwrite.core.model.DocumentSnapshot
 import com.xsgovo.handwrite.core.model.DomainFailure
 import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.LogicalSize
-import com.xsgovo.handwrite.core.model.OperationId
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.Page
 import com.xsgovo.handwrite.core.model.PageContent
@@ -157,10 +155,8 @@ class RoomDocumentRepository(
 
     override suspend fun apply(
         command: DocumentCommand,
-        operationId: OperationId,
     ): DomainResult<Unit> = guardedWrite {
         database.withTransaction {
-            if (dao.hasAppliedOperation(operationId.value) != 0) return@withTransaction
             if (dao.findDocumentIdForPage(command.pageId.value) != command.documentId.value) {
                 throw MissingPageException()
             }
@@ -185,7 +181,6 @@ class RoomDocumentRepository(
                 }
             }
             dao.touchDocumentForPage(command.pageId.value, clock.nowMillis())
-            dao.insertAppliedOperation(AppliedOperationEntity(operationId.value, clock.nowMillis()))
         }
     }
 

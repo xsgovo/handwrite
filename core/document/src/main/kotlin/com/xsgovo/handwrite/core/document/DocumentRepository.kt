@@ -12,7 +12,7 @@ import com.xsgovo.handwrite.core.model.PageId
 import com.xsgovo.handwrite.core.model.LogicalSize
 import kotlinx.coroutines.flow.Flow
 
-interface DocumentRepository : DocumentCommandStore {
+interface DocumentRepository {
     fun observeDocuments(): Flow<List<Document>>
 
     fun observeDocument(documentId: DocumentId): Flow<Document?>
@@ -49,4 +49,6 @@ interface DocumentRepository : DocumentCommandStore {
         documentId: DocumentId,
         pageId: PageId,
     ): DomainResult<Unit>
+
+    suspend fun apply(command: DocumentCommand): DomainResult<Unit>
 }

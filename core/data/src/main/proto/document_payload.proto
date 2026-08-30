@@ -90,37 +90,3 @@ message LogicalRectPayload {
   sint32 right = 3;
   sint32 bottom = 4;
 }
-
-message PendingCommandPayload {
-  string operation_id = 1;
-  int64 document_id = 2;
-  int64 page_id = 3;
-  oneof command {
-    ReplaceElementsPayload replace_elements = 4;
-    UpdateBackgroundPayload update_background = 5;
-  }
-  uint64 sequence = 6;
-}
-
-message ReplaceElementsPayload {
-  repeated ElementEnvelope removed = 1;
-  repeated ElementEnvelope added = 2;
-}
-
-message UpdateBackgroundPayload {
-  BackgroundPayload before = 1;
-  BackgroundPayload after = 2;
-}
-
-message ElementEnvelope {
-  int64 id = 1;
-  int64 page_id = 2;
-  sint64 order_key = 3;
-  ElementType type = 4;
-  bytes payload = 5;
-}
-
-enum ElementType {
-  ELEMENT_TYPE_UNSPECIFIED = 0;
-  ELEMENT_TYPE_STROKE = 1;
-}

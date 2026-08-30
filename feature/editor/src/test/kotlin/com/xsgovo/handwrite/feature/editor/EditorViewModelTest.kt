@@ -7,10 +7,7 @@ import androidx.compose.ui.unit.IntSize
 import com.xsgovo.handwrite.core.document.DocumentCommand
 import com.xsgovo.handwrite.core.document.BackgroundResourceRepository
 import com.xsgovo.handwrite.core.document.DocumentRepository
-import com.xsgovo.handwrite.core.document.DurableCommandExecutor
 import com.xsgovo.handwrite.core.document.EpochClock
-import com.xsgovo.handwrite.core.document.PendingCommand
-import com.xsgovo.handwrite.core.document.PendingCommandJournal
 import com.xsgovo.handwrite.core.document.SettingsRepository
 import com.xsgovo.handwrite.core.document.ResourceInput
 import com.xsgovo.handwrite.core.document.StoredResource
@@ -26,7 +23,6 @@ import com.xsgovo.handwrite.core.model.ResourceId
 import com.xsgovo.handwrite.core.model.LogicalPoint
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.LogicalCanvas
-import com.xsgovo.handwrite.core.model.OperationId
 import com.xsgovo.handwrite.core.model.Page
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageContent
@@ -371,7 +367,6 @@ class EditorViewModelTest {
         settings: FakeSettingsRepository = FakeSettingsRepository(),
     ): EditorViewModel = EditorViewModel(
         documents = repository,
-        commands = DurableCommandExecutor(repository, InMemoryJournal()),
         settingsRepository = settings,
         backgroundResources = FakeBackgroundResources(),
         clock = EpochClock { 1_700_000_000_000 },
@@ -394,22 +389,6 @@ class EditorViewModelTest {
 
         override suspend fun update(transform: (AppSettings) -> AppSettings): DomainResult<Unit> {
             mutableSettings.value = transform(mutableSettings.value)
-            return DomainResult.Success(Unit)
-        }
-    }
-
-    private class InMemoryJournal : PendingCommandJournal {
-        private val entries = mutableListOf<PendingCommand>()
-
-        override suspend fun append(command: PendingCommand): DomainResult<Unit> {
-            entries += command
-            return DomainResult.Success(Unit)
-        }
-
-        override suspend fun readAll(): DomainResult<List<PendingCommand>> = DomainResult.Success(entries.toList())
-
-        override suspend fun remove(operationId: OperationId): DomainResult<Unit> {
-            entries.removeAll { it.operationId == operationId }
             return DomainResult.Success(Unit)
         }
     }
@@ -468,7 +447,7 @@ class EditorViewModelTest {
         override suspend fun setLastActivePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit> =
             DomainResult.Success(Unit)
 
-        override suspend fun apply(command: DocumentCommand, operationId: OperationId): DomainResult<Unit> {
+        override suspend fun apply(command: DocumentCommand): DomainResult<Unit> {
             val current = page.value ?: return DomainResult.Success(Unit)
             page.value = when (command) {
                 is DocumentCommand.ReplaceElements -> {
