@@ -1,6 +1,8 @@
 package com.xsgovo.handwrite.core.data.db
 
 import com.xsgovo.handwrite.core.data.codec.PayloadCodec
+import com.xsgovo.handwrite.core.model.BrushBlendMode
+import com.xsgovo.handwrite.core.model.BrushId
 import com.xsgovo.handwrite.core.model.BrushStyle
 import com.xsgovo.handwrite.core.model.DisplayName
 import com.xsgovo.handwrite.core.model.DocumentId
@@ -8,7 +10,9 @@ import com.xsgovo.handwrite.core.model.ElementId
 import com.xsgovo.handwrite.core.model.NameResult
 import com.xsgovo.handwrite.core.model.LogicalPoint
 import com.xsgovo.handwrite.core.model.PageBackground
+import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PageId
+import com.xsgovo.handwrite.core.model.PressureSensitivity
 import com.xsgovo.handwrite.core.model.StrokeElement
 import com.xsgovo.handwrite.core.model.StrokeSample
 import org.junit.Assert.assertEquals
@@ -68,6 +72,46 @@ class EntityMappersTest {
         val page = portraitPage().copy(backgroundPayload = byteArrayOf(0))
 
         assertEquals(PageBackground.Solid(), page.toDomain().background)
+    }
+
+    @Test
+    fun strokesRoundTripThroughPersistenceEntitiesWithoutLoss() {
+        val strokes = listOf(
+            StrokeElement(
+                id = ElementId(7),
+                pageId = PageId(4),
+                orderKey = 2_048L,
+                style = BrushStyle(
+                    id = BrushId.PRESSURE_PEN,
+                    argb = 0x80123456.toInt(),
+                    width = 42,
+                    blendMode = BrushBlendMode.HIGHLIGHT,
+                    pressureSensitivity = PressureSensitivity.HIGH,
+                ),
+                samples = listOf(
+                    StrokeSample(
+                        LogicalPoint(10, 20),
+                        pressure = 10_000,
+                        elapsedMillis = 0,
+                        tiltX = -120,
+                        tiltY = 340,
+                    ),
+                    StrokeSample(LogicalPoint(40, 18), pressure = StrokeSample.MAX_PRESSURE, elapsedMillis = 250),
+                ),
+            ),
+            StrokeElement(
+                id = ElementId(9),
+                pageId = PageId(4),
+                orderKey = 4_096L,
+                style = BrushStyle(argb = 0xFF112233.toInt(), width = 10),
+                samples = listOf(StrokeSample(LogicalPoint(1, 1))),
+            ),
+        )
+        val bundle = PageBundle(portraitPage(), strokes.map(StrokeElement::toEntity).reversed())
+
+        val content = bundle.toDomain()
+
+        assertEquals(PageContent(portraitPage().toDomain(), strokes), content)
     }
 
     private fun portraitPage() = PageEntity(
