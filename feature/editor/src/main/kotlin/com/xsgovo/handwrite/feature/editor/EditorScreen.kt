@@ -44,6 +44,7 @@ fun EditorRoute(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var confirmClear by remember { mutableStateOf(false) }
+    var temporaryEraserActive by remember { mutableStateOf(false) }
     var isSharing by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val backgroundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -78,6 +79,7 @@ fun EditorRoute(
         topBar = {
             EditorToolbar(
                 state = state,
+                temporaryEraserActive = temporaryEraserActive,
                 onLibrary = onLibrary,
                 onSettings = onSettings,
                 onExport = { state.documentId?.value?.let(onExport) },
@@ -132,6 +134,7 @@ fun EditorRoute(
             onEraseFinished = viewModel::eraseElements,
             onToggleEraser = viewModel::toggleEraser,
             onUndo = viewModel::undo,
+            onTemporaryEraserChanged = { temporaryEraserActive = it },
             modifier = Modifier.fillMaxSize().padding(paddingValues),
         )
     }

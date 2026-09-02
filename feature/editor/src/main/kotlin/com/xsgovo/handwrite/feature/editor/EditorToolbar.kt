@@ -62,6 +62,7 @@ internal fun brushWidthIconSizeDp(widthStep: Int): Float =
 @Composable
 fun EditorToolbar(
     state: EditorUiState,
+    temporaryEraserActive: Boolean,
     onLibrary: () -> Unit,
     onSettings: () -> Unit,
     onExport: () -> Unit,
@@ -108,8 +109,9 @@ fun EditorToolbar(
                     Icon(Icons.Default.Share, contentDescription = "分享当前页面图片")
                 }
             }
-            ToolButton(EditorTool.PEN, state.tool, onTool, Icons.Default.Edit, "画笔")
-            ToolButton(EditorTool.ERASER, state.tool, onTool, Icons.Default.AutoFixNormal, "橡皮擦")
+    val selectedTool = if (temporaryEraserActive) EditorTool.ERASER else state.tool
+    ToolButton(EditorTool.PEN, selectedTool, onTool, Icons.Default.Edit, "画笔")
+    ToolButton(EditorTool.ERASER, selectedTool, onTool, Icons.Default.AutoFixNormal, "橡皮擦")
             state.colorSlots.forEachIndexed { index, argb ->
                 ColorSwatch(Color(argb), selected = index == state.activeColorSlot) { onColorSlot(index) }
             }

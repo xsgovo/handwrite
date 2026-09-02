@@ -96,6 +96,7 @@ fun HandwriteCanvas(
     onEraseFinished: (Set<ElementId>, onCompleted: () -> Unit) -> Unit,
     onToggleEraser: () -> Unit,
     onUndo: () -> Unit,
+    onTemporaryEraserChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -121,6 +122,7 @@ fun HandwriteCanvas(
     val eraseCallback by rememberUpdatedState(onEraseFinished)
     val toggleEraserCallback by rememberUpdatedState(onToggleEraser)
     val undoCallback by rememberUpdatedState(onUndo)
+    val temporaryEraserCallback by rememberUpdatedState(onTemporaryEraserChanged)
 
     LaunchedEffect(zoomPercent, canvasSize, pageSize) {
         pan = if (zoomPercent == 100) Offset.Zero else transform.clampPan(pan)
@@ -253,6 +255,25 @@ fun HandwriteCanvas(
         }
     }
 
+    // awaitEachGesture 只在指针接触期间运行；侧键在悬停阶段按下时也必须同步临时橡皮状态，
+    // 因此用常驻事件循环监听包含 hover 在内的全部指针事件。
+    val sideButtonWatcherModifier = Modifier.pointerInput(sideButtonAction) {
+        awaitPointerEventScope {
+            var temporaryEraserActive = false
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val sideForEraser = sideButtonAction == SideButtonAction.TEMPORARY_ERASER &&
+                    event.motionEvent?.buttonState?.and(
+                        MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY,
+                    ) != 0
+                if (sideForEraser != temporaryEraserActive) {
+                    temporaryEraserActive = sideForEraser
+                    temporaryEraserCallback(sideForEraser)
+                }
+            }
+        }
+    }
+
     val inkRenderer = remember { InkDocumentRenderer() }
     val visibleStrokes = remember(strokes, erasedIds, pendingErasedIds) {
         strokes.filterNot { it.id in erasedIds || it.id in pendingErasedIds }
@@ -299,7 +320,8 @@ fun HandwriteCanvas(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(gestureModifier),
+                .then(gestureModifier)
+                .then(sideButtonWatcherModifier),
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val page = transform.pageRect
