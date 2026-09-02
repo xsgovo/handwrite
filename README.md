@@ -30,7 +30,7 @@
 .\gradlew.bat :app:assembleDebug
 
 # 运行项目的完整本地验证
-.\gradlew.bat --no-daemon verifyLocal
+.\gradlew.bat verifyLocal
 ```
 
 Debug APK 默认生成在 `app/build/outputs/apk/debug/` 目录下。也可以使用 Android Studio 打开项目并运行 `app` 配置。

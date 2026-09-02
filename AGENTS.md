@@ -14,7 +14,7 @@
 本项目当前不建立 CI。统一完整验证命令：
 
 ```powershell
-.\gradlew.bat --no-daemon verifyLocal
+.\gradlew.bat verifyLocal
 ```
 
 根据变更范围选择验证级别：
