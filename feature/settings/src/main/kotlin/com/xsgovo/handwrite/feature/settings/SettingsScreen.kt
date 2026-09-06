@@ -94,6 +94,12 @@ fun SettingsRoute(
             }
 
             SettingSection("外观") {
+                ToggleRow(
+                    title = "动态取色",
+                    subtitle = "根据壁纸生成 Material You 主题色",
+                    checked = settings.dynamicColor,
+                    onChecked = viewModel::setDynamicColor,
+                )
                 MenuRow(
                     title = "主题",
                     selected = themeLabel(settings.themeMode),

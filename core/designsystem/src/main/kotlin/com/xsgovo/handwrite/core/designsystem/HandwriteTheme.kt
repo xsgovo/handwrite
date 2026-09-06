@@ -5,11 +5,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.xsgovo.handwrite.core.model.ThemeMode
 
@@ -100,20 +103,22 @@ private val ExpressiveShapes = Shapes(
 )
 
 // Colors for canvas-adjacent chrome that has no role in the Material scheme.
-// The desk sits behind the page; pattern lines and page fills are document
-// content and stay theme-independent so exports match the canvas.
+// The desk sits behind the page and follows the scheme's neutral tones so it
+// stays consistent with the theme (including wallpaper dynamic color); pattern
+// lines and page fills are document content and remain theme-independent so
+// exports match the canvas.
 data class HandwriteColors(
     val canvasDesk: Color,
 )
 
-private val LightHandwriteColors = HandwriteColors(canvasDesk = Color(0xFFDFE6E1))
-private val DarkHandwriteColors = HandwriteColors(canvasDesk = Color(0xFF070C0A))
-
-val LocalHandwriteColors = staticCompositionLocalOf { LightHandwriteColors }
+val LocalHandwriteColors = staticCompositionLocalOf {
+    HandwriteColors(canvasDesk = LightColors.surfaceContainerHighest)
+}
 
 @Composable
 fun HandwriteTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
@@ -121,9 +126,19 @@ fun HandwriteTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    val handwriteColors = if (darkTheme) DarkHandwriteColors else LightHandwriteColors
+    // minSdk 31，壁纸动态取色（Material You）在全部支持设备上可用。
+    val context = LocalContext.current
+    val colorScheme = when {
+        dynamicColor -> if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        darkTheme -> DarkColors
+        else -> LightColors
+    }
+    // 桌面用主题中性色调（带灰度的主题色），与页面底色拉开层级又不喧宾夺主。
+    val handwriteColors = HandwriteColors(
+        canvasDesk = if (darkTheme) colorScheme.surfaceContainerLowest else colorScheme.surfaceContainerHighest,
+    )
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = colorScheme,
         shapes = ExpressiveShapes,
     ) {
         CompositionLocalProvider(

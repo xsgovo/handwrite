@@ -37,6 +37,7 @@ internal fun AppSettingsPayload.toDomain(): AppSettings {
             com.xsgovo.handwrite.core.data.settings.ThemeMode.THEME_MODE_DARK -> ThemeMode.DARK
             else -> ThemeMode.SYSTEM
         },
+        dynamicColor = if (hasDynamicColor()) dynamicColor else defaults.dynamicColor,
         imageFormat = when (imageFormat) {
             com.xsgovo.handwrite.core.data.settings.ImageFormat.IMAGE_FORMAT_PNG -> ImageFormat.PNG
             com.xsgovo.handwrite.core.data.settings.ImageFormat.IMAGE_FORMAT_WEBP -> ImageFormat.WEBP
@@ -121,6 +122,7 @@ internal fun AppSettings.toProto(): AppSettingsPayload = AppSettingsPayload.newB
             ThemeMode.DARK -> com.xsgovo.handwrite.core.data.settings.ThemeMode.THEME_MODE_DARK
         },
     )
+    .setDynamicColor(dynamicColor)
     .setImageFormat(
         when (imageFormat) {
             ImageFormat.AUTO -> com.xsgovo.handwrite.core.data.settings.ImageFormat.IMAGE_FORMAT_AUTO

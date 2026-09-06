@@ -20,6 +20,7 @@ class AppSettingsMapperTest {
         val settings = AppSettings(
             inputMode = InputMode.STYLUS,
             themeMode = ThemeMode.DARK,
+            dynamicColor = true,
             imageFormat = ImageFormat.WEBP,
             exportResolution = ExportResolution.HIGH,
             compressionQuality = CompressionQuality.HIGH,

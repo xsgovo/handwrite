@@ -30,6 +30,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setInputMode(value: InputMode) = update { it.copy(inputMode = value) }
     fun setThemeMode(value: ThemeMode) = update { it.copy(themeMode = value) }
+    fun setDynamicColor(value: Boolean) = update { it.copy(dynamicColor = value) }
     fun setImageFormat(value: ImageFormat) = update { it.copy(imageFormat = value) }
     fun setCompressionQuality(value: CompressionQuality) = update { it.copy(compressionQuality = value) }
     fun setBackBehavior(value: BackBehavior) = update { it.copy(backBehavior = value) }

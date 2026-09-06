@@ -3,6 +3,7 @@ package com.xsgovo.handwrite.core.model
 data class AppSettings(
     val inputMode: InputMode = InputMode.FINGER,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val dynamicColor: Boolean = false,
     val imageFormat: ImageFormat = ImageFormat.AUTO,
     val exportResolution: ExportResolution = ExportResolution.STANDARD,
     val compressionQuality: CompressionQuality = CompressionQuality.BALANCED,

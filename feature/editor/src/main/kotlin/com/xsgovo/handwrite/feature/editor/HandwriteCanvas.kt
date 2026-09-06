@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Matrix
@@ -301,6 +302,9 @@ fun HandwriteCanvas(
         }
     }
     val currentWetBrush by rememberUpdatedState(wetBrush)
+    // 透明背景的页面以半透明的主题底色显示：跟随主题色相的同时透出桌面，比实底更通透；
+    // 导出仍为真透明，由 PageRenderEngine 负责。
+    val transparentPageColor = MaterialTheme.colorScheme.surface.copy(alpha = TRANSPARENT_PAGE_FILL_ALPHA)
     val maskPath = remember(canvasSize, transform.pageRect) {
         Path().apply {
             val canvasWidth = canvasSize.width.toFloat()
@@ -335,8 +339,13 @@ fun HandwriteCanvas(
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val page = transform.pageRect
-                drawRect(Color(0x26000000), topLeft = page.topLeft + Offset(0f, 3f), size = page.size)
-                drawRect(background.baseColor(), topLeft = page.topLeft, size = page.size)
+                drawRect(background.baseColor(transparentPageColor), topLeft = page.topLeft, size = page.size)
+                // 页底 3px 阴影：整页阴影会透过半透明填充使页面发灰，只保留底边一条。
+                drawRect(
+                    Color(0x26000000),
+                    topLeft = Offset(page.left, page.bottom),
+                    size = Size(page.width, 3f),
+                )
                 clipRect(page.left, page.top, page.right, page.bottom) {
                     when (background) {
                         is PageBackground.Pattern -> drawPattern(background, page, transform.scale)
@@ -444,6 +453,9 @@ private const val LOG_TAG = "HandwriteCanvas"
 // 缩放范围由手势与工具栏按钮共用；编辑器 ViewModel 的 setZoom 也引用这两个常量。
 internal const val MIN_ZOOM_PERCENT = 75
 internal const val MAX_ZOOM_PERCENT = 400
+
+// 透明页面填充的主题色不透明度：过低会与桌面混淆，过高则失去通透感。
+private const val TRANSPARENT_PAGE_FILL_ALPHA = 0.45f
 private const val ZOOM_BUTTON_STEP = 25
 private const val ZOOM_GESTURE_SCALE_THRESHOLD = 0.005f
 private const val ZOOM_CONTROLS_HIDE_DELAY_MILLIS = 1_800L
@@ -658,10 +670,12 @@ internal data class CanvasPageTransform(
     }
 }
 
-private fun PageBackground.baseColor(): Color = when (this) {
+// 透明底（含透明底叠加样式的 Pattern）在画布上以主题底色显示，与周边界面保持一致；
+// 画布所见与导出不同：导出保持真透明，由 PageRenderEngine 负责。
+private fun PageBackground.baseColor(transparentFallback: Color): Color = when (this) {
     is PageBackground.Solid -> Color(argb)
-    PageBackground.Transparent -> Color.Transparent
-    is PageBackground.Pattern -> Color(baseArgb)
+    PageBackground.Transparent -> transparentFallback
+    is PageBackground.Pattern -> if (baseArgb == PageBackground.TRANSPARENT) transparentFallback else Color(baseArgb)
     is PageBackground.Asset -> Color.White
 }
 

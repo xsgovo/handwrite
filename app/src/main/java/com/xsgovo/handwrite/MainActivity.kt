@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
             val settings by appViewModel.settings.collectAsState()
             val navController = rememberNavController()
 
-            HandwriteTheme(themeMode = settings.themeMode) {
+            HandwriteTheme(themeMode = settings.themeMode, dynamicColor = settings.dynamicColor) {
                 NavHost(
                     navController = navController,
                     startDestination = EditorDestination(sessionId = UUID.randomUUID().toString()),

@@ -26,6 +26,7 @@ message AppSettingsPayload {
   repeated fixed32 picker_candidates = 17;
   optional DefaultBackgroundColorSetting default_background_color = 19;
   optional DefaultBackgroundStyleSetting default_background_style = 20;
+  optional bool dynamic_color = 18;
 }
 
 enum InputMode { INPUT_MODE_UNSPECIFIED = 0; INPUT_MODE_FINGER = 1; INPUT_MODE_STYLUS = 2; }
