@@ -94,16 +94,33 @@ class ColorPickerModelTest {
     }
 
     @Test
-    fun channelHelpersReadAndWriteSingleChannels() {
-        val base = 0xFF112233.toInt()
+    fun svTriangleMapsPointsToSaturationAndValue() {
+        val radius = 100f
+        val height = radius * 0.8660254f
 
-        assertEquals(0x11, colorChannel(base, CHANNEL_SHIFT_RED))
-        assertEquals(0x22, colorChannel(base, CHANNEL_SHIFT_GREEN))
-        assertEquals(0x33, colorChannel(base, CHANNEL_SHIFT_BLUE))
+        svFromPoint(radius, 0f, radius).let { (s, v) ->
+            assertEquals(1f, s, 0.001f)
+            assertEquals(1f, v, 0.001f)
+        }
+        svFromPoint(-radius / 2f, -height, radius).let { (s, v) ->
+            assertEquals(0f, s, 0.001f)
+            assertEquals(1f, v, 0.001f)
+        }
+        svFromPoint(-radius / 2f, height, radius).let { (s, v) ->
+            assertEquals(0f, s, 0.001f)
+            assertEquals(0f, v, 0.001f)
+        }
 
-        assertEquals(0xFF11FF33.toInt(), withChannel(base, CHANNEL_SHIFT_GREEN, 0xFF))
-        assertEquals(0xFF002233.toInt(), withChannel(base, CHANNEL_SHIFT_RED, 0))
-        assertEquals(0xFF1122FF.toInt(), withChannel(base, CHANNEL_SHIFT_BLUE, 300))
+        val point = svToPoint(0.3f, 0.7f, radius)
+        svFromPoint(point.first, point.second, radius).let { (s, v) ->
+            assertEquals(0.3f, s, 0.001f)
+            assertEquals(0.7f, v, 0.001f)
+        }
+
+        // 三角形外的点收敛到合法区域 0 ≤ s ≤ v ≤ 1。
+        val (clampedS, clampedV) = svFromPoint(radius * 2f, -height * 2f, radius)
+        assertEquals(1f, clampedS, 0.001f)
+        assertEquals(1f, clampedV, 0.001f)
     }
 
     private companion object {

@@ -4,15 +4,6 @@ import kotlin.math.roundToInt
 
 internal data class Hsv(val hue: Float, val saturation: Float, val value: Float)
 
-internal const val CHANNEL_SHIFT_RED = 16
-internal const val CHANNEL_SHIFT_GREEN = 8
-internal const val CHANNEL_SHIFT_BLUE = 0
-
-internal fun colorChannel(argb: Int, channelShift: Int): Int = argb shr channelShift and 0xFF
-
-internal fun withChannel(argb: Int, channelShift: Int, value: Int): Int =
-    (argb and (0xFF shl channelShift).inv()) or (value.coerceIn(0, 255) shl channelShift)
-
 internal fun hsvToArgb(hue: Float, saturation: Float, value: Float): Int {
     val normalizedHue = ((hue % 360f) + 360f) % 360f
     val s = saturation.coerceIn(0f, 1f)
@@ -56,6 +47,26 @@ internal fun parseHex(text: String): Int? {
     if (digits.length != 6) return null
     if (digits.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) return null
     return 0xFF000000.toInt() or digits.toInt(16)
+}
+
+// HSV 三角选取器的顶点：纯色顶点在 0°，白色在 120°，黑色在 240°。
+internal fun svFromPoint(x: Float, y: Float, triangleRadius: Float): Pair<Float, Float> {
+    val height = triangleRadius * 0.8660254f
+    val alpha = ((x + triangleRadius / 2f) / (triangleRadius * 1.5f)).coerceIn(0f, 1f)
+    val gamma = ((1f - alpha) + y / height) / 2f
+    val beta = (1f - alpha) - gamma
+    val value = (alpha + beta).coerceIn(0f, 1f)
+    val saturation = alpha.coerceIn(0f, value)
+    return saturation to value
+}
+
+internal fun svToPoint(saturation: Float, value: Float, triangleRadius: Float): Pair<Float, Float> {
+    val height = triangleRadius * 0.8660254f
+    val s = saturation.coerceIn(0f, 1f)
+    val v = value.coerceIn(0f, 1f)
+    val x = triangleRadius * s - (triangleRadius / 2f) * (1f - s)
+    val y = height * (1f - 2f * v + s)
+    return x to y
 }
 
 internal const val PALETTE_COLUMN_COUNT = 13
