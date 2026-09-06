@@ -1,8 +1,5 @@
-@file:SuppressLint("RestrictedApi")
-
 package com.xsgovo.handwrite.core.rendering
 
-import android.annotation.SuppressLint
 import android.graphics.Matrix
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -11,10 +8,12 @@ import androidx.ink.brush.Brush
 import androidx.ink.brush.BrushBehavior
 import androidx.ink.brush.BrushFamily
 import androidx.ink.brush.BrushTip
-import androidx.ink.brush.EasingFunction
-import androidx.ink.brush.ExperimentalInkCustomBrushApi
 import androidx.ink.brush.InputToolType
 import androidx.ink.brush.StockBrushes
+import androidx.ink.brush.behavior.EasingFunction
+import androidx.ink.brush.behavior.ResponseNode
+import androidx.ink.brush.behavior.SourceNode
+import androidx.ink.brush.behavior.TargetNode
 import androidx.ink.geometry.ImmutableVec
 import androidx.ink.rendering.android.canvas.CanvasStrokeRenderer
 import androidx.ink.strokes.MutableStrokeInputBatch
@@ -130,30 +129,34 @@ fun createInkBrush(
 )
 
 // 压力在全范围影响笔宽，曲线必须与 pressureWidthMultiplier 保持一致，湿墨与已提交笔迹才不会跳变。
-// Ink 1.0.0 的自定义画笔 API 仍是 @RestrictTo 的实验接口，但它是唯一能同时作用于湿墨与
-// 已提交渲染的机制；依赖固定在 ink 1.0.0，升级若移除该接口会在编译期暴露。
-@OptIn(ExperimentalInkCustomBrushApi::class)
+// 1.1.0 起行为以节点图构建：源(压力) → 响应曲线(平方根) → 目标(笔尖尺寸)。
 private val pressureResponsiveFamily: BrushFamily by lazy {
     BrushFamily(
         tip = BrushTip(
             behaviors = listOf(
                 BrushBehavior(
-                    source = BrushBehavior.Source.NORMALIZED_PRESSURE,
-                    target = BrushBehavior.Target.SIZE_MULTIPLIER,
-                    sourceValueRangeStart = 0f,
-                    sourceValueRangeEnd = 1f,
-                    targetModifierRangeStart = PRESSURE_MIN_WIDTH_FACTOR,
-                    targetModifierRangeEnd = 1f,
-                    responseCurve = squareRootEasing,
+                    listOf(
+                        TargetNode(
+                            target = TargetNode.Target.SIZE_MULTIPLIER,
+                            targetModifierRangeStart = PRESSURE_MIN_WIDTH_FACTOR,
+                            targetModifierRangeEnd = 1f,
+                            input = ResponseNode(
+                                responseCurve = squareRootEasing,
+                                input = SourceNode(
+                                    source = SourceNode.Source.NORMALIZED_PRESSURE,
+                                    sourceValueRangeStart = 0f,
+                                    sourceValueRangeEnd = 1f,
+                                ),
+                            ),
+                        ),
+                    ),
                 ),
             ),
         ),
-        inputModel = BrushFamily.SlidingWindowModel(),
     )
 }
 
 // 用 (k², k) 为节点的折线逼近平方根，节点处与导出曲线完全重合，节点间误差小于 1% 笔宽。
-@OptIn(ExperimentalInkCustomBrushApi::class)
 private val squareRootEasing: EasingFunction by lazy {
     EasingFunction.Linear(
         listOf(0f, 0.0625f, 0.25f, 0.5625f, 1f).map { point ->
