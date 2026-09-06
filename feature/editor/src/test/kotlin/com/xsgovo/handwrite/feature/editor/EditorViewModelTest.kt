@@ -163,6 +163,23 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun pickedColorReplacesTheActiveSlotAndPersists() = runTest(dispatcher) {
+        val settings = FakeSettingsRepository()
+        val viewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        viewModel.selectColorSlot(1)
+        viewModel.setColorSlotValue(0xFF1122AA.toInt())
+        advanceUntilIdle()
+
+        val expectedSlots = listOf(0xFF1F1F1F.toInt(), 0xFF1122AA.toInt(), 0xFF2E7D32.toInt())
+        assertEquals(expectedSlots, viewModel.state.value.colorSlots)
+        assertEquals(expectedSlots, settings.value.colorSlots)
+        assertEquals(0xFF1122AA.toInt(), viewModel.state.value.activeColor)
+        assertEquals(1, settings.value.activeColorSlot)
+    }
+
+    @Test
     fun selectedPenColorAndWidthArePersistedAndRestored() = runTest(dispatcher) {
         val settings = FakeSettingsRepository()
         val firstViewModel = createViewModel(FakeDocumentRepository(), settings)

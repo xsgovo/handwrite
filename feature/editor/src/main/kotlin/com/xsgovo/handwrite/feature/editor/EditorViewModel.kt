@@ -154,6 +154,15 @@ class EditorViewModel @Inject constructor(
         updateSettings { it.copy(activeColorSlot = index) }
     }
 
+    fun setColorSlotValue(argb: Int) {
+        val current = mutableState.value
+        val slot = current.activeColorSlot
+        if (slot !in current.colorSlots.indices) return
+        val colors = current.colorSlots.toMutableList().apply { this[slot] = argb or 0xFF000000.toInt() }
+        mutableState.update { it.copy(colorSlots = colors) }
+        updateSettings { it.copy(colorSlots = colors) }
+    }
+
     fun setWidthStep(step: Int) {
         val value = step.coerceIn(1, 100)
         val current = mutableState.value

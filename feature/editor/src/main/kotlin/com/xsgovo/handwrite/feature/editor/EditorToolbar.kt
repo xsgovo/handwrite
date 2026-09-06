@@ -43,6 +43,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,7 +56,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PatternType
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+
+private const val MENU_EXIT_ANIMATION_MILLIS = 300L
 
 internal fun brushWidthIconSizeDp(widthStep: Int): Float =
     4f + (widthStep.coerceIn(1, 100) - 1) * (20f / 99f)
@@ -70,6 +75,7 @@ fun EditorToolbar(
     isSharing: Boolean,
     onTool: (EditorTool) -> Unit,
     onColorSlot: (Int) -> Unit,
+    onColorValue: (Int) -> Unit,
     onWidthSlot: (Int) -> Unit,
     onWidth: (Int) -> Unit,
     onUndo: () -> Unit,
@@ -83,6 +89,7 @@ fun EditorToolbar(
     var widthPanelExpanded by remember { mutableStateOf(false) }
     var widthPanelSlot by remember { mutableStateOf<Int?>(null) }
     var pendingWidthStep by remember { mutableStateOf(state.widthStep.toFloat()) }
+    val pickerOpenState = remember { mutableStateOf(false) }
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth().statusBarsPadding(),
@@ -113,7 +120,15 @@ fun EditorToolbar(
     ToolButton(EditorTool.PEN, selectedTool, onTool, Icons.Default.Edit, "画笔")
     ToolButton(EditorTool.ERASER, selectedTool, onTool, Icons.Default.AutoFixNormal, "橡皮擦")
             state.colorSlots.forEachIndexed { index, argb ->
-                ColorSwatch(Color(argb), selected = index == state.activeColorSlot) { onColorSlot(index) }
+                ColorSlotButton(
+                    index = index,
+                    argb = argb,
+                    slots = state.colorSlots,
+                    isActive = index == state.activeColorSlot,
+                    pickerOpen = pickerOpenState,
+                    onSelectSlot = onColorSlot,
+                    onColorValue = onColorValue,
+                )
             }
             state.widthSteps.forEachIndexed { index, step ->
                 Box {
@@ -200,6 +215,50 @@ fun EditorToolbar(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ColorSlotButton(
+    index: Int,
+    argb: Int,
+    slots: List<Int>,
+    isActive: Boolean,
+    pickerOpen: MutableState<Boolean>,
+    onSelectSlot: (Int) -> Unit,
+    onColorValue: (Int) -> Unit,
+) {
+    // 菜单关闭时先留在组合中让 DropdownMenu 播完退场动画，再延迟卸载。
+    val menuMounted = remember { mutableStateOf(false) }
+    LaunchedEffect(pickerOpen.value) {
+        if (pickerOpen.value) {
+            menuMounted.value = true
+        } else if (menuMounted.value) {
+            delay(MENU_EXIT_ANIMATION_MILLIS)
+            menuMounted.value = false
+        }
+    }
+    Box {
+        ColorSwatch(Color(argb), selected = isActive) {
+            if (isActive) {
+                pickerOpen.value = true
+            } else {
+                onSelectSlot(index)
+            }
+        }
+        if (isActive && menuMounted.value) {
+            ColorPickerMenu(
+                expanded = pickerOpen.value,
+                slots = slots,
+                activeSlot = index,
+                onSlotSelected = onSelectSlot,
+                onConfirm = { color ->
+                    pickerOpen.value = false
+                    onColorValue(color)
+                },
+                onDismiss = { pickerOpen.value = false },
+            )
         }
     }
 }
