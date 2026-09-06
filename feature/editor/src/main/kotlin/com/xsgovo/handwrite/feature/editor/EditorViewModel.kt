@@ -164,10 +164,19 @@ class EditorViewModel @Inject constructor(
     }
 
     fun setColorSlotValue(argb: Int) {
+        // 取色器的色板/光谱/Hex 只发出 RGB；改色时保留槽位当前的透明度。
+        updateActiveColorSlot { existing -> (existing and 0xFF000000.toInt()) or (argb and 0x00FFFFFF) }
+    }
+
+    fun setColorSlotOpacity(percent: Int) {
+        updateActiveColorSlot { existing -> existing.withOpacityPercent(percent) }
+    }
+
+    private fun updateActiveColorSlot(transform: (Int) -> Int) {
         val current = mutableState.value
         val slot = current.activeColorSlot
         if (slot !in current.colorSlots.indices) return
-        val colors = current.colorSlots.toMutableList().apply { this[slot] = argb or 0xFF000000.toInt() }
+        val colors = current.colorSlots.toMutableList().apply { this[slot] = transform(current.colorSlots[slot]) }
         mutableState.update { it.copy(colorSlots = colors) }
         // 取色器拖动会连续触发，状态立即生效，持久化做防抖。
         colorSlotPersistJob?.cancel()

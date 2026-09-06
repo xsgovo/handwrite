@@ -94,6 +94,31 @@ class ColorPickerModelTest {
     }
 
     @Test
+    fun paletteCellOfMatchesTheSameRgbRegardlessOfAlpha() {
+        val rows = paletteGridRows()
+        val translucent = (rows[4][1] and 0x00FFFFFF) or (0x80 shl 24)
+
+        assertEquals(Pair(4, 1), paletteCellOf(translucent, rows))
+    }
+
+    @Test
+    fun opacityPercentRoundTripsThroughArgb() {
+        for (percent in 0..100 step 5) {
+            assertEquals(percent, 0x1F2E3D.withOpacityPercent(percent).opacityPercent())
+        }
+
+        assertEquals(0xFF1F2E3D.toInt(), 0x001F2E3D.withOpacityPercent(100))
+        assertEquals(0x001F2E3D, 0xFF1F2E3D.toInt().withOpacityPercent(0))
+        assertEquals(0xFF1F2E3D.toInt(), 0x4D1F2E3D.toInt().toOpaqueRgb())
+    }
+
+    @Test
+    fun opacityPercentClampsOutOfRangeValues() {
+        assertEquals(0xFF1F2E3D.toInt(), 0x1F2E3D.withOpacityPercent(140))
+        assertEquals(0x001F2E3D, 0xFF1F2E3D.toInt().withOpacityPercent(-10))
+    }
+
+    @Test
     fun svTriangleMapsPointsToSaturationAndValue() {
         val radius = 100f
         val height = radius * 0.8660254f

@@ -196,6 +196,59 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun slotOpacityFlowsIntoStrokesAndSurvivesColorChanges() = runTest(dispatcher) {
+        val settings = FakeSettingsRepository()
+        val viewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        viewModel.setColorSlotOpacity(30)
+        advanceUntilIdle()
+
+        // 30% 透明度对应 alpha 77，槽位与待写笔迹都携带该 alpha。
+        val translucentBlack = 0x4D1F1F1F.toInt()
+        assertEquals(listOf(translucentBlack, 0xFFE53935.toInt(), 0xFF2E7D32.toInt()), settings.value.colorSlots)
+        assertEquals(translucentBlack, viewModel.state.value.activeColor)
+
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+
+        assertEquals(translucentBlack, viewModel.state.value.strokes.single().style.argb)
+
+        // 换色只改 RGB，槽位透明度保留。
+        viewModel.setColorSlotValue(0x1122AA)
+        advanceUntilIdle()
+
+        assertEquals(0x4D1122AA.toInt(), viewModel.state.value.activeColor)
+
+        // 透明度换算覆盖越界值，恢复 100% 后回到不透明。
+        viewModel.setColorSlotOpacity(140)
+        viewModel.setColorSlotOpacity(-10)
+        viewModel.setColorSlotOpacity(100)
+        advanceUntilIdle()
+
+        assertEquals(0xFF1122AA.toInt(), viewModel.state.value.activeColor)
+        assertEquals(listOf(0xFF1122AA.toInt(), 0xFFE53935.toInt(), 0xFF2E7D32.toInt()), settings.value.colorSlots)
+    }
+
+    @Test
+    fun slotOpacityIsRestoredAcrossEditorSessions() = runTest(dispatcher) {
+        val settings = FakeSettingsRepository()
+        val firstViewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        firstViewModel.selectColorSlot(1)
+        firstViewModel.setColorSlotOpacity(55)
+        advanceUntilIdle()
+
+        val restoredViewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        restoredViewModel.selectColorSlot(1)
+        assertEquals(settings.value.colorSlots[1], restoredViewModel.state.value.activeColor)
+        assertEquals(55, restoredViewModel.state.value.activeColor.opacityPercent())
+    }
+
+    @Test
     fun pickerCandidatesAreAddedAndRemovedManually() = runTest(dispatcher) {
         val settings = FakeSettingsRepository()
         val viewModel = createViewModel(FakeDocumentRepository(), settings)

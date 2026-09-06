@@ -75,6 +75,7 @@ fun EditorToolbar(
     onTool: (EditorTool) -> Unit,
     onColorSlot: (Int) -> Unit,
     onColorChange: (Int) -> Unit,
+    onOpacityChange: (Int) -> Unit,
     onCandidateAdd: (Int) -> Unit,
     onCandidateDelete: (Int) -> Unit,
     onWidthSlot: (Int) -> Unit,
@@ -129,6 +130,7 @@ fun EditorToolbar(
                     pickerOpen = pickerOpenState,
                     onSelectSlot = onColorSlot,
                     onColorChange = onColorChange,
+                    onOpacityChange = onOpacityChange,
                     onCandidateAdd = onCandidateAdd,
                     onCandidateDelete = onCandidateDelete,
                 )
@@ -231,6 +233,7 @@ private fun ColorSlotButton(
     pickerOpen: MutableState<Boolean>,
     onSelectSlot: (Int) -> Unit,
     onColorChange: (Int) -> Unit,
+    onOpacityChange: (Int) -> Unit,
     onCandidateAdd: (Int) -> Unit,
     onCandidateDelete: (Int) -> Unit,
 ) {
@@ -258,6 +261,7 @@ private fun ColorSlotButton(
                 activeColor = argb,
                 candidates = candidates,
                 onColorChanged = onColorChange,
+                onOpacityChanged = onOpacityChange,
                 onCandidateAdd = onCandidateAdd,
                 onCandidateDelete = onCandidateDelete,
                 onDismiss = { pickerOpen.value = false },
@@ -342,6 +346,9 @@ private fun ColorSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
             )
             .clickable(onClick = onClick)
             .padding(4.dp)
+            // 半透明槽位垫棋盘格让透明度可被感知；不透明颜色完全覆盖棋盘格，观感不变。
+            .clip(CircleShape)
+            .checkerboardBackdrop()
             .background(color, CircleShape),
     )
 }

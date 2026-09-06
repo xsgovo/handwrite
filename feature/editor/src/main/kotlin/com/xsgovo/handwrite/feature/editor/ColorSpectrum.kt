@@ -60,14 +60,16 @@ internal fun SpectrumArea(activeColor: Int, onColorChanged: (Int) -> Unit) {
     // 表现为拖动三角时色相环指示点跟着变。只有外部颜色改动（色板/候选/Hex）
     // 才重新同步。
     var hsv by remember { mutableStateOf(argbToHsv(activeColor)) }
-    var lastEmittedColor by remember { mutableStateOf<Int?>(null) }
 
     // 光谱持有独立的精确 H/S/V；activeColor 与最后一次发出的颜色不一致 = 外部改动
     // （色板/候选/Hex），此时才从量化颜色反推同步。自身写入的回声在同一次组合中
-    // 即被识别跳过，拖动三角不会引起色相漂移。
-    if (activeColor != lastEmittedColor) {
+    // 即被识别跳过，拖动三角不会引起色相漂移。比较忽略 alpha：透明度滑杆只改
+    // 槽位颜色的 alpha 通道，不应触发 H/S/V 反推。
+    var lastEmittedRgb by remember { mutableStateOf<Int?>(null) }
+    val activeRgb = activeColor.toOpaqueRgb()
+    if (activeRgb != lastEmittedRgb) {
         hsv = argbToHsv(activeColor)
-        lastEmittedColor = activeColor
+        lastEmittedRgb = activeRgb
     }
 
     fun edit(hue: Float = hsv.hue, saturation: Float = hsv.saturation, value: Float = hsv.value) {
@@ -78,7 +80,7 @@ internal fun SpectrumArea(activeColor: Int, onColorChanged: (Int) -> Unit) {
         )
         hsv = updated
         val color = hsvToArgb(updated.hue, updated.saturation, updated.value)
-        lastEmittedColor = color
+        lastEmittedRgb = color
         onColorChanged(color)
     }
 

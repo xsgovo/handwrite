@@ -104,6 +104,7 @@ fun EditorRoute(
                 onTool = viewModel::setTool,
                 onColorSlot = viewModel::selectColorSlot,
                 onColorChange = viewModel::setColorSlotValue,
+                onOpacityChange = viewModel::setColorSlotOpacity,
                 onCandidateAdd = viewModel::addPickerCandidate,
                 onCandidateDelete = viewModel::removePickerCandidate,
                 onWidthSlot = viewModel::selectWidthSlot,

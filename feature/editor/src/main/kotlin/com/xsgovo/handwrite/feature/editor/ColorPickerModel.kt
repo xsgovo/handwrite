@@ -49,6 +49,15 @@ internal fun parseHex(text: String): Int? {
     return 0xFF000000.toInt() or digits.toInt(16)
 }
 
+// 笔迹透明度用颜色的 alpha 通道表达，取色器 UI 与槽位写入共用百分比换算。
+// 两端换算都四舍五入，0–100 的任意整数百分比经过 alpha 往返后保持不变。
+internal fun Int.opacityPercent(): Int = ((this ushr 24) * 100f / 255f).roundToInt()
+
+internal fun Int.withOpacityPercent(percent: Int): Int =
+    (this and 0x00FFFFFF) or ((percent.coerceIn(0, 100) * 255f / 100f).roundToInt() shl 24)
+
+internal fun Int.toOpaqueRgb(): Int = this or 0xFF000000.toInt()
+
 // HSV 三角选取器的顶点：纯色顶点在 0°，白色在 120°，黑色在 240°。
 internal fun svFromPoint(x: Float, y: Float, triangleRadius: Float): Pair<Float, Float> {
     val height = triangleRadius * 0.8660254f
@@ -102,9 +111,11 @@ internal fun paletteCellAt(x: Float, y: Float, width: Float, height: Float): Pai
 }
 
 internal fun paletteCellOf(color: Int, rows: List<List<Int>>): Pair<Int, Int>? {
+    // 忽略 alpha 比较：槽位带透明度时，同色格子仍要高亮。
+    val rgb = color and 0xFFFFFF
     rows.forEachIndexed { row, cells ->
         cells.forEachIndexed { column, cell ->
-            if (cell == color) return row to column
+            if (cell and 0xFFFFFF == rgb) return row to column
         }
     }
     return null

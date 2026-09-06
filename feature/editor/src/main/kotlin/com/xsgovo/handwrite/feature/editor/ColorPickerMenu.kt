@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -39,23 +40,28 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -65,11 +71,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xsgovo.handwrite.core.model.AppSettings
+import kotlin.math.roundToInt
 
 @Composable
 internal fun ColorPickerMenu(
@@ -77,6 +85,7 @@ internal fun ColorPickerMenu(
     activeColor: Int,
     candidates: List<Int>,
     onColorChanged: (Int) -> Unit,
+    onOpacityChanged: (Int) -> Unit,
     onCandidateAdd: (Int) -> Unit,
     onCandidateDelete: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -90,6 +99,7 @@ internal fun ColorPickerMenu(
             activeColor = activeColor,
             candidates = candidates,
             onColorChanged = onColorChanged,
+            onOpacityChanged = onOpacityChanged,
             onCandidateAdd = onCandidateAdd,
             onCandidateDelete = onCandidateDelete,
         )
@@ -101,6 +111,7 @@ private fun ColorPickerContent(
     activeColor: Int,
     candidates: List<Int>,
     onColorChanged: (Int) -> Unit,
+    onOpacityChanged: (Int) -> Unit,
     onCandidateAdd: (Int) -> Unit,
     onCandidateDelete: (Int) -> Unit,
 ) {
@@ -113,6 +124,8 @@ private fun ColorPickerContent(
         } else {
             SpectrumArea(activeColor = activeColor, onColorChanged = onColorChanged)
         }
+        Spacer(Modifier.height(18.dp))
+        OpacityRow(activeColor = activeColor, onOpacityChanged = onOpacityChanged)
         Spacer(Modifier.height(18.dp))
         ValueRow(
             activeColor = activeColor,
@@ -209,6 +222,73 @@ private fun PaletteGrid(activeColor: Int, onColorPicked: (Int) -> Unit) {
     }
 }
 
+// 透明度滑杆：轨道垫棋盘格并从全透明渐变到当前颜色，只在两端由用户显式调整。
+@Composable
+private fun OpacityRow(activeColor: Int, onOpacityChanged: (Int) -> Unit) {
+    var trackSize by remember { mutableStateOf(IntSize.Zero) }
+    val percent = activeColor.opacityPercent()
+    val opaqueColor = Color(activeColor.toOpaqueRgb())
+    val thumbSize = 20.dp
+    val trackHeight = 16.dp
+    val thumbPx = with(LocalDensity.current) { thumbSize.roundToPx() }
+    val currentOnOpacityChanged by rememberUpdatedState(onOpacityChanged)
+
+    fun pick(x: Float) {
+        val width = trackSize.width.toFloat()
+        if (width <= thumbPx) return
+        val fraction = ((x - thumbPx / 2f) / (width - thumbPx)).coerceIn(0f, 1f)
+        currentOnOpacityChanged((fraction * 100f).roundToInt())
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "透明度",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(thumbSize)
+                .onSizeChanged { trackSize = it }
+                .pointerInput(Unit) {
+                    detectTapGestures { position -> pick(position.x) }
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures { change, _ -> pick(change.position.x) }
+                },
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(trackHeight)
+                    .clip(RoundedCornerShape(8.dp))
+                    .checkerboardBackdrop()
+                    .background(Brush.horizontalGradient(listOf(Color.Transparent, opaqueColor))),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset { IntOffset((percent / 100f * (trackSize.width - thumbPx)).roundToInt(), 0) }
+                    .size(thumbSize)
+                    .shadow(2.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(opaqueColor),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "$percent%",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(38.dp),
+        )
+    }
+}
+
 @Composable
 private fun ValueRow(
     activeColor: Int,
@@ -266,15 +346,41 @@ private fun ValueRow(
     }
 }
 
-// 当前颜色预览。添加候选的入口在候选区队尾的虚线圆，这里不再重复。
+// 当前颜色预览；添加候选的入口在候选区队尾的虚线圆，这里不再重复。
+// 半透明时垫棋盘格让透明度可被感知；不透明颜色完全覆盖棋盘格，观感不变。
 @Composable
 private fun ColorPreviewSwatch(color: Int) {
     Box(
         modifier = Modifier
             .size(width = 80.dp, height = 54.dp)
             .clip(RoundedCornerShape(12.dp))
+            .checkerboardBackdrop()
             .background(Color(color)),
     )
+}
+
+// 透明度指示用的灰白棋盘格，按惯例固定用浅色两相，不随主题变化。
+internal fun Modifier.checkerboardBackdrop(squareSize: Dp = 5.dp): Modifier = drawBehind {
+    val square = squareSize.toPx()
+    val light = Color.White
+    val dark = Color(0xFFC6C9CE)
+    var y = 0f
+    var row = 0
+    while (y < size.height) {
+        var x = 0f
+        var column = 0
+        while (x < size.width) {
+            drawRect(
+                color = if ((row + column) % 2 == 0) light else dark,
+                topLeft = Offset(x, y),
+                size = Size(minOf(square, size.width - x), minOf(square, size.height - y)),
+            )
+            x += square
+            column++
+        }
+        y += square
+        row++
+    }
 }
 
 @Composable
@@ -464,6 +570,7 @@ private fun ColorPickerContentPreview() {
                 activeColor = 0xFF1F1F1F.toInt(),
                 candidates = listOf(0xFF000000.toInt(), 0xFFE53935.toInt(), 0xFF2E7D32.toInt(), 0xFF1976D2.toInt(), 0xFFF9A825.toInt(), 0xFF8E24AA.toInt()),
                 onColorChanged = {},
+                onOpacityChanged = {},
                 onCandidateAdd = {},
                 onCandidateDelete = {},
             )
