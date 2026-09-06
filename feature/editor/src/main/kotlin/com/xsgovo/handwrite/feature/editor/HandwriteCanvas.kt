@@ -86,6 +86,7 @@ fun HandwriteCanvas(
     tool: EditorTool,
     inputMode: InputMode,
     zoomPercent: Int,
+    zoomLocked: Boolean,
     activeColor: Int,
     activeWidth: Int,
     activeBrushId: BrushId,
@@ -116,6 +117,7 @@ fun HandwriteCanvas(
     }
     val currentTransform by rememberUpdatedState(transform)
     val currentZoom by rememberUpdatedState(zoomPercent)
+    val currentZoomLocked by rememberUpdatedState(zoomLocked)
     val currentStrokes by rememberUpdatedState(strokes)
     val strokesCallback by rememberUpdatedState(onStrokesFinished)
     val zoomCallback by rememberUpdatedState(onZoomChanged)
@@ -189,6 +191,8 @@ fun HandwriteCanvas(
 
                 if (pressed.size >= 2) {
                     event.changes.forEach { it.consume() }
+                    // 画布锁定：双指事件只吞掉，缩放与平移全部冻结。
+                    if (currentZoomLocked) continue
                     val centroid = pressed.map { it.position }.reduce(Offset::plus) / pressed.size.toFloat()
                     val span = hypot(
                         pressed[0].position.x - pressed[1].position.x,
@@ -197,7 +201,8 @@ fun HandwriteCanvas(
                     previousCentroid?.let { applyPanDelta(centroid - it) }
                     if (previousSpan > 0f && span > 0f) {
                         val scaleChange = span / previousSpan
-                        val nextZoom = (gestureZoom * scaleChange).roundToInt().coerceIn(100, 400)
+                        val nextZoom = (gestureZoom * scaleChange).roundToInt()
+                            .coerceIn(MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT)
                         if (nextZoom != gestureZoom || abs(scaleChange - 1f) >= ZOOM_GESTURE_SCALE_THRESHOLD) {
                             if (!zoomGestureDetected) {
                                 zoomGestureDetected = true
@@ -231,7 +236,7 @@ fun HandwriteCanvas(
                             navigationPointer -> {
                                 val delta = change.positionChange()
                                 change.consume()
-                                applyPanDelta(delta)
+                                if (!currentZoomLocked) applyPanDelta(delta)
                             }
                             erasing && contactActive -> {
                                 change.consume()
@@ -419,7 +424,7 @@ fun HandwriteCanvas(
             )
         }
         ZoomControlsOverlay(
-            visible = zoomControlsVisible,
+            visible = zoomControlsVisible && !zoomLocked,
             zoomPercent = zoomPercent,
             onZoomOut = {
                 keepZoomControlsVisible()
@@ -435,8 +440,10 @@ fun HandwriteCanvas(
 }
 
 private const val LOG_TAG = "HandwriteCanvas"
-private const val MIN_ZOOM_PERCENT = 100
-private const val MAX_ZOOM_PERCENT = 400
+
+// 缩放范围由手势与工具栏按钮共用；编辑器 ViewModel 的 setZoom 也引用这两个常量。
+internal const val MIN_ZOOM_PERCENT = 75
+internal const val MAX_ZOOM_PERCENT = 400
 private const val ZOOM_BUTTON_STEP = 25
 private const val ZOOM_GESTURE_SCALE_THRESHOLD = 0.005f
 private const val ZOOM_CONTROLS_HIDE_DELAY_MILLIS = 1_800L
@@ -629,16 +636,16 @@ internal data class CanvasPageTransform(
             if (canvas.width == 0 || canvas.height == 0) {
                 return CanvasPageTransform(page, 1f, Rect.Zero, Offset.Zero)
             }
-            val padding = 24f
+            // 不留边距：100% 时页面边缘直接贴合屏幕，锁定屏幕比例后可铺满整个绘图区。
             val fit = minOf(
-                (canvas.width - padding * 2) / page.width,
-                (canvas.height - padding * 2) / page.height,
+                canvas.width / page.width.toFloat(),
+                canvas.height / page.height.toFloat(),
             ).coerceAtLeast(0.0001f)
             val scale = fit * zoom
             val width = page.width * scale
             val height = page.height * scale
-            val overflowX = ((width - canvas.width) / 2f + padding).coerceAtLeast(0f)
-            val overflowY = ((height - canvas.height) / 2f + padding).coerceAtLeast(0f)
+            val overflowX = ((width - canvas.width) / 2f).coerceAtLeast(0f)
+            val overflowY = ((height - canvas.height) / 2f).coerceAtLeast(0f)
             val left = (canvas.width - width) / 2f + pan.x.coerceIn(-overflowX, overflowX)
             val top = (canvas.height - height) / 2f + pan.y.coerceIn(-overflowY, overflowY)
             return CanvasPageTransform(

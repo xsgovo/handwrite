@@ -318,6 +318,49 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun zoomClampsToTheSupportedRange() = runTest(dispatcher) {
+        val viewModel = createViewModel(FakeDocumentRepository())
+
+        viewModel.setZoom(10)
+        assertEquals(MIN_ZOOM_PERCENT, viewModel.state.value.zoomPercent)
+
+        viewModel.setZoom(1_000)
+        assertEquals(MAX_ZOOM_PERCENT, viewModel.state.value.zoomPercent)
+
+        viewModel.setZoom(130)
+        assertEquals(130, viewModel.state.value.zoomPercent)
+    }
+
+    @Test
+    fun zoomLockIgnoresZoomRequestsUntilUnlocked() = runTest(dispatcher) {
+        val viewModel = createViewModel(FakeDocumentRepository())
+
+        viewModel.setZoomLocked(true)
+        viewModel.setZoom(200)
+        assertEquals(100, viewModel.state.value.zoomPercent)
+        assertEquals(true, viewModel.state.value.zoomLocked)
+
+        viewModel.setZoomLocked(false)
+        viewModel.setZoom(200)
+        assertEquals(200, viewModel.state.value.zoomPercent)
+    }
+
+    @Test
+    fun canvasFitsThePageToTheScreenAtFullZoom() {
+        val transform = CanvasPageTransform.create(
+            canvas = IntSize(800, 600),
+            page = squarePage(),
+            zoom = 1f,
+            pan = Offset.Zero,
+        )
+
+        // 100% 不再留边距：受限于屏幕的那条轴必须完全贴合。
+        assertEquals(0f, transform.pageRect.top, 0f)
+        assertEquals(600f, transform.pageRect.bottom, 0f)
+        assertEquals(600f, transform.pageRect.width, 0.01f)
+    }
+
+    @Test
     fun pressureToggleControlsTheRecordedStrokeSensitivity() = runTest(dispatcher) {
         val settings = FakeSettingsRepository()
         settings.update { it.copy(pressureSensitivity = PressureSensitivity.OFF) }

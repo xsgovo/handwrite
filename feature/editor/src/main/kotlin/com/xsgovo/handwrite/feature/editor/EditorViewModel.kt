@@ -72,10 +72,12 @@ data class EditorUiState(
     val pickerCandidates: List<Int> = AppSettings.DEFAULT_PICKER_CANDIDATES,
     val widthSteps: List<Int> = AppSettings.DEFAULT_WIDTH_STEPS,
     val activeWidthSlot: Int = 1,
+    val screenRatioLocked: Boolean = false,
     val activeBrushId: BrushId = BrushId.MONOLINE,
     val pressureSensitivity: PressureSensitivity = PressureSensitivity.STANDARD,
     val sideButtonAction: SideButtonAction = SideButtonAction.TEMPORARY_ERASER,
     val zoomPercent: Int = 100,
+    val zoomLocked: Boolean = false,
     val backBehavior: BackBehavior = BackBehavior.EXIT_APP,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
@@ -153,7 +155,13 @@ class EditorViewModel @Inject constructor(
     }
 
     fun setZoom(percent: Int) {
-        mutableState.update { it.copy(zoomPercent = percent.coerceIn(100, 400)) }
+        // 画布锁定后忽略一切缩放请求，保持当前贴合屏幕的状态。
+        if (mutableState.value.zoomLocked) return
+        mutableState.update { it.copy(zoomPercent = percent.coerceIn(MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT)) }
+    }
+
+    fun setZoomLocked(locked: Boolean) {
+        mutableState.update { it.copy(zoomLocked = locked) }
     }
 
     fun selectColorSlot(index: Int) {

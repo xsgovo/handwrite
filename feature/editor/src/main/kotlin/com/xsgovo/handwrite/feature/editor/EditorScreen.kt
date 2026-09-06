@@ -1,7 +1,12 @@
 package com.xsgovo.handwrite.feature.editor
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.webkit.MimeTypeMap
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +18,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -21,10 +27,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import com.xsgovo.handwrite.core.document.ResourceInput
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
+import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.rendering.rememberBackgroundAssetImage
 import java.io.FileNotFoundException
 import kotlinx.coroutines.CancellationException
@@ -62,6 +72,23 @@ fun EditorRoute(
         )
     }
     val backgroundImage by rememberBackgroundAssetImage(state.background, state.backgroundResource)
+
+    // 纸面底色延伸到状态栏并按明暗切换系统图标对比度；无底色时回到系统默认。
+    DisposableEffect(state.background) {
+        val activity = context.findComponentActivity()
+        val scrim = state.background.statusBarColorArgbOrNull()
+        if (activity != null) {
+            val style = when {
+                scrim == null -> SystemBarStyle.auto(Color.Transparent.toArgb(), Color.Transparent.toArgb())
+                Color(scrim).luminance() < 0.5f -> SystemBarStyle.dark(scrim)
+                else -> SystemBarStyle.light(scrim, scrim)
+            }
+            activity.enableEdgeToEdge(statusBarStyle = style)
+        }
+        onDispose {
+            context.findComponentActivity()?.enableEdgeToEdge()
+        }
+    }
 
     LaunchedEffect(documentId) { viewModel.openDocument(documentId) }
     LaunchedEffect(viewModel) {
@@ -112,6 +139,7 @@ fun EditorRoute(
                 onUndo = viewModel::undo,
                 onRedo = viewModel::redo,
                 onClear = { confirmClear = true },
+                onZoomLock = viewModel::setZoomLocked,
                 onBackground = viewModel::setBackground,
                 onImportBackground = {
                     backgroundPicker.launch(arrayOf("image/*", "application/pdf"))
@@ -128,6 +156,7 @@ fun EditorRoute(
             tool = state.tool,
             inputMode = state.inputMode,
             zoomPercent = state.zoomPercent,
+            zoomLocked = state.zoomLocked,
             activeColor = state.activeColor,
             activeWidth = state.activeWidth,
             activeBrushId = state.activeBrushId,
@@ -154,4 +183,10 @@ fun EditorRoute(
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
         )
     }
+}
+
+private tailrec fun Context.findComponentActivity(): ComponentActivity? = when (this) {
+    is ComponentActivity -> this
+    is ContextWrapper -> baseContext.findComponentActivity()
+    else -> null
 }

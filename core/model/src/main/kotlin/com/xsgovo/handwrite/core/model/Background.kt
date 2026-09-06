@@ -24,6 +24,14 @@ sealed interface PageBackground {
 
     companion object {
         const val WHITE: Int = -0x1
+
+        // 内置纸张配色预设；背景菜单色板与默认背景持久化共用。透明底用 argb 0 表示。
+        const val TRANSPARENT: Int = 0x00000000
+        const val GRAY: Int = 0xFFF2F2F2.toInt()
+        const val CREAM: Int = 0xFFFFF3E0.toInt()
+        const val PINK: Int = 0xFFFCE4EC.toInt()
+        const val TEAL: Int = 0xFFE0F2F1.toInt()
+        const val BLACK: Int = 0xFF000000.toInt()
     }
 }
 

@@ -38,6 +38,39 @@ class AppSettingsMapperTest {
     }
 
     @Test
+    fun backgroundColorAndStyleRoundTripIndependently() {
+        listOf(
+            PageBackground.Solid(PageBackground.WHITE),
+            PageBackground.Solid(PageBackground.GRAY),
+            PageBackground.Solid(PageBackground.CREAM),
+            PageBackground.Solid(PageBackground.PINK),
+            PageBackground.Solid(PageBackground.TEAL),
+            PageBackground.Solid(PageBackground.BLACK),
+            PageBackground.Transparent,
+            PageBackground.Pattern(PatternType.LINED, PageBackground.CREAM),
+            PageBackground.Pattern(PatternType.GRID, PageBackground.PINK),
+            PageBackground.Pattern(PatternType.GRID, PageBackground.TRANSPARENT),
+        ).forEach { background ->
+            val settings = AppSettings(defaultBackground = background)
+
+            assertEquals(settings, settings.toProto().toDomain())
+        }
+    }
+
+    @Test
+    fun legacyBackgroundEnumFallsBackWhenColorAndStyleAreAbsent() {
+        val lined = AppSettingsPayload.newBuilder()
+            .setDefaultBackground(DefaultBackgroundSetting.DEFAULT_BACKGROUND_LINED)
+            .build()
+        val white = AppSettingsPayload.newBuilder()
+            .setDefaultBackground(DefaultBackgroundSetting.DEFAULT_BACKGROUND_WHITE)
+            .build()
+
+        assertEquals(PageBackground.Pattern(PatternType.LINED), lined.toDomain().defaultBackground)
+        assertEquals(PageBackground.Solid(), white.toDomain().defaultBackground)
+    }
+
+    @Test
     fun emptyPayloadUsesValidDomainDefaults() {
         assertEquals(AppSettings(), AppSettingsPayload.getDefaultInstance().toDomain())
     }

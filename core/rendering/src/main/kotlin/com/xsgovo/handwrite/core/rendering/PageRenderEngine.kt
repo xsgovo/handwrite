@@ -79,7 +79,12 @@ class PageRenderEngine(
 private fun PageBackground.baseColor(forceOpaque: Boolean): Int = when (this) {
     is PageBackground.Solid -> if (forceOpaque) argb or Color.BLACK else argb
     PageBackground.Transparent -> if (forceOpaque) Color.WHITE else Color.TRANSPARENT
-    is PageBackground.Pattern -> if (forceOpaque) baseArgb or Color.BLACK else baseArgb
+    is PageBackground.Pattern -> when {
+        // 透明底样式在 JPEG 等不透明格式导出时用白色衬底，不能让 OR 黑变成黑底。
+        !forceOpaque -> baseArgb
+        (baseArgb and 0x00FFFFFF) == 0 -> Color.WHITE
+        else -> baseArgb or Color.BLACK
+    }
     is PageBackground.Asset -> Color.WHITE
 }
 

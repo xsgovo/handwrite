@@ -78,13 +78,38 @@ internal fun AppSettingsPayload.toDomain(): AppSettings {
             PageTemplateSetting.PAGE_TEMPLATE_NINE_BY_SIXTEEN -> PageTemplate.NINE_BY_SIXTEEN
             else -> PageTemplate.LEGACY_PORTRAIT
         },
-        defaultBackground = when (defaultBackground) {
-            DefaultBackgroundSetting.DEFAULT_BACKGROUND_TRANSPARENT -> PageBackground.Transparent
-            DefaultBackgroundSetting.DEFAULT_BACKGROUND_LINED -> PageBackground.Pattern(PatternType.LINED)
-            DefaultBackgroundSetting.DEFAULT_BACKGROUND_GRID -> PageBackground.Pattern(PatternType.GRID)
-            else -> PageBackground.Solid()
+        defaultBackground = if (hasDefaultBackgroundColor() || hasDefaultBackgroundStyle()) {
+            backgroundFromColorAndStyle()
+        } else {
+            // 历史载荷只有整块背景枚举；新字段缺席时按旧枚举回读。
+            when (defaultBackground) {
+                DefaultBackgroundSetting.DEFAULT_BACKGROUND_TRANSPARENT -> PageBackground.Transparent
+                DefaultBackgroundSetting.DEFAULT_BACKGROUND_LINED -> PageBackground.Pattern(PatternType.LINED)
+                DefaultBackgroundSetting.DEFAULT_BACKGROUND_GRID -> PageBackground.Pattern(PatternType.GRID)
+                else -> PageBackground.Solid()
+            }
         },
     )
+}
+
+// 底色与样式自由组合：透明底 + 样式时，样式线条画在透明底上。
+private fun AppSettingsPayload.backgroundFromColorAndStyle(): PageBackground {
+    val colorArgb = when (defaultBackgroundColor) {
+        com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_GRAY -> PageBackground.GRAY
+        com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_CREAM -> PageBackground.CREAM
+        com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_PINK -> PageBackground.PINK
+        com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_TEAL -> PageBackground.TEAL
+        com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_TRANSPARENT -> PageBackground.TRANSPARENT
+        com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_BLACK -> PageBackground.BLACK
+        else -> PageBackground.WHITE
+    }
+    return when (defaultBackgroundStyle) {
+        com.xsgovo.handwrite.core.data.settings.DefaultBackgroundStyleSetting.BACKGROUND_STYLE_LINED ->
+            PageBackground.Pattern(PatternType.LINED, colorArgb)
+        com.xsgovo.handwrite.core.data.settings.DefaultBackgroundStyleSetting.BACKGROUND_STYLE_GRID ->
+            PageBackground.Pattern(PatternType.GRID, colorArgb)
+        else -> if (colorArgb == PageBackground.TRANSPARENT) PageBackground.Transparent else PageBackground.Solid(colorArgb)
+    }
 }
 
 internal fun AppSettings.toProto(): AppSettingsPayload = AppSettingsPayload.newBuilder()
@@ -149,11 +174,36 @@ internal fun AppSettings.toProto(): AppSettingsPayload = AppSettingsPayload.newB
             PageTemplate.NINE_BY_SIXTEEN -> PageTemplateSetting.PAGE_TEMPLATE_NINE_BY_SIXTEEN
         },
     )
-    .setDefaultBackground(
-        when (val background = defaultBackground) {
-            PageBackground.Transparent -> DefaultBackgroundSetting.DEFAULT_BACKGROUND_TRANSPARENT
-            is PageBackground.Pattern -> if (background.type == PatternType.GRID) DefaultBackgroundSetting.DEFAULT_BACKGROUND_GRID else DefaultBackgroundSetting.DEFAULT_BACKGROUND_LINED
-            else -> DefaultBackgroundSetting.DEFAULT_BACKGROUND_WHITE
-        },
-    )
+    .setDefaultBackgroundColor(defaultBackground.backgroundColorSetting())
+    .setDefaultBackgroundStyle(defaultBackground.backgroundStyleSetting())
     .build()
+
+// 底色枚举只覆盖内置预设；未知 argb 按白色处理（历史页面背景保存在页面载荷里，不受影响）。
+private fun PageBackground.backgroundColorSetting(): com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting {
+    val argb = when (this) {
+        is PageBackground.Solid -> argb
+        PageBackground.Transparent -> PageBackground.TRANSPARENT
+        is PageBackground.Pattern -> baseArgb
+        else -> PageBackground.WHITE
+    }
+    return when (argb) {
+        PageBackground.GRAY -> com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_GRAY
+        PageBackground.CREAM -> com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_CREAM
+        PageBackground.PINK -> com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_PINK
+        PageBackground.TEAL -> com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_TEAL
+        PageBackground.TRANSPARENT -> com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_TRANSPARENT
+        PageBackground.BLACK -> com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_BLACK
+        else -> com.xsgovo.handwrite.core.data.settings.DefaultBackgroundColorSetting.BACKGROUND_COLOR_WHITE
+    }
+}
+
+private fun PageBackground.backgroundStyleSetting(): com.xsgovo.handwrite.core.data.settings.DefaultBackgroundStyleSetting =
+    when (this) {
+        is PageBackground.Pattern ->
+            if (type == PatternType.GRID) {
+                com.xsgovo.handwrite.core.data.settings.DefaultBackgroundStyleSetting.BACKGROUND_STYLE_GRID
+            } else {
+                com.xsgovo.handwrite.core.data.settings.DefaultBackgroundStyleSetting.BACKGROUND_STYLE_LINED
+            }
+        else -> com.xsgovo.handwrite.core.data.settings.DefaultBackgroundStyleSetting.BACKGROUND_STYLE_NONE
+    }
