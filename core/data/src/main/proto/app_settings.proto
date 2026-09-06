@@ -23,6 +23,7 @@ message AppSettingsPayload {
   DefaultBackgroundSetting default_background = 14;
   repeated uint32 width_steps = 15;
   optional uint32 active_width_slot = 16;
+  repeated fixed32 picker_candidates = 17;
 }
 
 enum InputMode { INPUT_MODE_UNSPECIFIED = 0; INPUT_MODE_FINGER = 1; INPUT_MODE_STYLUS = 2; }

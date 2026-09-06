@@ -27,6 +27,9 @@ internal fun AppSettingsPayload.toDomain(): AppSettings {
     } else {
         defaults.activeWidthSlot
     }
+    val candidates = pickerCandidatesList
+        .takeIf { it.isNotEmpty() && it.size <= defaults.pickerCandidates.size }
+        ?: defaults.pickerCandidates
     return AppSettings(
         inputMode = if (inputMode == com.xsgovo.handwrite.core.data.settings.InputMode.INPUT_MODE_STYLUS) InputMode.STYLUS else InputMode.FINGER,
         themeMode = when (themeMode) {
@@ -65,6 +68,7 @@ internal fun AppSettingsPayload.toDomain(): AppSettings {
         activeBrushId = BrushId(activeBrushId.ifBlank { defaults.activeBrushId.value }),
         colorSlots = colors,
         activeColorSlot = activeSlot,
+        pickerCandidates = candidates,
         widthSteps = widths,
         activeWidthSlot = activeWidth,
         defaultPageTemplate = when (defaultPageTemplate) {
@@ -133,6 +137,7 @@ internal fun AppSettings.toProto(): AppSettingsPayload = AppSettingsPayload.newB
     .setActiveBrushId(activeBrushId.value)
     .addAllColorSlots(colorSlots)
     .setActiveColorSlot(activeColorSlot)
+    .addAllPickerCandidates(pickerCandidates)
     .addAllWidthSteps(widthSteps)
     .setActiveWidthSlot(activeWidthSlot)
     .setDefaultPageTemplate(
