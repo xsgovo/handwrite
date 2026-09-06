@@ -180,6 +180,60 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun slotColorAppliesImmediatelyAndPersistsAfterDebounce() = runTest(dispatcher) {
+        val settings = FakeSettingsRepository()
+        val viewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        viewModel.setColorSlotValue(0xFF1122AA.toInt())
+        viewModel.setColorSlotValue(0xFF3344BB.toInt())
+
+        assertEquals(0xFF3344BB.toInt(), viewModel.state.value.activeColor)
+
+        advanceUntilIdle()
+
+        assertEquals(0xFF3344BB.toInt(), settings.value.colorSlots[0])
+    }
+
+    @Test
+    fun pickerCandidatesAreAddedAndRemovedManually() = runTest(dispatcher) {
+        val settings = FakeSettingsRepository()
+        val viewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        // 新颜色从队列末尾追加。
+        viewModel.addPickerCandidate(0xFF101010.toInt())
+        advanceUntilIdle()
+
+        assertEquals(
+            AppSettings.DEFAULT_PICKER_CANDIDATES + 0xFF101010.toInt(),
+            settings.value.pickerCandidates,
+        )
+
+        // 已存在的颜色不重复添加。
+        viewModel.addPickerCandidate(0xFF101010.toInt())
+        advanceUntilIdle()
+
+        assertEquals(1, settings.value.pickerCandidates.count { it == 0xFF101010.toInt() })
+
+        viewModel.addPickerCandidate(0xFF202020.toInt())
+        advanceUntilIdle()
+
+        assertEquals(
+            AppSettings.DEFAULT_PICKER_CANDIDATES + 0xFF101010.toInt() + 0xFF202020.toInt(),
+            settings.value.pickerCandidates,
+        )
+
+        viewModel.removePickerCandidate(0xFF202020.toInt())
+        advanceUntilIdle()
+
+        assertEquals(
+            AppSettings.DEFAULT_PICKER_CANDIDATES + 0xFF101010.toInt(),
+            settings.value.pickerCandidates,
+        )
+    }
+
+    @Test
     fun selectedPenColorAndWidthArePersistedAndRestored() = runTest(dispatcher) {
         val settings = FakeSettingsRepository()
         val firstViewModel = createViewModel(FakeDocumentRepository(), settings)

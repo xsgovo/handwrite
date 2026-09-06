@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -68,6 +69,7 @@ data class EditorUiState(
     val inputMode: InputMode = InputMode.FINGER,
     val colorSlots: List<Int> = AppSettings.DEFAULT_COLOR_SLOTS,
     val activeColorSlot: Int = 0,
+    val pickerCandidates: List<Int> = AppSettings.DEFAULT_PICKER_CANDIDATES,
     val widthSteps: List<Int> = AppSettings.DEFAULT_WIDTH_STEPS,
     val activeWidthSlot: Int = 1,
     val activeBrushId: BrushId = BrushId.MONOLINE,
@@ -107,18 +109,25 @@ class EditorViewModel @Inject constructor(
     private val nextElementId = AtomicLong(clock.nowMillis() shl 16)
     private var observationJob: Job? = null
     private var resourceJob: Job? = null
+    private var colorSlotPersistJob: Job? = null
+    private var toolStateRestored = false
     private var openedDocumentId: DocumentId? = null
 
     init {
         viewModelScope.launch {
             settingsRepository.settings.collect { settings ->
+                // 笔迹颜色槽位、候选缓存、笔宽档位只有编辑器自己会写入；设置流里的后续
+                // 发射是写入回声，可能落后于用户刚做的修改，只在首次加载时采用一次。
+                val restoreToolState = !toolStateRestored
+                toolStateRestored = true
                 mutableState.update { current ->
                     current.copy(
                         inputMode = settings.inputMode,
-                        colorSlots = settings.colorSlots,
-                        activeColorSlot = settings.activeColorSlot,
-                        widthSteps = settings.widthSteps,
-                        activeWidthSlot = settings.activeWidthSlot,
+                        colorSlots = if (restoreToolState) settings.colorSlots else current.colorSlots,
+                        activeColorSlot = if (restoreToolState) settings.activeColorSlot else current.activeColorSlot,
+                        pickerCandidates = if (restoreToolState) settings.pickerCandidates else current.pickerCandidates,
+                        widthSteps = if (restoreToolState) settings.widthSteps else current.widthSteps,
+                        activeWidthSlot = if (restoreToolState) settings.activeWidthSlot else current.activeWidthSlot,
                         activeBrushId = settings.activeBrushId,
                         pressureSensitivity = settings.pressureSensitivity,
                         sideButtonAction = settings.sideButtonAction,
@@ -160,7 +169,28 @@ class EditorViewModel @Inject constructor(
         if (slot !in current.colorSlots.indices) return
         val colors = current.colorSlots.toMutableList().apply { this[slot] = argb or 0xFF000000.toInt() }
         mutableState.update { it.copy(colorSlots = colors) }
-        updateSettings { it.copy(colorSlots = colors) }
+        // 取色器拖动会连续触发，状态立即生效，持久化做防抖。
+        colorSlotPersistJob?.cancel()
+        colorSlotPersistJob = viewModelScope.launch {
+            delay(COLOR_SLOT_PERSIST_DELAY_MILLIS)
+            updateSettings { it.copy(colorSlots = colors) }
+        }
+    }
+
+    fun addPickerCandidate(argb: Int) {
+        val candidate = argb or 0xFF000000.toInt()
+        val current = mutableState.value.pickerCandidates
+        // 新颜色从队列末尾追加；已存在或已满员时不做任何变动。
+        if (candidate in current || current.size >= AppSettings.PICKER_CANDIDATE_COUNT) return
+        val updated = current + candidate
+        mutableState.update { it.copy(pickerCandidates = updated) }
+        updateSettings { it.copy(pickerCandidates = updated) }
+    }
+
+    fun removePickerCandidate(argb: Int) {
+        val updated = mutableState.value.pickerCandidates - argb
+        mutableState.update { it.copy(pickerCandidates = updated) }
+        updateSettings { it.copy(pickerCandidates = updated) }
     }
 
     fun setWidthStep(step: Int) {
@@ -525,6 +555,7 @@ class EditorViewModel @Inject constructor(
     private companion object {
         const val ORDER_STEP = 1_024L
         const val PDF_MIME_TYPE = "application/pdf"
+        const val COLOR_SLOT_PERSIST_DELAY_MILLIS = 300L
         val NAME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm.ss.SSS")
             .withZone(ZoneId.systemDefault())
 

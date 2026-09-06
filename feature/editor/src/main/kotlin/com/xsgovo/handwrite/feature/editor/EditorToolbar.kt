@@ -1,8 +1,6 @@
 package com.xsgovo.handwrite.feature.editor
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -75,7 +74,9 @@ fun EditorToolbar(
     isSharing: Boolean,
     onTool: (EditorTool) -> Unit,
     onColorSlot: (Int) -> Unit,
-    onColorValue: (Int) -> Unit,
+    onColorChange: (Int) -> Unit,
+    onCandidateAdd: (Int) -> Unit,
+    onCandidateDelete: (Int) -> Unit,
     onWidthSlot: (Int) -> Unit,
     onWidth: (Int) -> Unit,
     onUndo: () -> Unit,
@@ -123,11 +124,13 @@ fun EditorToolbar(
                 ColorSlotButton(
                     index = index,
                     argb = argb,
-                    slots = state.colorSlots,
+                    candidates = state.pickerCandidates,
                     isActive = index == state.activeColorSlot,
                     pickerOpen = pickerOpenState,
                     onSelectSlot = onColorSlot,
-                    onColorValue = onColorValue,
+                    onColorChange = onColorChange,
+                    onCandidateAdd = onCandidateAdd,
+                    onCandidateDelete = onCandidateDelete,
                 )
             }
             state.widthSteps.forEachIndexed { index, step ->
@@ -223,11 +226,13 @@ fun EditorToolbar(
 private fun ColorSlotButton(
     index: Int,
     argb: Int,
-    slots: List<Int>,
+    candidates: List<Int>,
     isActive: Boolean,
     pickerOpen: MutableState<Boolean>,
     onSelectSlot: (Int) -> Unit,
-    onColorValue: (Int) -> Unit,
+    onColorChange: (Int) -> Unit,
+    onCandidateAdd: (Int) -> Unit,
+    onCandidateDelete: (Int) -> Unit,
 ) {
     // 菜单关闭时先留在组合中让 DropdownMenu 播完退场动画，再延迟卸载。
     val menuMounted = remember { mutableStateOf(false) }
@@ -250,13 +255,11 @@ private fun ColorSlotButton(
         if (isActive && menuMounted.value) {
             ColorPickerMenu(
                 expanded = pickerOpen.value,
-                slots = slots,
-                activeSlot = index,
-                onSlotSelected = onSelectSlot,
-                onConfirm = { color ->
-                    pickerOpen.value = false
-                    onColorValue(color)
-                },
+                activeColor = argb,
+                candidates = candidates,
+                onColorChanged = onColorChange,
+                onCandidateAdd = onCandidateAdd,
+                onCandidateDelete = onCandidateDelete,
                 onDismiss = { pickerOpen.value = false },
             )
         }
@@ -278,11 +281,6 @@ private fun BrushWidthPresetButton(
             )
         } else {
             IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-        },
-        modifier = if (selected) {
-            Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-        } else {
-            Modifier
         },
     ) {
         Icon(
@@ -333,18 +331,17 @@ private fun ToolButton(
 private fun ColorSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(40.dp)
-            .padding(5.dp)
+            .size(36.dp)
+            .clip(CircleShape)
             .then(
                 if (selected) {
-                    Modifier.border(2.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                    Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
                 } else {
                     Modifier
                 },
             )
-            .padding(3.dp)
-            .background(color, CircleShape)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .padding(4.dp)
+            .background(color, CircleShape),
     )
 }

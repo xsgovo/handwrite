@@ -4,11 +4,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -23,14 +25,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +46,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -48,90 +59,88 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xsgovo.handwrite.core.model.AppSettings
 import kotlin.math.roundToInt
+
+// 候选区单排容量：两排共 14 个（AppSettings.PICKER_CANDIDATE_COUNT）。
+private const val CANDIDATES_PER_ROW = 7
 
 @Composable
 internal fun ColorPickerMenu(
     expanded: Boolean,
-    slots: List<Int>,
-    activeSlot: Int,
-    onSlotSelected: (Int) -> Unit,
-    onConfirm: (Int) -> Unit,
+    activeColor: Int,
+    candidates: List<Int>,
+    onColorChanged: (Int) -> Unit,
+    onCandidateAdd: (Int) -> Unit,
+    onCandidateDelete: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         modifier = Modifier.width(360.dp),
     ) {
         ColorPickerContent(
-            slots = slots,
-            activeSlot = activeSlot,
-            onSlotSelected = onSlotSelected,
-            onConfirm = onConfirm,
-            onDismiss = onDismiss,
+            activeColor = activeColor,
+            candidates = candidates,
+            onColorChanged = onColorChanged,
+            onCandidateAdd = onCandidateAdd,
+            onCandidateDelete = onCandidateDelete,
         )
     }
 }
 
 @Composable
 private fun ColorPickerContent(
-    slots: List<Int>,
-    activeSlot: Int,
-    onSlotSelected: (Int) -> Unit,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit,
+    activeColor: Int,
+    candidates: List<Int>,
+    onColorChanged: (Int) -> Unit,
+    onCandidateAdd: (Int) -> Unit,
+    onCandidateDelete: (Int) -> Unit,
 ) {
-    val initialColor = slots[activeSlot]
-    var workingColor by remember(initialColor) { mutableIntStateOf(initialColor) }
     var selectedTab by remember { mutableIntStateOf(0) }
     Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
         PickerTabs(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
         Spacer(Modifier.height(16.dp))
         if (selectedTab == 0) {
-            PaletteGrid(workingColor = workingColor, onColorPicked = { workingColor = it })
+            PaletteGrid(activeColor = activeColor, onColorPicked = onColorChanged)
         } else {
-            SpectrumArea(workingColor = workingColor, onColorPicked = { workingColor = it })
+            SpectrumArea(activeColor = activeColor, onColorPicked = onColorChanged)
         }
         Spacer(Modifier.height(18.dp))
         ValueRow(
-            initialColor = initialColor,
-            workingColor = workingColor,
-            onHexEdited = { parsed -> parsed?.let { workingColor = it } },
+            activeColor = activeColor,
+            candidates = candidates,
+            onAddCandidate = onCandidateAdd,
+            onColorEdited = onColorChanged,
         )
         Spacer(Modifier.height(16.dp))
         DottedDivider()
         Spacer(Modifier.height(10.dp))
-        SlotRow(slots = slots, activeSlot = activeSlot, onSelect = onSlotSelected)
-        Spacer(Modifier.height(10.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            PickerAction(label = "取消", modifier = Modifier.weight(1f), onClick = onDismiss)
-            VerticalDivider(modifier = Modifier.height(28.dp), color = MaterialTheme.colorScheme.outlineVariant)
-            PickerAction(
-                label = "完成",
-                modifier = Modifier.weight(1f),
-                onClick = { onConfirm(workingColor) },
-            )
-        }
+        CandidateRow(
+            candidates = candidates,
+            activeColor = activeColor,
+            onSelect = onColorChanged,
+            onAdd = onCandidateAdd,
+            onDelete = onCandidateDelete,
+        )
     }
 }
 
@@ -171,19 +180,24 @@ private fun PickerTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
 }
 
 @Composable
-private fun PaletteGrid(workingColor: Int, onColorPicked: (Int) -> Unit) {
+private fun PaletteGrid(activeColor: Int, onColorPicked: (Int) -> Unit) {
     val rows = remember { paletteGridRows() }
     val ringColor = MaterialTheme.colorScheme.primary
+    fun pick(position: Offset, size: IntSize) {
+        paletteCellAt(position.x, position.y, size.width.toFloat(), size.height.toFloat())
+            ?.let { (row, column) -> onColorPicked(rows[row][column]) }
+    }
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(PALETTE_COLUMN_COUNT / PALETTE_ROW_COUNT.toFloat())
             .semantics { contentDescription = "色板颜色网格" }
             .pointerInput(rows) {
-                detectTapGestures { position ->
-                    paletteCellAt(position.x, position.y, size.width.toFloat(), size.height.toFloat())
-                        ?.let { (row, column) -> onColorPicked(rows[row][column]) }
-                }
+                detectTapGestures { position -> pick(position, size) }
+            }
+            .pointerInput(rows) {
+                // 支持在色板上滑动连续取色。
+                detectDragGestures { change, _ -> pick(change.position, size) }
             },
     ) {
         val cellWidth = size.width / PALETTE_COLUMN_COUNT
@@ -197,21 +211,20 @@ private fun PaletteGrid(workingColor: Int, onColorPicked: (Int) -> Unit) {
                 )
             }
         }
-        val selected = paletteCellOf(workingColor, rows) ?: return@Canvas
-        val outset = 2.dp.toPx()
+        val selected = paletteCellOf(activeColor, rows) ?: return@Canvas
         drawRoundRect(
             color = ringColor,
-            topLeft = Offset(selected.second * cellWidth - outset, selected.first * cellHeight - outset),
-            size = Size(cellWidth + outset * 2, cellHeight + outset * 2),
-            cornerRadius = CornerRadius(8.dp.toPx()),
+            topLeft = Offset(selected.second * cellWidth, selected.first * cellHeight),
+            size = Size(cellWidth, cellHeight),
+            cornerRadius = CornerRadius(2.dp.toPx()),
             style = Stroke(width = 2.5.dp.toPx()),
         )
     }
 }
 
 @Composable
-private fun SpectrumArea(workingColor: Int, onColorPicked: (Int) -> Unit) {
-    val hsv = remember(workingColor) { argbToHsv(workingColor) }
+private fun SpectrumArea(activeColor: Int, onColorPicked: (Int) -> Unit) {
+    val hsv = remember(activeColor) { argbToHsv(activeColor) }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SaturationValueArea(hsv = hsv, onColorPicked = onColorPicked)
         HueBar(hue = hsv.hue, onHuePicked = { hue -> onColorPicked(hsvToArgb(hue, hsv.saturation, hsv.value)) })
@@ -303,62 +316,210 @@ private fun pickHue(position: Offset, barSize: IntSize, onHuePicked: (Float) -> 
 }
 
 @Composable
-private fun ValueRow(initialColor: Int, workingColor: Int, onHexEdited: (Int?) -> Unit) {
-    var hexText by remember { mutableStateOf(formatHex(initialColor)) }
-    LaunchedEffect(workingColor) {
-        if (parseHex(hexText) != workingColor) hexText = formatHex(workingColor)
+private fun ValueRow(
+    activeColor: Int,
+    candidates: List<Int>,
+    onAddCandidate: (Int) -> Unit,
+    onColorEdited: (Int) -> Unit,
+) {
+    val hexField = remember { mutableStateOf(TextFieldValue(formatHex(activeColor).removePrefix("#"))) }
+    val redField = remember { mutableStateOf(TextFieldValue(colorChannel(activeColor, CHANNEL_SHIFT_RED).toString())) }
+    val greenField = remember { mutableStateOf(TextFieldValue(colorChannel(activeColor, CHANNEL_SHIFT_GREEN).toString())) }
+    val blueField = remember { mutableStateOf(TextFieldValue(colorChannel(activeColor, CHANNEL_SHIFT_BLUE).toString())) }
+
+    // 外部改动（色板、光谱、候选区）同步进输入框；用户正在输入的半截内容保持原样。
+    LaunchedEffect(activeColor) {
+        val hex = formatHex(activeColor).removePrefix("#")
+        if (!hex.startsWith(hexField.value.text, ignoreCase = true)) {
+            hexField.value = TextFieldValue(hex)
+        }
+        listOf(redField to CHANNEL_SHIFT_RED, greenField to CHANNEL_SHIFT_GREEN, blueField to CHANNEL_SHIFT_BLUE)
+            .forEach { (field, shift) ->
+                val channel = colorChannel(activeColor, shift)
+                if (field.value.text.toIntOrNull() != channel) {
+                    field.value = TextFieldValue(channel.toString())
+                }
+            }
     }
+
+    fun editHex(input: TextFieldValue) {
+        val digits = input.text.filter { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }.take(6)
+        hexField.value = input.copy(
+            text = digits,
+            selection = TextRange(
+                minOf(input.selection.min, digits.length),
+                minOf(input.selection.max, digits.length),
+            ),
+        )
+        // 不输满也实时生效，按右补零解析。
+        if (digits.isNotEmpty()) parseHex(digits.padEnd(6, '0'))?.let(onColorEdited)
+    }
+
+    fun editChannel(field: MutableState<TextFieldValue>, shift: Int, input: TextFieldValue) {
+        val digits = input.text.filter { it in '0'..'9' }.take(3)
+        val value = digits.toIntOrNull()
+        when {
+            digits.isEmpty() -> field.value = input.copy(text = "")
+            value == null || value > 255 -> Unit // 拦截非法输入，保留原文本与光标
+            else -> {
+                field.value = input.copy(
+                    text = digits,
+                    selection = TextRange(
+                        minOf(input.selection.min, digits.length),
+                        minOf(input.selection.max, digits.length),
+                    ),
+                )
+                onColorEdited(withChannel(activeColor, shift, value))
+            }
+        }
+    }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
-        SplitColorSwatch(initialColor = initialColor, workingColor = workingColor)
-        Spacer(Modifier.width(20.dp))
+        AddCandidateSwatch(
+            color = activeColor,
+            alreadyCached = activeColor in candidates,
+            onAdd = { onAddCandidate(activeColor) },
+        )
+        Spacer(Modifier.width(18.dp))
         Row(
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.weight(1f),
         ) {
-            ValueColumn(label = "十六进制") {
-                BasicTextField(
-                    value = hexText,
-                    onValueChange = { text ->
-                        if (text.length <= 7) {
-                            hexText = text
-                            onHexEdited(parseHex(text))
-                        }
-                    },
-                    singleLine = true,
-                    textStyle = TextStyle(
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center,
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.width(88.dp),
+            ValueColumn(label = "Hex") {
+                PickerViewField(
+                    value = hexField.value,
+                    onValueChange = ::editHex,
+                    prefix = "#",
+                    width = 78.dp,
+                    keyboardType = KeyboardType.Ascii,
                 )
             }
-            ValueColumn(label = "红色") { ValueText(value = workingColor shr 16 and 0xFF) }
-            ValueColumn(label = "绿色") { ValueText(value = workingColor shr 8 and 0xFF) }
-            ValueColumn(label = "蓝色") { ValueText(value = workingColor and 0xFF) }
+            ValueColumn(label = "R") {
+                PickerViewField(
+                    value = redField.value,
+                    onValueChange = { editChannel(redField, CHANNEL_SHIFT_RED, it) },
+                    width = 38.dp,
+                    keyboardType = KeyboardType.Number,
+                )
+            }
+            ValueColumn(label = "G") {
+                PickerViewField(
+                    value = greenField.value,
+                    onValueChange = { editChannel(greenField, CHANNEL_SHIFT_GREEN, it) },
+                    width = 38.dp,
+                    keyboardType = KeyboardType.Number,
+                )
+            }
+            ValueColumn(label = "B") {
+                PickerViewField(
+                    value = blueField.value,
+                    onValueChange = { editChannel(blueField, CHANNEL_SHIFT_BLUE, it) },
+                    width = 38.dp,
+                    keyboardType = KeyboardType.Number,
+                )
+            }
+        }
+    }
+}
+
+// 原颜色对比区改为当前颜色的候选入口：点击加入候选区，已加入时显示对勾。
+@Composable
+private fun AddCandidateSwatch(color: Int, alreadyCached: Boolean, onAdd: () -> Unit) {
+    val iconTint = if (Color(color).luminance() > 0.5f) {
+        Color.Black.copy(alpha = 0.55f)
+    } else {
+        Color.White.copy(alpha = 0.9f)
+    }
+    Box(
+        modifier = Modifier
+            .size(width = 80.dp, height = 54.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(color))
+            .combinedClickable(onClick = { if (!alreadyCached) onAdd() })
+            .semantics {
+                contentDescription = if (alreadyCached) "该颜色已在候选区" else "将当前颜色加入候选区"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = if (alreadyCached) Icons.Default.Check else Icons.Default.Add,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+@Composable
+private fun PickerViewField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    width: Dp,
+    keyboardType: KeyboardType,
+    prefix: String? = null,
+) {
+    // 未聚焦时用纯文本展示：输入框内部的触控笔悬停图标不会出现，点击后才进入编辑并全选。
+    var editing by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.width(width),
+    ) {
+        if (prefix != null) {
+            Text(
+                prefix,
+                style = TextStyle(
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            )
+        }
+        if (editing) {
+            var hasBeenFocused by remember { mutableStateOf(false) }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = pickerViewTextStyle(),
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { state ->
+                        // 首次组合时尚未获得焦点，不能因此退出编辑；只有拿到过焦点再失去才收起。
+                        if (state.isFocused) {
+                            hasBeenFocused = true
+                        } else if (hasBeenFocused) {
+                            editing = false
+                        }
+                    },
+            )
+            LaunchedEffect(Unit) {
+                focusRequester.requestFocus()
+                onValueChange(value.copy(selection = TextRange(0, value.text.length)))
+            }
+        } else {
+            Text(
+                value.text,
+                style = pickerViewTextStyle(),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { editing = true },
+            )
         }
     }
 }
 
 @Composable
-private fun SplitColorSwatch(initialColor: Int, workingColor: Int) {
-    Row(
-        modifier = Modifier
-            .size(width = 80.dp, height = 54.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .padding(1.dp),
-        horizontalArrangement = Arrangement.spacedBy(1.dp),
-    ) {
-        Box(Modifier.weight(1f).fillMaxSize().background(Color(initialColor)))
-        Box(Modifier.weight(1f).fillMaxSize().background(Color(workingColor)))
-    }
-}
+private fun pickerViewTextStyle() = TextStyle(
+    fontSize = 14.sp,
+    fontWeight = FontWeight.Medium,
+    color = MaterialTheme.colorScheme.onSurface,
+    textAlign = TextAlign.Center,
+)
 
 @Composable
 private fun ValueColumn(label: String, content: @Composable () -> Unit) {
@@ -371,16 +532,6 @@ private fun ValueColumn(label: String, content: @Composable () -> Unit) {
         Spacer(Modifier.height(6.dp))
         content()
     }
-}
-
-@Composable
-private fun ValueText(value: Int) {
-    Text(
-        value.toString(),
-        style = MaterialTheme.typography.bodyMedium,
-        fontWeight = FontWeight.Medium,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
 }
 
 @Composable
@@ -400,45 +551,87 @@ private fun DottedDivider() {
 }
 
 @Composable
-private fun SlotRow(slots: List<Int>, activeSlot: Int, onSelect: (Int) -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+private fun CandidateRow(
+    candidates: List<Int>,
+    activeColor: Int,
+    onSelect: (Int) -> Unit,
+    onAdd: (Int) -> Unit,
+    onDelete: (Int) -> Unit,
+) {
+    var pendingDeleteIndex by remember { mutableStateOf<Int?>(null) }
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        maxItemsInEachRow = CANDIDATES_PER_ROW,
     ) {
-        slots.forEachIndexed { index, argb ->
-            val selected = index == activeSlot
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .clickable { onSelect(index) }
-                    .then(
-                        if (selected) {
-                            Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .padding(3.dp)
-                    .background(Color(argb), CircleShape)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-            )
+        candidates.forEachIndexed { index, argb ->
+            Box {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = {
+                                pendingDeleteIndex = null
+                                onSelect(argb)
+                            },
+                            // 长按只弹出移除气泡，点击气泡里的移除才会删除。
+                            onLongClick = { pendingDeleteIndex = index },
+                        )
+                        .padding(4.dp)
+                        .background(Color(argb), CircleShape),
+                )
+                if (pendingDeleteIndex == index) {
+                    DropdownMenu(
+                        expanded = true,
+                        onDismissRequest = { pendingDeleteIndex = null },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("移除") },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                            onClick = {
+                                pendingDeleteIndex = null
+                                onDelete(argb)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        if (candidates.size < AppSettings.PICKER_CANDIDATE_COUNT) {
+            AddCandidateCircle(onClick = { onAdd(activeColor) })
         }
     }
 }
 
+// 队列末尾的虚线圆：点击把当前颜色追加到候选区。
 @Composable
-private fun PickerAction(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun AddCandidateCircle(onClick: () -> Unit) {
+    val dashColor = MaterialTheme.colorScheme.outline
     Box(
-        modifier = modifier.clickable(onClick = onClick).padding(vertical = 12.dp),
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .drawBehind {
+                val stroke = 1.5.dp.toPx()
+                drawCircle(
+                    color = dashColor,
+                    radius = size.minDimension / 2f - stroke / 2f,
+                    style = Stroke(
+                        width = stroke,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(stroke * 2.5f, stroke * 2.5f)),
+                    ),
+                )
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+        Icon(
+            Icons.Default.Add,
+            contentDescription = "新增候选颜色",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -448,15 +641,15 @@ private fun PickerAction(label: String, modifier: Modifier = Modifier, onClick: 
 private fun ColorPickerContentPreview() {
     MaterialTheme {
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.extraSmall,
             color = MaterialTheme.colorScheme.surfaceContainerLowest,
         ) {
             ColorPickerContent(
-                slots = listOf(0xFF1F1F1F.toInt(), 0xFFE53935.toInt(), 0xFF2E7D32.toInt()),
-                activeSlot = 0,
-                onSlotSelected = {},
-                onConfirm = {},
-                onDismiss = {},
+                activeColor = 0xFF1F1F1F.toInt(),
+                candidates = listOf(0xFF000000.toInt(), 0xFFE53935.toInt(), 0xFF2E7D32.toInt(), 0xFF1976D2.toInt(), 0xFFF9A825.toInt(), 0xFF8E24AA.toInt()),
+                onColorChanged = {},
+                onCandidateAdd = {},
+                onCandidateDelete = {},
             )
         }
     }

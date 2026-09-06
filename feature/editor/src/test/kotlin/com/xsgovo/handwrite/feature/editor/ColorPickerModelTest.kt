@@ -93,6 +93,19 @@ class ColorPickerModelTest {
         assertEquals(null, paletteCellOf(0xFF123456.toInt(), rows))
     }
 
+    @Test
+    fun channelHelpersReadAndWriteSingleChannels() {
+        val base = 0xFF112233.toInt()
+
+        assertEquals(0x11, colorChannel(base, CHANNEL_SHIFT_RED))
+        assertEquals(0x22, colorChannel(base, CHANNEL_SHIFT_GREEN))
+        assertEquals(0x33, colorChannel(base, CHANNEL_SHIFT_BLUE))
+
+        assertEquals(0xFF11FF33.toInt(), withChannel(base, CHANNEL_SHIFT_GREEN, 0xFF))
+        assertEquals(0xFF002233.toInt(), withChannel(base, CHANNEL_SHIFT_RED, 0))
+        assertEquals(0xFF1122FF.toInt(), withChannel(base, CHANNEL_SHIFT_BLUE, 300))
+    }
+
     private companion object {
         const val TONE_SPLIT_ROW_INDEX = 4
         const val RED_COLUMN = 1

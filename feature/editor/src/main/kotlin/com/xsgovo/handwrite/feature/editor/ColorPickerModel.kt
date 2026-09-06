@@ -4,6 +4,15 @@ import kotlin.math.roundToInt
 
 internal data class Hsv(val hue: Float, val saturation: Float, val value: Float)
 
+internal const val CHANNEL_SHIFT_RED = 16
+internal const val CHANNEL_SHIFT_GREEN = 8
+internal const val CHANNEL_SHIFT_BLUE = 0
+
+internal fun colorChannel(argb: Int, channelShift: Int): Int = argb shr channelShift and 0xFF
+
+internal fun withChannel(argb: Int, channelShift: Int, value: Int): Int =
+    (argb and (0xFF shl channelShift).inv()) or (value.coerceIn(0, 255) shl channelShift)
+
 internal fun hsvToArgb(hue: Float, saturation: Float, value: Float): Int {
     val normalizedHue = ((hue % 360f) + 360f) % 360f
     val s = saturation.coerceIn(0f, 1f)
