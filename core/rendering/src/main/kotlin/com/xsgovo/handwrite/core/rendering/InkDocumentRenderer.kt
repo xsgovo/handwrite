@@ -1,21 +1,32 @@
+@file:SuppressLint("RestrictedApi")
+
 package com.xsgovo.handwrite.core.rendering
 
+import android.annotation.SuppressLint
 import android.graphics.Matrix
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.ink.brush.Brush
+import androidx.ink.brush.BrushBehavior
+import androidx.ink.brush.BrushFamily
+import androidx.ink.brush.BrushTip
+import androidx.ink.brush.EasingFunction
+import androidx.ink.brush.ExperimentalInkCustomBrushApi
 import androidx.ink.brush.InputToolType
 import androidx.ink.brush.StockBrushes
+import androidx.ink.geometry.ImmutableVec
 import androidx.ink.rendering.android.canvas.CanvasStrokeRenderer
 import androidx.ink.strokes.MutableStrokeInputBatch
 import androidx.ink.strokes.Stroke
 import com.xsgovo.handwrite.core.model.BrushId
 import com.xsgovo.handwrite.core.model.ElementId
+import com.xsgovo.handwrite.core.model.PressureSensitivity
 import com.xsgovo.handwrite.core.model.StrokeElement
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.hypot
+import kotlin.math.sqrt
 
 class InkDocumentRenderer {
     private val renderer = CanvasStrokeRenderer.create()
@@ -106,16 +117,50 @@ fun createInkBrush(
     brushId: BrushId,
     argb: Int,
     size: Float,
+    pressureSensitivity: PressureSensitivity,
 ): Brush = Brush.createWithColorIntArgb(
-    family = when (brushId) {
-        BrushId.PRESSURE_PEN -> StockBrushes.pressurePen()
-        BrushId.HIGHLIGHTER -> StockBrushes.highlighter()
-        else -> StockBrushes.marker()
+    family = when {
+        brushId == BrushId.HIGHLIGHTER -> StockBrushes.highlighter()
+        !brushRendersWithPressure(brushId, pressureSensitivity) -> StockBrushes.marker()
+        else -> pressureResponsiveFamily
     },
     colorIntArgb = argb,
     size = size.coerceAtLeast(0.1f),
     epsilon = (size * 0.01f).coerceAtLeast(0.05f),
 )
+
+// 压力在全范围影响笔宽，曲线必须与 pressureWidthMultiplier 保持一致，湿墨与已提交笔迹才不会跳变。
+// Ink 1.0.0 的自定义画笔 API 仍是 @RestrictTo 的实验接口，但它是唯一能同时作用于湿墨与
+// 已提交渲染的机制；依赖固定在 ink 1.0.0，升级若移除该接口会在编译期暴露。
+@OptIn(ExperimentalInkCustomBrushApi::class)
+private val pressureResponsiveFamily: BrushFamily by lazy {
+    BrushFamily(
+        tip = BrushTip(
+            behaviors = listOf(
+                BrushBehavior(
+                    source = BrushBehavior.Source.NORMALIZED_PRESSURE,
+                    target = BrushBehavior.Target.SIZE_MULTIPLIER,
+                    sourceValueRangeStart = 0f,
+                    sourceValueRangeEnd = 1f,
+                    targetModifierRangeStart = PRESSURE_MIN_WIDTH_FACTOR,
+                    targetModifierRangeEnd = 1f,
+                    responseCurve = squareRootEasing,
+                ),
+            ),
+        ),
+        inputModel = BrushFamily.SlidingWindowModel(),
+    )
+}
+
+// 用 (k², k) 为节点的折线逼近平方根，节点处与导出曲线完全重合，节点间误差小于 1% 笔宽。
+@OptIn(ExperimentalInkCustomBrushApi::class)
+private val squareRootEasing: EasingFunction by lazy {
+    EasingFunction.Linear(
+        listOf(0f, 0.0625f, 0.25f, 0.5625f, 1f).map { point ->
+            ImmutableVec(point, sqrt(point))
+        },
+    )
+}
 
 private fun toInkStroke(stroke: StrokeElement): Stroke {
     val inputs = MutableStrokeInputBatch()
@@ -132,7 +177,12 @@ private fun toInkStroke(stroke: StrokeElement): Stroke {
         )
     }
     return Stroke(
-        brush = createInkBrush(stroke.style.id, stroke.style.argb, stroke.style.width.toFloat()),
+        brush = createInkBrush(
+            brushId = stroke.style.id,
+            argb = stroke.style.argb,
+            size = stroke.style.width.toFloat(),
+            pressureSensitivity = stroke.style.pressureSensitivity,
+        ),
         inputs = inputs,
     )
 }

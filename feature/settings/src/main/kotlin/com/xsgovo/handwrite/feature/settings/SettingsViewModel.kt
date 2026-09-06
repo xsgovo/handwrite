@@ -8,6 +8,7 @@ import com.xsgovo.handwrite.core.model.BackBehavior
 import com.xsgovo.handwrite.core.model.CompressionQuality
 import com.xsgovo.handwrite.core.model.ImageFormat
 import com.xsgovo.handwrite.core.model.InputMode
+import com.xsgovo.handwrite.core.model.PressureSensitivity
 import com.xsgovo.handwrite.core.model.SideButtonAction
 import com.xsgovo.handwrite.core.model.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,6 +34,7 @@ class SettingsViewModel @Inject constructor(
     fun setCompressionQuality(value: CompressionQuality) = update { it.copy(compressionQuality = value) }
     fun setBackBehavior(value: BackBehavior) = update { it.copy(backBehavior = value) }
     fun setSideButtonAction(value: SideButtonAction) = update { it.copy(sideButtonAction = value) }
+    fun setPressureSensitivity(value: PressureSensitivity) = update { it.copy(pressureSensitivity = value) }
 
     private fun update(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch { repository.update(transform) }

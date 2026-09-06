@@ -38,6 +38,7 @@ import com.xsgovo.handwrite.core.model.BackBehavior
 import com.xsgovo.handwrite.core.model.CompressionQuality
 import com.xsgovo.handwrite.core.model.ImageFormat
 import com.xsgovo.handwrite.core.model.InputMode
+import com.xsgovo.handwrite.core.model.PressureSensitivity
 import com.xsgovo.handwrite.core.model.SideButtonAction
 import com.xsgovo.handwrite.core.model.ThemeMode
 
@@ -72,6 +73,16 @@ fun SettingsRoute(
                     subtitle = "开启后忽略手指绘制",
                     checked = settings.inputMode == InputMode.STYLUS,
                     onChecked = { viewModel.setInputMode(if (it) InputMode.STYLUS else InputMode.FINGER) },
+                )
+                ToggleRow(
+                    title = "压感",
+                    subtitle = "开启后笔迹粗细随书写力度变化",
+                    checked = settings.pressureSensitivity != PressureSensitivity.OFF,
+                    onChecked = {
+                        viewModel.setPressureSensitivity(
+                            if (it) PressureSensitivity.STANDARD else PressureSensitivity.OFF,
+                        )
+                    },
                 )
                 MenuRow(
                     title = "笔侧键动作",

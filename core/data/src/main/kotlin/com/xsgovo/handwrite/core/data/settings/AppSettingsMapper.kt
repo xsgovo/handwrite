@@ -59,6 +59,7 @@ internal fun AppSettingsPayload.toDomain(): AppSettings {
         pressureSensitivity = when (pressureSensitivity) {
             PressureSensitivitySetting.PRESSURE_SETTING_LOW -> PressureSensitivity.LOW
             PressureSensitivitySetting.PRESSURE_SETTING_HIGH -> PressureSensitivity.HIGH
+            PressureSensitivitySetting.PRESSURE_SETTING_OFF -> PressureSensitivity.OFF
             else -> PressureSensitivity.STANDARD
         },
         activeBrushId = BrushId(activeBrushId.ifBlank { defaults.activeBrushId.value }),
@@ -126,6 +127,7 @@ internal fun AppSettings.toProto(): AppSettingsPayload = AppSettingsPayload.newB
             PressureSensitivity.LOW -> PressureSensitivitySetting.PRESSURE_SETTING_LOW
             PressureSensitivity.STANDARD -> PressureSensitivitySetting.PRESSURE_SETTING_STANDARD
             PressureSensitivity.HIGH -> PressureSensitivitySetting.PRESSURE_SETTING_HIGH
+            PressureSensitivity.OFF -> PressureSensitivitySetting.PRESSURE_SETTING_OFF
         },
     )
     .setActiveBrushId(activeBrushId.value)

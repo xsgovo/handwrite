@@ -25,7 +25,7 @@ class AppSettingsMapperTest {
             compressionQuality = CompressionQuality.HIGH,
             backBehavior = BackBehavior.OPEN_LIBRARY,
             sideButtonAction = SideButtonAction.UNDO,
-            pressureSensitivity = PressureSensitivity.LOW,
+            pressureSensitivity = PressureSensitivity.OFF,
             colorSlots = listOf(0x00112233, 0xFFCCBBAA.toInt()),
             activeColorSlot = 1,
             widthSteps = listOf(12, 73, 94),

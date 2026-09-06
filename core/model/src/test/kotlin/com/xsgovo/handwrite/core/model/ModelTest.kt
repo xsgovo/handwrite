@@ -30,4 +30,12 @@ class ModelTest {
         assertEquals(listOf(first, second), PageContent(page, listOf(first, second)).elements)
         assertTrue(page.size.contains(LogicalPoint(1, 1)))
     }
+
+    @Test
+    fun pressureSensitivityOrdinalsStayStableForExportedPackages() {
+        assertEquals(0, PressureSensitivity.LOW.ordinal)
+        assertEquals(1, PressureSensitivity.STANDARD.ordinal)
+        assertEquals(2, PressureSensitivity.HIGH.ordinal)
+        assertEquals(3, PressureSensitivity.OFF.ordinal)
+    }
 }

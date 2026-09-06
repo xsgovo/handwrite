@@ -28,6 +28,7 @@ import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PageId
 import com.xsgovo.handwrite.core.model.PatternType
+import com.xsgovo.handwrite.core.model.PressureSensitivity
 import com.xsgovo.handwrite.core.model.StrokeSample
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -190,6 +191,26 @@ class EditorViewModelTest {
         val style = restoredViewModel.state.value.strokes.single().style
         assertEquals(settings.value.colorSlots[2], style.argb)
         assertEquals(600, style.width)
+    }
+
+    @Test
+    fun pressureToggleControlsTheRecordedStrokeSensitivity() = runTest(dispatcher) {
+        val settings = FakeSettingsRepository()
+        settings.update { it.copy(pressureSensitivity = PressureSensitivity.OFF) }
+        val viewModel = createViewModel(FakeDocumentRepository(), settings)
+        advanceUntilIdle()
+
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+
+        assertEquals(PressureSensitivity.OFF, viewModel.state.value.strokes.single().style.pressureSensitivity)
+
+        settings.update { it.copy(pressureSensitivity = PressureSensitivity.STANDARD) }
+        advanceUntilIdle()
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(300, 400))))
+        advanceUntilIdle()
+
+        assertEquals(PressureSensitivity.STANDARD, viewModel.state.value.strokes.last().style.pressureSensitivity)
     }
 
     @Test

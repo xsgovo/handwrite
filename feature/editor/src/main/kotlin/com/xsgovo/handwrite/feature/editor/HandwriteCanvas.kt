@@ -283,9 +283,14 @@ fun HandwriteCanvas(
             .onFailure { error -> Log.e(LOG_TAG, "Unable to prepare persisted Ink stroke", error) }
             .getOrDefault(emptyList())
     }
-    val wetBrush = remember(activeBrushId, activeColor, activeWidth, tool) {
+    val wetBrush = remember(activeBrushId, activeColor, activeWidth, tool, pressureSensitivity) {
         if (tool == EditorTool.PEN) {
-            createInkBrush(activeBrushId, activeColor, activeWidth.toFloat())
+            createInkBrush(
+                brushId = activeBrushId,
+                argb = activeColor,
+                size = activeWidth.toFloat(),
+                pressureSensitivity = pressureSensitivity,
+            )
         } else {
             null
         }

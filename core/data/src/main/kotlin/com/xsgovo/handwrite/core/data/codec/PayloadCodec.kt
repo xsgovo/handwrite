@@ -167,10 +167,12 @@ private fun PressureSensitivity.toProto(): com.xsgovo.handwrite.core.data.proto.
     PressureSensitivity.LOW -> com.xsgovo.handwrite.core.data.proto.PressureSensitivity.PRESSURE_SENSITIVITY_LOW
     PressureSensitivity.STANDARD -> com.xsgovo.handwrite.core.data.proto.PressureSensitivity.PRESSURE_SENSITIVITY_STANDARD
     PressureSensitivity.HIGH -> com.xsgovo.handwrite.core.data.proto.PressureSensitivity.PRESSURE_SENSITIVITY_HIGH
+    PressureSensitivity.OFF -> com.xsgovo.handwrite.core.data.proto.PressureSensitivity.PRESSURE_SENSITIVITY_OFF
 }
 
 private fun com.xsgovo.handwrite.core.data.proto.PressureSensitivity.toDomain(): PressureSensitivity = when (this) {
     com.xsgovo.handwrite.core.data.proto.PressureSensitivity.PRESSURE_SENSITIVITY_LOW -> PressureSensitivity.LOW
     com.xsgovo.handwrite.core.data.proto.PressureSensitivity.PRESSURE_SENSITIVITY_HIGH -> PressureSensitivity.HIGH
+    com.xsgovo.handwrite.core.data.proto.PressureSensitivity.PRESSURE_SENSITIVITY_OFF -> PressureSensitivity.OFF
     else -> PressureSensitivity.STANDARD
 }

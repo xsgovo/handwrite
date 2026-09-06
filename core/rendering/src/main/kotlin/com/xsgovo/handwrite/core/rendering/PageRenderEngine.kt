@@ -148,8 +148,22 @@ private fun drawStroke(canvas: Canvas, stroke: StrokeElement, scaleX: Float, sca
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        strokeWidth = (stroke.style.width * minOf(scaleX, scaleY)).coerceAtLeast(1f)
         if (stroke.style.blendMode == BrushBlendMode.HIGHLIGHT) alpha = (alpha * 0.4f).roundToInt()
+    }
+    val scale = minOf(scaleX, scaleY)
+    if (stroke.style.rendersWithPressure()) {
+        drawPressureStroke(canvas, stroke, paint, scale, scaleX, scaleY)
+    } else {
+        paint.strokeWidth = (stroke.style.width * scale).coerceAtLeast(1f)
+        drawFlatStroke(canvas, stroke, paint, scaleX, scaleY)
+    }
+}
+
+private fun drawFlatStroke(canvas: Canvas, stroke: StrokeElement, paint: Paint, scaleX: Float, scaleY: Float) {
+    if (stroke.samples.size == 1) {
+        val point = stroke.samples.first().point
+        canvas.drawCircle(point.x * scaleX, point.y * scaleY, paint.strokeWidth / 2f, paint.apply { style = Paint.Style.FILL })
+        return
     }
     val path = Path().apply {
         val first = stroke.samples.first().point
@@ -158,11 +172,36 @@ private fun drawStroke(canvas: Canvas, stroke: StrokeElement, scaleX: Float, sca
             lineTo(sample.point.x * scaleX, sample.point.y * scaleY)
         }
     }
+    canvas.drawPath(path, paint)
+}
+
+private fun drawPressureStroke(
+    canvas: Canvas,
+    stroke: StrokeElement,
+    paint: Paint,
+    scale: Float,
+    scaleX: Float,
+    scaleY: Float,
+) {
+    fun strokeWidthFor(pressure: Int): Float =
+        (stroke.style.width * pressureWidthMultiplier(pressure) * scale).coerceAtLeast(1f)
+
     if (stroke.samples.size == 1) {
-        val point = stroke.samples.first().point
-        canvas.drawCircle(point.x * scaleX, point.y * scaleY, paint.strokeWidth / 2f, paint.apply { style = Paint.Style.FILL })
-    } else {
-        canvas.drawPath(path, paint)
+        val sample = stroke.samples.first()
+        paint.strokeWidth = strokeWidthFor(sample.pressure)
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(sample.point.x * scaleX, sample.point.y * scaleY, paint.strokeWidth / 2f, paint)
+        return
+    }
+    stroke.samples.zipWithNext().forEach { (first, second) ->
+        paint.strokeWidth = strokeWidthFor((first.pressure + second.pressure) / 2)
+        canvas.drawLine(
+            first.point.x * scaleX,
+            first.point.y * scaleY,
+            second.point.x * scaleX,
+            second.point.y * scaleY,
+            paint,
+        )
     }
 }
 

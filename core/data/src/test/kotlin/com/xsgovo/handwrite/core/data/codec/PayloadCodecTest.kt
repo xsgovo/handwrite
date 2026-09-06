@@ -18,13 +18,6 @@ import org.junit.Test
 class PayloadCodecTest {
     @Test
     fun strokeRoundTripPreservesStyleAndSamples() {
-        val style = BrushStyle(
-            id = BrushId.PRESSURE_PEN,
-            argb = 0x7F123456,
-            width = 321,
-            blendMode = BrushBlendMode.HIGHLIGHT,
-            pressureSensitivity = PressureSensitivity.HIGH,
-        )
         val samples = listOf(
             StrokeSample(LogicalPoint(120, 80), pressure = 10_000, elapsedMillis = 0),
             StrokeSample(
@@ -36,10 +29,20 @@ class PayloadCodecTest {
             ),
         )
 
-        val decoded = PayloadCodec.decodeStroke(PayloadCodec.encodeStroke(style, samples))
+        PressureSensitivity.entries.forEach { sensitivity ->
+            val style = BrushStyle(
+                id = BrushId.PRESSURE_PEN,
+                argb = 0x7F123456,
+                width = 321,
+                blendMode = BrushBlendMode.HIGHLIGHT,
+                pressureSensitivity = sensitivity,
+            )
 
-        assertEquals(style, decoded.first)
-        assertEquals(samples, decoded.second)
+            val decoded = PayloadCodec.decodeStroke(PayloadCodec.encodeStroke(style, samples))
+
+            assertEquals(style, decoded.first)
+            assertEquals(samples, decoded.second)
+        }
     }
 
     @Test

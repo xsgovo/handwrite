@@ -42,6 +42,8 @@ enum class PressureSensitivity {
     LOW,
     STANDARD,
     HIGH,
+    // OFF 必须保持在末位：NativePackageWriter 按 ordinal 序列化，历史导出包依赖既有取值。
+    OFF,
 }
 
 interface PageElement {

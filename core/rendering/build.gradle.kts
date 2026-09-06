@@ -14,6 +14,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.ink.rendering)
     implementation(libs.androidx.ink.brush)
+    implementation(libs.androidx.ink.geometry)
     implementation(libs.androidx.ink.strokes)
 
     testImplementation(libs.junit4)
