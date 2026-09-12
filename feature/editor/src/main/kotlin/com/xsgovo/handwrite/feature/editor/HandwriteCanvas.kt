@@ -3,6 +3,10 @@ package com.xsgovo.handwrite.feature.editor
 import android.view.MotionEvent
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
@@ -27,14 +31,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -42,6 +49,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
 // androidx.ink.strokes.Stroke 占用了 Stroke 名称，drawscope 的描边参数用别名引入。
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -51,10 +59,16 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.ink.authoring.compose.InProgressStrokes
 import androidx.ink.strokes.Stroke
 import androidx.ink.strokes.StrokeInput
@@ -65,6 +79,7 @@ import com.xsgovo.handwrite.core.model.InputMode
 import com.xsgovo.handwrite.core.model.LogicalPoint
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.PageBackground
+import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PagePattern
 import com.xsgovo.handwrite.core.model.PatternType
 import com.xsgovo.handwrite.core.model.PressureSensitivity
@@ -77,8 +92,11 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sign
 import kotlin.math.sin
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -109,6 +127,11 @@ fun HandwriteCanvas(
     ) -> Unit,
     onToggleEraser: () -> Unit,
     onUndo: () -> Unit,
+    canNavigatePrev: Boolean,
+    isLastPage: Boolean,
+    prevPageContent: PageContent?,
+    nextPageContent: PageContent?,
+    onSwipeNavigate: (Int) -> Unit,
     onTemporaryEraserChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -137,6 +160,14 @@ fun HandwriteCanvas(
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
     }
+    val density = LocalDensity.current
+    val pageSwipeThresholdPx = with(density) { PAGE_SWIPE_COMMIT_THRESHOLD_DP.dp.toPx() }
+    val scope = rememberCoroutineScope()
+    val textMeasurer = rememberTextMeasurer()
+    // 页面拖拽位移（像素，向右为正）：平移到横向边界后继续拖动，页面整体跟手滑出；
+    // 松手按阈值与方向决定翻页/进入待添加页，否则弹回。
+    var pageDragPx by remember { mutableFloatStateOf(0f) }
+    var pageDragSettleJob by remember { mutableStateOf<Job?>(null) }
     val pointerEventToLogicalTransform = remember(transform) {
         transform.pointerEventToLogicalTransform()
     }
@@ -150,6 +181,11 @@ fun HandwriteCanvas(
     val erasePixelsCallback by rememberUpdatedState(onErasePixelsFinished)
     val toggleEraserCallback by rememberUpdatedState(onToggleEraser)
     val undoCallback by rememberUpdatedState(onUndo)
+    val canNavigatePrevState by rememberUpdatedState(canNavigatePrev)
+    val isLastPageState by rememberUpdatedState(isLastPage)
+    val prevPageContentState by rememberUpdatedState(prevPageContent)
+    val nextPageContentState by rememberUpdatedState(nextPageContent)
+    val swipeNavigateCallback by rememberUpdatedState(onSwipeNavigate)
     val temporaryEraserCallback by rememberUpdatedState(onTemporaryEraserChanged)
 
     LaunchedEffect(zoomPercent, canvasSize, pageSize) {
@@ -263,6 +299,26 @@ fun HandwriteCanvas(
         if (delta != Offset.Zero) pan = currentTransform.clampPan(pan + delta)
     }
 
+    // 平移与翻页手势共用一条位移路径：横向平移触底后，剩余位移转为页面拖拽位移；
+    // 缩放不大于 100% 时页面横向完全可见，横向拖动直接进入整屏翻页模式。
+    // 拖拽位移存在时，反方向的位移先收回拖拽，再归还给平移。
+    fun applyPanDeltaWithPageDrag(delta: Offset) {
+        val panLimitX = if (currentZoom <= 100) 0f else currentTransform.panLimit.x
+        val overscroll = pageDragOverscroll(delta.x, pan.x, panLimitX)
+        if (overscroll != 0f) {
+            pageDragSettleJob?.cancel()
+            applyPanDelta(Offset(delta.x - overscroll, delta.y))
+            // 右滑回到上一页需要上一页存在；左滑进入下一页/待添加页始终可行。
+            val hasTarget = overscroll < 0f || canNavigatePrevState
+            // 没有目标页的一侧只给出带阻尼的橡皮筋反馈，松手弹回。
+            val effective = if (hasTarget) overscroll else overscroll * PAGE_DRAG_DEAD_END_FACTOR
+            val maxDrag = canvasSize.width.toFloat()
+            pageDragPx = (pageDragPx + effective).coerceIn(-maxDrag, maxDrag)
+            return
+        }
+        applyPanDelta(delta)
+    }
+
     // eraserSize 必须在 key 中：pointerInput 不重启时协程闭包会一直捕获旧尺寸，
     // 导致橡皮光标显示新大小而实际擦除仍按旧大小计算。
     val gestureModifier = Modifier.pointerInput(tool, eraserMode, eraserSize, inputMode, sideButtonAction) {
@@ -302,7 +358,7 @@ fun HandwriteCanvas(
                         pressed[0].position.x - pressed[1].position.x,
                         pressed[0].position.y - pressed[1].position.y,
                     )
-                    previousCentroid?.let { applyPanDelta(centroid - it) }
+                    previousCentroid?.let { applyPanDeltaWithPageDrag(centroid - it) }
                     if (previousSpan > 0f && span > 0f) {
                         val scaleChange = span / previousSpan
                         val nextZoom = (gestureZoom * scaleChange).roundToInt()
@@ -341,7 +397,7 @@ fun HandwriteCanvas(
                         navigationPointer && contactActive -> {
                             val delta = change.positionChange()
                             change.consume()
-                            if (!currentZoomLocked) applyPanDelta(delta)
+                            if (!currentZoomLocked) applyPanDeltaWithPageDrag(delta)
                         }
                             erasing && contactActive -> {
                                 change.consume()
@@ -370,6 +426,42 @@ fun HandwriteCanvas(
 
             if (zoomGestureDetected) zoomGestureActive = false
             pixelEraseCursor = null
+
+            // 翻页手势收尾：达到阈值先把页面顺滑出屏再回调切页（保证过渡连贯），否则弹回。
+            // 方向语义：手指右滑回到上一页，手指左滑进入下一页；最后一页左滑进入待添加页。
+            val dragAtRelease = pageDragPx
+            if (abs(dragAtRelease) > 0.5f) {
+                val direction = when {
+                    dragAtRelease > 0f -> SWIPE_NAVIGATE_PREV
+                    isLastPageState -> SWIPE_NAVIGATE_ADD
+                    else -> SWIPE_NAVIGATE_NEXT
+                }
+                val committed = abs(dragAtRelease) >= pageSwipeThresholdPx &&
+                    (direction != SWIPE_NAVIGATE_PREV || canNavigatePrevState)
+                if (committed) {
+                    // 受限的指针作用域内不能挂起，滑出与回弹动画都交给组合协程；
+                    // 滑出完成后保持位移（页面已离屏），由切页重建画布收尾。
+                    pageDragSettleJob = scope.launch {
+                        animate(
+                            initialValue = dragAtRelease,
+                            targetValue = sign(dragAtRelease) * canvasSize.width,
+                            animationSpec = tween(PAGE_SWIPE_SETTLE_MILLIS),
+                        ) { value, _ -> pageDragPx = value }
+                        swipeNavigateCallback(direction)
+                    }
+                } else {
+                    pageDragSettleJob = scope.launch {
+                        animate(
+                            initialValue = dragAtRelease,
+                            targetValue = 0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMedium,
+                            ),
+                        ) { value, _ -> pageDragPx = value }
+                    }
+                }
+            }
 
             if (erasedIds.isNotEmpty()) {
                 val completed = erasedIds
@@ -430,6 +522,15 @@ fun HandwriteCanvas(
             .onFailure { error -> Log.e(LOG_TAG, "Unable to prepare persisted Ink stroke", error) }
             .getOrDefault(emptyList())
     }
+    // 相邻页的静态渲染预置：翻页拖拽时直接绘制；渲染层按笔画 id 缓存，重复 prepare 开销很小。
+    val prevPreparedStrokes = remember(prevPageContent?.elements) {
+        runCatching { inkRenderer.prepare(prevPageContent?.elements.orEmpty().filterIsInstance<StrokeElement>()) }
+            .getOrDefault(emptyList())
+    }
+    val nextPreparedStrokes = remember(nextPageContent?.elements) {
+        runCatching { inkRenderer.prepare(nextPageContent?.elements.orEmpty().filterIsInstance<StrokeElement>()) }
+            .getOrDefault(emptyList())
+    }
     val wetBrush = remember(activeBrushId, activeColor, activeWidth, tool, pressureSensitivity) {
         if (tool == EditorTool.PEN) {
             createInkBrush(
@@ -446,6 +547,11 @@ fun HandwriteCanvas(
     // 透明背景的页面以半透明的主题底色显示：跟随主题色相的同时透出桌面，比实底更通透；
     // 导出仍为真透明，由 PageRenderEngine 负责。
     val transparentPageColor = MaterialTheme.colorScheme.surface.copy(alpha = TRANSPARENT_PAGE_FILL_ALPHA)
+    // 待添加页预览配色：达到建页阈值前用中性色，达到后换主色提示松手即进入。
+    val previewButtonFillColor = MaterialTheme.colorScheme.surface
+    val previewButtonBorderColor = MaterialTheme.colorScheme.outlineVariant
+    val previewAccentColor = MaterialTheme.colorScheme.primary
+    val previewLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val maskPath = remember(canvasSize, transform.pageRect) {
         Path().apply {
             val canvasWidth = canvasSize.width.toFloat()
@@ -479,38 +585,51 @@ fun HandwriteCanvas(
                 .then(sideButtonWatcherModifier),
         ) {
             Canvas(Modifier.fillMaxSize()) {
+                val drag = pageDragPx
                 val page = transform.pageRect
-                drawRect(background.baseColor(transparentPageColor), topLeft = page.topLeft, size = page.size)
-                // 页底 3px 阴影：整页阴影会透过半透明填充使页面发灰，只保留底边一条。
-                drawRect(
-                    Color(0x26000000),
-                    topLeft = Offset(page.left, page.bottom),
-                    size = Size(page.width, 3f),
-                )
-                clipRect(page.left, page.top, page.right, page.bottom) {
-                    when (background) {
-                        is PageBackground.Pattern -> drawPattern(background, page, transform.scale)
-                        is PageBackground.Asset -> backgroundImage?.let { image ->
-                            val scale = background.transform.scalePermille / 1_000f
-                            val translation = Offset(
-                                background.transform.translation.x * transform.scale,
-                                background.transform.translation.y * transform.scale,
-                            )
-                            withTransform({
-                                translate(translation.x, translation.y)
-                                rotate(background.transform.rotationMilliDegrees / 1_000f, page.center)
-                                scale(scale, scale, page.center)
-                            }) {
-                                drawImage(
-                                    image = image,
-                                    dstOffset = IntOffset(page.left.roundToInt(), page.top.roundToInt()),
-                                    dstSize = IntSize(page.width.roundToInt(), page.height.roundToInt()),
-                                )
-                            }
-                        }
-                        else -> Unit
+                val slideStep = canvasSize.width + NEIGHBOR_PAGE_GAP_DP.dp.toPx()
+                // 拖拽中在移动方向的一侧渲染相邻页：右滑上一页自左侧跟入，左滑下一页自右侧跟入，
+                // 与松手后的切页位置衔接，形成整屏翻页的连续预览。
+                val neighbor = when {
+                    drag > 0.5f -> prevPageContentState
+                    drag < -0.5f -> nextPageContentState
+                    else -> null
+                }
+                if (neighbor != null) {
+                    val neighborOffset = drag - sign(drag) * slideStep
+                    withTransform({ translate(neighborOffset, 0f) }) {
+                        drawPaperLayer(
+                            renderer = inkRenderer,
+                            rect = page,
+                            background = neighbor.page.background,
+                            scale = transform.scale,
+                            transparentFillColor = transparentPageColor,
+                            assetImage = null,
+                            preparedStrokes = if (drag > 0.5f) prevPreparedStrokes else nextPreparedStrokes,
+                        )
                     }
-                    inkRenderer.draw(this, preparedStrokes, transform.scale, page.left, page.top)
+                }
+                // 待添加页预览锚定屏幕：最后一页向左拖拽时页面滑出、预览从页面下方露出。
+                if (isLastPage && drag < -0.5f) {
+                    drawPendingAddPagePreview(
+                        textMeasurer = textMeasurer,
+                        armed = -drag >= pageSwipeThresholdPx,
+                        buttonFillColor = previewButtonFillColor,
+                        buttonBorderColor = previewButtonBorderColor,
+                        accentColor = previewAccentColor,
+                        labelColor = previewLabelColor,
+                    )
+                }
+                withTransform({ translate(drag, 0f) }) {
+                    drawPaperLayer(
+                        renderer = inkRenderer,
+                        rect = page,
+                        background = background,
+                        scale = transform.scale,
+                        transparentFillColor = transparentPageColor,
+                        assetImage = backgroundImage,
+                        preparedStrokes = preparedStrokes,
+                    )
                 }
             }
             Canvas(Modifier.fillMaxSize()) {
@@ -617,7 +736,7 @@ internal const val MIN_ZOOM_PERCENT = 75
 internal const val MAX_ZOOM_PERCENT = 400
 
 // 透明页面填充的主题色不透明度：过低会与桌面混淆，过高则失去通透感。
-private const val TRANSPARENT_PAGE_FILL_ALPHA = 0.45f
+internal const val TRANSPARENT_PAGE_FILL_ALPHA = 0.45f
 
 // 像素橡皮大小为逻辑直径（文档坐标，随缩放同步）；下限覆盖常用笔宽，上限到笔画橡皮半径的两倍。
 internal const val MIN_ERASER_SIZE = 200
@@ -630,6 +749,155 @@ private const val ERASER_CURSOR_BORDER_WIDTH_DP = 1.5f
 
 // 擦除路径的最小采样步长（逻辑单位）：路径按不小于该值的间距记录，限制路径规模。
 internal const val ERASER_PATH_MIN_STEP = 32
+
+// 向左右滑翻页：达到阈值松手翻页（最后一页右滑进入待添加页），拖拽方向以像素计（向右为正）。
+internal const val PAGE_SWIPE_COMMIT_THRESHOLD_DP = 96
+internal const val PAGE_SWIPE_SETTLE_MILLIS = 160
+
+// 没有目标页（首页继续左滑）时的橡皮筋阻尼系数。
+internal const val PAGE_DRAG_DEAD_END_FACTOR = 0.25f
+
+// 翻页手势回调方向常量。
+internal const val SWIPE_NAVIGATE_PREV = -1
+internal const val SWIPE_NAVIGATE_NEXT = 1
+internal const val SWIPE_NAVIGATE_ADD = 2
+
+// 横向平移触底后继续拖动的位移量（像素，向右为正），即页面拖拽位移的增量。
+internal fun pageDragOverscroll(deltaX: Float, panX: Float, panLimitX: Float): Float = when {
+    deltaX > 0f -> maxOf(deltaX - (panLimitX - panX).coerceAtLeast(0f), 0f)
+    deltaX < 0f -> minOf(deltaX + (panLimitX + panX).coerceAtLeast(0f), 0f)
+    else -> 0f
+}
+
+// 翻页拖拽时相邻页与当前页的间距。
+internal const val NEIGHBOR_PAGE_GAP_DP = 14
+
+// 纸张层绘制：底色 + 阴影 + 花纹/图片背景 + 笔迹；供当前页与相邻页预览复用。
+private fun DrawScope.drawPaperLayer(
+    renderer: InkDocumentRenderer,
+    rect: Rect,
+    background: PageBackground,
+    scale: Float,
+    transparentFillColor: Color,
+    assetImage: ImageBitmap?,
+    preparedStrokes: List<Stroke>,
+) {
+    drawRect(background.baseColor(transparentFillColor), topLeft = rect.topLeft, size = rect.size)
+    // 页底 3px 阴影：整页阴影会透过半透明填充使页面发灰，只保留底边一条。
+    drawRect(
+        Color(0x26000000),
+        topLeft = Offset(rect.left, rect.bottom),
+        size = Size(rect.width, 3f),
+    )
+    clipRect(rect.left, rect.top, rect.right, rect.bottom) {
+        when (background) {
+            is PageBackground.Pattern -> drawPattern(background, rect, scale)
+            is PageBackground.Asset -> assetImage?.let { image ->
+                val assetScale = background.transform.scalePermille / 1_000f
+                val translation = Offset(
+                    background.transform.translation.x * scale,
+                    background.transform.translation.y * scale,
+                )
+                withTransform({
+                    translate(translation.x, translation.y)
+                    rotate(background.transform.rotationMilliDegrees / 1_000f, rect.center)
+                    scale(assetScale, assetScale, rect.center)
+                }) {
+                    drawImage(
+                        image = image,
+                        dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
+                        dstSize = IntSize(rect.width.roundToInt(), rect.height.roundToInt()),
+                    )
+                }
+            }
+            else -> Unit
+        }
+        renderer.draw(this, preparedStrokes, scale, rect.left, rect.top)
+    }
+}
+
+// 待添加页预览：锚定屏幕居中绘制大号“添加新页面”按钮与下方“自定义背景”小按钮，
+// 与 AddPagePlaceholder 的静态布局保持一致，拖拽过程中随页面滑出逐渐露出。
+private fun DrawScope.drawPendingAddPagePreview(
+    textMeasurer: TextMeasurer,
+    armed: Boolean,
+    buttonFillColor: Color,
+    buttonBorderColor: Color,
+    accentColor: Color,
+    labelColor: Color,
+) {
+    if (size.width <= 0f || size.height <= 0f) return
+    val accent = if (armed) accentColor else labelColor
+    val centerX = size.width / 2f
+    val centerY = size.height / 2f
+    val corner = 24.dp.toPx()
+
+    val buttonWidth = 240.dp.toPx()
+    val buttonHeight = 150.dp.toPx()
+    val buttonTop = centerY - buttonHeight - 24.dp.toPx()
+    val buttonLeft = centerX - buttonWidth / 2f
+    drawRoundRect(
+        color = buttonFillColor,
+        topLeft = Offset(buttonLeft, buttonTop),
+        size = Size(buttonWidth, buttonHeight),
+        cornerRadius = CornerRadius(corner, corner),
+    )
+    drawRoundRect(
+        color = if (armed) accentColor else buttonBorderColor,
+        topLeft = Offset(buttonLeft, buttonTop),
+        size = Size(buttonWidth, buttonHeight),
+        cornerRadius = CornerRadius(corner, corner),
+        style = DrawStroke(width = if (armed) 2f else 1.5f),
+    )
+    // 加号 + 标题文案
+    val iconCenter = Offset(centerX, buttonTop + buttonHeight * 0.38f)
+    val armLength = 22.dp.toPx()
+    val armWidth = 3.5f
+    drawLine(accent, Offset(iconCenter.x - armLength, iconCenter.y), Offset(iconCenter.x + armLength, iconCenter.y), armWidth)
+    drawLine(accent, Offset(iconCenter.x, iconCenter.y - armLength), Offset(iconCenter.x, iconCenter.y + armLength), armWidth)
+    val titleLayout = textMeasurer.measure(
+        "添加新页面",
+        TextStyle(fontSize = 17.sp, color = accent),
+    )
+    drawText(
+        titleLayout,
+        topLeft = Offset(
+            centerX - titleLayout.size.width / 2f,
+            buttonTop + buttonHeight * 0.62f - titleLayout.size.height / 2f,
+        ),
+    )
+
+    // 自定义背景小按钮
+    val pillWidth = 190.dp.toPx()
+    val pillHeight = 44.dp.toPx()
+    val pillTop = centerY + 24.dp.toPx()
+    val pillLeft = centerX - pillWidth / 2f
+    drawRoundRect(
+        color = buttonFillColor,
+        topLeft = Offset(pillLeft, pillTop),
+        size = Size(pillWidth, pillHeight),
+        cornerRadius = CornerRadius(pillHeight / 2f, pillHeight / 2f),
+    )
+    drawRoundRect(
+        color = buttonBorderColor,
+        topLeft = Offset(pillLeft, pillTop),
+        size = Size(pillWidth, pillHeight),
+        cornerRadius = CornerRadius(pillHeight / 2f, pillHeight / 2f),
+        style = DrawStroke(width = 1.5f),
+    )
+    val pillLayout = textMeasurer.measure(
+        "自定义背景",
+        TextStyle(fontSize = 14.sp, color = labelColor),
+    )
+    drawText(
+        pillLayout,
+        topLeft = Offset(
+            centerX - pillLayout.size.width / 2f,
+            pillTop + pillHeight / 2f - pillLayout.size.height / 2f,
+        ),
+    )
+}
+
 private const val ZOOM_BUTTON_STEP = 25
 private const val ZOOM_GESTURE_SCALE_THRESHOLD = 0.005f
 private const val ZOOM_CONTROLS_HIDE_DELAY_MILLIS = 1_800L
@@ -940,14 +1208,14 @@ internal data class CanvasPageTransform(
 
 // 透明底（含透明底叠加样式的 Pattern）在画布上以主题底色显示，与周边界面保持一致；
 // 画布所见与导出不同：导出保持真透明，由 PageRenderEngine 负责。
-private fun PageBackground.baseColor(transparentFallback: Color): Color = when (this) {
+internal fun PageBackground.baseColor(transparentFallback: Color): Color = when (this) {
     is PageBackground.Solid -> Color(argb)
     PageBackground.Transparent -> transparentFallback
     is PageBackground.Pattern -> if (baseArgb == PageBackground.TRANSPARENT) transparentFallback else Color(baseArgb)
     is PageBackground.Asset -> Color.White
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPattern(
+internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPattern(
     pattern: PageBackground.Pattern,
     page: Rect,
     scale: Float,

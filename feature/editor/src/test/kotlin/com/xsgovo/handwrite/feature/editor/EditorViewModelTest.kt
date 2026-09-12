@@ -34,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -546,6 +547,251 @@ class EditorViewModelTest {
         assertEquals(logicalPoint.y, mapped.y, 0.01f)
     }
 
+    @Test
+    fun addPageAppendsANewPageAndSwitchesToIt() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+
+        viewModel.addPage()
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.state.value.pageCount)
+        assertEquals(1, viewModel.state.value.pageIndex)
+        assertEquals(PageId(102), viewModel.state.value.pageId)
+        assertEquals(1, repository.lastActivePageUpdates)
+
+        viewModel.selectPage(firstPageId)
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.state.value.pageIndex)
+        assertEquals(1, viewModel.state.value.strokes.size)
+    }
+
+    @Test
+    fun strokesAreIsolatedPerPage() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(300, 400))))
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.state.value.strokes.size)
+
+        viewModel.selectPage(firstPageId)
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.state.value.strokes.size)
+        assertEquals(LogicalPoint(100, 200), viewModel.state.value.strokes.single().samples.single().point)
+    }
+
+    @Test
+    fun undoTargetsThePageWhereTheStrokeWasCommitted() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(300, 400))))
+        advanceUntilIdle()
+
+        viewModel.undo()
+        advanceUntilIdle()
+
+        // 撤销按时间倒序生效：先移除页面 2 的笔迹，页面 1 不受影响。
+        assertEquals(0, viewModel.state.value.strokes.size)
+
+        viewModel.selectPage(firstPageId)
+        advanceUntilIdle()
+        assertEquals(1, viewModel.state.value.strokes.size)
+    }
+
+    @Test
+    fun deletingTheCurrentPageFallsBackToANeighborAndDropsItsHistory() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(300, 400))))
+        advanceUntilIdle()
+
+        viewModel.deleteCurrentPage()
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.state.value.pageCount)
+        assertEquals(firstPageId, viewModel.state.value.pageId)
+        assertEquals(1, viewModel.state.value.strokes.size)
+        assertTrue(viewModel.state.value.canUndo)
+
+        viewModel.undo()
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.state.value.strokes.size)
+    }
+
+    @Test
+    fun deletingTheLastPageIsRejected() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+
+        viewModel.deleteCurrentPage()
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.state.value.pageCount)
+        assertNotNull(viewModel.state.value.documentId)
+        assertEquals(1, viewModel.state.value.strokes.size)
+    }
+
+    @Test
+    fun addPageOnAFreshSessionLandsOnTheFirstPage() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.addPage()
+        advanceUntilIdle()
+
+        // 空白临时会话首次物化即带首页：落在首页，不再多出一页空白页。
+        assertEquals(1, viewModel.state.value.pageCount)
+        assertEquals(0, viewModel.state.value.pageIndex)
+        assertNotNull(viewModel.state.value.documentId)
+    }
+
+    @Test
+    fun pendingAddScreenFeedsTheBackgroundOfTheAddedPage() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+
+        viewModel.enterPendingAddPage()
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.onPendingAddPage)
+        viewModel.setPendingAddBackground(PageBackground.Pattern(PatternType.GRID))
+
+        viewModel.addPage()
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.state.value.pageCount)
+        assertFalse(viewModel.state.value.onPendingAddPage)
+        assertEquals(PageBackground.Pattern(PatternType.GRID), viewModel.state.value.pages[1].page.background)
+    }
+
+    @Test
+    fun pendingAddScreenExitsOnPageSelection() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+
+        viewModel.enterPendingAddPage()
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.onPendingAddPage)
+
+        viewModel.selectPage(firstPageId)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.value.onPendingAddPage)
+    }
+
+    @Test
+    fun pendingAddScreenOnlyEntersFromTheLastPage() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        viewModel.addPage()
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pages.first().page.id
+        viewModel.selectPage(firstPageId)
+        advanceUntilIdle()
+
+        viewModel.enterPendingAddPage()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.value.onPendingAddPage)
+    }
+
+    @Test
+    fun bookmarksAreToggledAndListed() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+
+        viewModel.togglePageBookmark(firstPageId)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.state.value.pages.first().page.bookmarked)
+        assertEquals(listOf(firstPageId), viewModel.state.value.pages.filter { it.page.bookmarked }.map { it.page.id })
+
+        viewModel.togglePageBookmark(firstPageId)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.value.pages.first().page.bookmarked)
+    }
+
+    @Test
+    fun pagesCanBeReordered() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+        val secondPageId = viewModel.state.value.pageId!!
+
+        viewModel.movePage(secondPageId, -1)
+        advanceUntilIdle()
+
+        assertEquals(listOf(secondPageId, firstPageId), viewModel.state.value.pages.map { it.page.id })
+        // 当前页跟随内容，不随位置改变。
+        assertEquals(secondPageId, viewModel.state.value.pageId)
+    }
+
+    @Test
+    fun deletingANonCurrentPageKeepsTheViewingPage() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+        // 两页都有内容：删除非当前页不会触发空白文档丢弃。
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(300, 400))))
+        advanceUntilIdle()
+        viewModel.selectPage(firstPageId)
+        advanceUntilIdle()
+
+        viewModel.deletePage(firstPageId)
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.state.value.pageCount)
+        assertEquals(0, viewModel.state.value.pageIndex)
+        assertEquals(1, viewModel.state.value.strokes.size)
+        assertNotNull(viewModel.state.value.documentId)
+    }
+
     private fun sample(x: Int, y: Int): StrokeSample = StrokeSample(LogicalPoint(x, y))
 
     private fun squarePage(): LogicalSize = LogicalSize(LogicalCanvas.LONG_EDGE, LogicalCanvas.LONG_EDGE)
@@ -583,20 +829,28 @@ class EditorViewModelTest {
 
     private class FakeDocumentRepository : DocumentRepository {
         private val document = MutableStateFlow<Document?>(null)
-        private val page = MutableStateFlow<PageContent?>(null)
+        private val pages = MutableStateFlow<List<PageContent>>(emptyList())
         var createCount = 0
             private set
         var deleteCount = 0
             private set
+        var lastActivePageUpdates = 0
+            private set
 
         override fun observeDocuments(): Flow<List<Document>> = MutableStateFlow(emptyList())
         override fun observeDocument(documentId: DocumentId): Flow<Document?> = document
-        override fun observePage(pageId: PageId): Flow<PageContent?> = page
+
+        override fun observePage(pageId: PageId): Flow<PageContent?> = pages.map { list ->
+            list.firstOrNull { it.page.id == pageId }
+        }
+
+        override fun observePageContents(documentId: DocumentId): Flow<List<PageContent>> = pages
 
         override suspend fun loadSnapshot(documentId: DocumentId): DomainResult<DocumentSnapshot> {
             val currentDocument = document.value ?: return DomainResult.Failure(DomainFailure.DocumentNotFound)
-            val currentPage = page.value ?: return DomainResult.Failure(DomainFailure.PageNotFound)
-            return DomainResult.Success(DocumentSnapshot(currentDocument, listOf(currentPage)))
+            val currentPages = pages.value
+            if (currentPages.isEmpty()) return DomainResult.Failure(DomainFailure.PageNotFound)
+            return DomainResult.Success(DocumentSnapshot(currentDocument, currentPages))
         }
 
         override suspend fun createDocument(
@@ -609,25 +863,96 @@ class EditorViewModelTest {
             val documentId = DocumentId(1)
             val pageId = PageId(2)
             document.value = Document(documentId, name, nowEpochMillis, nowEpochMillis, lastActivePageId = pageId)
-            page.value = PageContent(Page(pageId, documentId, 1_024, size, background), emptyList())
+            pages.value = listOf(PageContent(Page(pageId, documentId, 1_024, size, background), emptyList()))
             return DomainResult.Success(documentId)
         }
 
         override suspend fun deleteDocument(documentId: DocumentId): DomainResult<Unit> {
             deleteCount++
             document.value = null
-            page.value = null
+            pages.value = emptyList()
+            return DomainResult.Success(Unit)
+        }
+
+        override suspend fun addPage(
+            documentId: DocumentId,
+            size: LogicalSize,
+            background: PageBackground,
+            nowEpochMillis: Long,
+        ): DomainResult<Page> {
+            if (document.value?.id != documentId) return DomainResult.Failure(DomainFailure.DocumentNotFound)
+            val pageId = PageId(100L + pages.value.size + 1)
+            val orderKey = (pages.value.maxOfOrNull { it.page.orderKey } ?: 0L) + 1_024
+            val page = Page(pageId, documentId, orderKey, size, background)
+            pages.value = pages.value + PageContent(page, emptyList())
+            return DomainResult.Success(page)
+        }
+
+        override suspend fun deletePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit> {
+            val current = pages.value
+            if (current.none { it.page.id == pageId }) return DomainResult.Failure(DomainFailure.PageNotFound)
+            if (current.size <= 1) return DomainResult.Failure(DomainFailure.LastPageRemaining)
+            pages.value = current.filterNot { it.page.id == pageId }
+            return DomainResult.Success(Unit)
+        }
+
+        override suspend fun movePage(documentId: DocumentId, pageId: PageId, delta: Int): DomainResult<Unit> {
+            val current = pages.value
+            val index = current.indexOfFirst { it.page.id == pageId }
+            val targetIndex = index + delta
+            if (index < 0 || targetIndex !in current.indices) {
+                return DomainResult.Failure(DomainFailure.PageNotFound)
+            }
+            val reordered = current.toMutableList().apply {
+                val page = removeAt(index)
+                add(targetIndex, page)
+            }
+            pages.value = reordered
+            return DomainResult.Success(Unit)
+        }
+
+        override suspend fun setPageBookmarked(
+            documentId: DocumentId,
+            pageId: PageId,
+            bookmarked: Boolean,
+        ): DomainResult<Unit> {
+            val current = pages.value
+            if (current.none { it.page.id == pageId }) return DomainResult.Failure(DomainFailure.PageNotFound)
+            pages.value = current.map { content ->
+                if (content.page.id == pageId) {
+                    content.copy(page = content.page.copy(bookmarked = bookmarked))
+                } else {
+                    content
+                }
+            }
+            return DomainResult.Success(Unit)
+        }
+
+        override suspend fun updateLastActivePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit> {
+            val currentDocument = document.value ?: return DomainResult.Failure(DomainFailure.DocumentNotFound)
+            if (pages.value.none { it.page.id == pageId }) return DomainResult.Failure(DomainFailure.PageNotFound)
+            lastActivePageUpdates++
+            document.value = currentDocument.copy(lastActivePageId = pageId)
             return DomainResult.Success(Unit)
         }
 
         override suspend fun apply(command: DocumentCommand): DomainResult<Unit> {
-            val current = page.value ?: return DomainResult.Success(Unit)
-            page.value = when (command) {
-                is DocumentCommand.ReplaceElements -> {
-                    val removed = command.removed.mapTo(hashSetOf()) { it.id }
-                    current.copy(elements = (current.elements.filterNot { it.id in removed } + command.added).sortedBy { it.orderKey })
+            pages.value = pages.value.map { content ->
+                if (content.page.id != command.pageId) {
+                    content
+                } else {
+                    when (command) {
+                        is DocumentCommand.ReplaceElements -> {
+                            val removed = command.removed.mapTo(hashSetOf()) { it.id }
+                            content.copy(
+                                elements = (content.elements.filterNot { it.id in removed } + command.added)
+                                    .sortedBy { it.orderKey },
+                            )
+                        }
+                        is DocumentCommand.UpdateBackground ->
+                            content.copy(page = content.page.copy(background = command.after))
+                    }
                 }
-                is DocumentCommand.UpdateBackground -> current.copy(page = current.page.copy(background = command.after))
             }
             return DomainResult.Success(Unit)
         }

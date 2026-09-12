@@ -31,7 +31,10 @@ import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.HighlightOff
+import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
@@ -72,7 +75,7 @@ import kotlin.math.roundToInt
 private const val MENU_EXIT_ANIMATION_MILLIS = 300L
 
 // 背景二级菜单的底色色板；透明底以棋盘格呈现，样式（横线/方格）可叠加在任意底色上。
-private val backgroundSwatchChoices = listOf(
+internal val backgroundSwatchChoices = listOf(
     "透明" to PageBackground.TRANSPARENT,
     "白色" to PageBackground.WHITE,
     "浅灰" to PageBackground.GRAY,
@@ -90,7 +93,7 @@ internal fun PageBackground.statusBarColorArgbOrNull(): Int? = when (this) {
 }
 
 // 颜色与样式相互独立：无样式时是纯色/透明底，叠加样式时底色成为 pattern 的底色。
-private fun backgroundWithStyle(colorArgb: Int, style: PatternType?): PageBackground = when (style) {
+internal fun backgroundWithStyle(colorArgb: Int, style: PatternType?): PageBackground = when (style) {
     null -> if (colorArgb == PageBackground.TRANSPARENT) PageBackground.Transparent else PageBackground.Solid(colorArgb)
     else -> PageBackground.Pattern(style, colorArgb)
 }
@@ -120,6 +123,9 @@ fun EditorToolbar(
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onClear: () -> Unit,
+    onOpenPages: () -> Unit,
+    onAddPage: () -> Unit,
+    onDeletePage: () -> Unit,
     onZoomLock: (Boolean) -> Unit,
     onBackground: (PageBackground) -> Unit,
     onImportBackground: () -> Unit,
@@ -161,6 +167,9 @@ fun EditorToolbar(
                 } else {
                     Icon(Icons.Default.Share, contentDescription = "分享当前页面图片")
                 }
+            }
+            IconButton(onClick = onOpenPages) {
+                Icon(Icons.Default.LibraryBooks, contentDescription = "页面管理")
             }
             val selectedTool = if (temporaryEraserActive) EditorTool.ERASER else state.tool
             ToolButton(EditorTool.PEN, selectedTool, onTool, Icons.Default.Edit, "画笔")
@@ -319,6 +328,18 @@ fun EditorToolbar(
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
+                            text = { Text("添加页面") },
+                            leadingIcon = { Icon(Icons.Default.LibraryAdd, contentDescription = null) },
+                            onClick = { menuExpanded = false; onAddPage() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("删除本页") },
+                            leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
+                            onClick = { menuExpanded = false; onDeletePage() },
+                            enabled = state.pageCount > 1,
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
                             text = { Text("设置") },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                             onClick = { menuExpanded = false; onSettings() },
@@ -470,7 +491,7 @@ private fun ColorSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
 
 // 背景二级菜单：顶部色板行选底色，下方样式项与底色自由组合。
 @Composable
-private fun BackgroundMenuPanel(
+internal fun BackgroundMenuPanel(
     background: PageBackground,
     onSelect: (PageBackground) -> Unit,
     onBack: () -> Unit,

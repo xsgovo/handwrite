@@ -26,6 +26,8 @@ import com.xsgovo.handwrite.core.model.InputMode
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.NameResult
 import com.xsgovo.handwrite.core.model.PageBackground
+import com.xsgovo.handwrite.core.model.Page
+import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PageElement
 import com.xsgovo.handwrite.core.model.PageId
 import com.xsgovo.handwrite.core.model.PageTemplate
@@ -67,6 +69,9 @@ enum class EraserMode {
 data class EditorUiState(
     val documentId: DocumentId? = null,
     val pageId: PageId? = null,
+    val pages: List<PageContent> = emptyList(),
+    val onPendingAddPage: Boolean = false,
+    val pendingAddBackground: PageBackground = PageBackground.Solid(),
     val documentName: String = "新文档",
     val pageSize: LogicalSize = PageTemplate.LEGACY_PORTRAIT.size,
     val background: PageBackground = PageBackground.Solid(),
@@ -96,6 +101,8 @@ data class EditorUiState(
     val activeColor: Int get() = colorSlots[activeColorSlot]
     val widthStep: Int get() = widthSteps[activeWidthSlot]
     val activeWidth: Int get() = 16 + widthStep * 8
+    val pageCount: Int get() = pages.size
+    val pageIndex: Int? get() = pageId?.let { id -> pages.indexOfFirst { it.page.id == id }.takeIf { it >= 0 } }
 }
 
 sealed interface EditorUiEffect {
@@ -119,6 +126,7 @@ class EditorViewModel @Inject constructor(
     private val writeMutex = Mutex()
     private val nextElementId = AtomicLong(clock.nowMillis() shl 16)
     private var observationJob: Job? = null
+    private var pagesJob: Job? = null
     private var resourceJob: Job? = null
     private var colorSlotPersistJob: Job? = null
     private var toolStateRestored = false
@@ -252,25 +260,30 @@ class EditorViewModel @Inject constructor(
             onCompleted()
             return
         }
+        // 目标页与工具样式在手势发生的页面锁定：等待写入锁期间切换页面，
+        // 笔迹也不会落进别的页面，样式与用户落笔时所见一致。
+        val snapshot = mutableState.value
+        val requestedPageId = snapshot.pageId
         viewModelScope.launch {
             writeMutex.withLock {
-                val target = ensureDocument()
+                val target = requestedPageId
+                    ?.let { pageId -> snapshot.documentId?.let { documentId -> documentId to pageId } }
+                    ?: ensureDocument()
                 if (target == null) {
                     onCompleted()
                     return@withLock
                 }
-                val current = mutableState.value
-                val firstOrderKey = (current.elements.maxOfOrNull(PageElement::orderKey) ?: 0L) + ORDER_STEP
+                val firstOrderKey = (snapshot.elements.maxOfOrNull(PageElement::orderKey) ?: 0L) + ORDER_STEP
                 val strokes = nonEmptyStrokes.mapIndexed { index, samples ->
                     StrokeElement(
                         id = ElementId(nextElementId.incrementAndGet()),
                         pageId = target.second,
                         orderKey = firstOrderKey + index * ORDER_STEP,
                         style = BrushStyle(
-                            id = current.activeBrushId,
-                            argb = current.activeColor,
-                            width = current.activeWidth,
-                            pressureSensitivity = current.pressureSensitivity,
+                            id = snapshot.activeBrushId,
+                            argb = snapshot.activeColor,
+                            width = snapshot.activeWidth,
+                            pressureSensitivity = snapshot.pressureSensitivity,
                         ),
                         samples = samples,
                     )
@@ -289,16 +302,17 @@ class EditorViewModel @Inject constructor(
             onCompleted()
             return
         }
+        // 擦除目标在手势发生的页面锁定，避免等待写入锁期间页面切换后误删或丢失内容。
+        val snapshot = mutableState.value
+        val documentId = snapshot.documentId
+        val pageId = snapshot.pageId
         viewModelScope.launch {
             writeMutex.withLock {
-                val current = mutableState.value
-                val documentId = current.documentId
-                val pageId = current.pageId
                 if (documentId == null || pageId == null) {
                     onCompleted()
                     return@withLock
                 }
-                val removed = current.elements.filter { it.id in ids }
+                val removed = snapshot.elements.filter { it.id in ids }
                 if (removed.isEmpty()) {
                     onCompleted()
                     return@withLock
@@ -332,22 +346,22 @@ class EditorViewModel @Inject constructor(
             onCompleted()
             return
         }
+        val snapshot = mutableState.value
+        val documentId = snapshot.documentId
+        val pageId = snapshot.pageId
         viewModelScope.launch {
             writeMutex.withLock {
-                val current = mutableState.value
-                val documentId = current.documentId
-                val pageId = current.pageId
                 if (documentId == null || pageId == null) {
                     onCompleted()
                     return@withLock
                 }
-                val originals = current.elements.associateBy(PageElement::id)
+                val originals = snapshot.elements.associateBy(PageElement::id)
                 val removed = removedIds.mapNotNull(originals::get)
                 if (removed.isEmpty()) {
                     onCompleted()
                     return@withLock
                 }
-                var orderKey = (current.elements.maxOfOrNull(PageElement::orderKey) ?: 0L) + ORDER_STEP
+                var orderKey = (snapshot.elements.maxOfOrNull(PageElement::orderKey) ?: 0L) + ORDER_STEP
                 val added = removed.flatMap { original ->
                     val stroke = original as? StrokeElement
                     if (stroke == null) {
@@ -387,28 +401,33 @@ class EditorViewModel @Inject constructor(
             mutableState.update { it.copy(background = background) }
             return
         }
+        // 背景替换只作用于手势发生时的页面；写入前页面被切走则由 applyLocally 丢弃本地合并。
+        val snapshot = mutableState.value
+        val documentId = snapshot.documentId ?: return
+        val pageId = snapshot.pageId ?: return
         viewModelScope.launch {
             writeMutex.withLock {
-                val target = ensureDocument() ?: return@withLock
-                val before = mutableState.value.background
                 if (commit(
-                    DocumentCommand.UpdateBackground(target.first, target.second, before, background),
+                    DocumentCommand.UpdateBackground(documentId, pageId, snapshot.background, background),
                     recordHistory = true,
                 )) {
-                    discardDocumentIfCanvasIsEmpty(target.first)
+                    discardDocumentIfCanvasIsEmpty(documentId)
                 }
             }
         }
     }
 
     fun importBackground(mimeType: String, input: ResourceInput) {
+        val snapshot = mutableState.value
         viewModelScope.launch {
             writeMutex.withLock {
                 mutableState.update { it.copy(isSaving = true) }
                 when (val imported = backgroundResources.import(mimeType, input)) {
                     is DomainResult.Success -> {
-                        val target = ensureDocument() ?: return@withLock
-                        val before = mutableState.value.background
+                        val target = snapshot.documentId?.let { documentId ->
+                            snapshot.pageId?.let { pageId -> documentId to pageId }
+                        } ?: ensureDocument() ?: return@withLock
+                        val before = snapshot.background
                         val after = PageBackground.Asset(
                             resourceId = imported.value.id,
                             kind = if (imported.value.mimeType == PDF_MIME_TYPE) {
@@ -463,6 +482,124 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    fun selectPage(pageId: PageId) {
+        val current = mutableState.value
+        if (current.onPendingAddPage) {
+            mutableState.update { it.copy(onPendingAddPage = false) }
+            if (pageId == current.pageId) return
+        }
+        if (pageId == current.pageId || current.pages.none { it.page.id == pageId }) return
+        switchToPage(pageId)
+        current.documentId?.let { documentId ->
+            viewModelScope.launch { documents.updateLastActivePage(documentId, pageId) }
+        }
+    }
+
+    // 待添加页是会话内界面状态：仅在最后一页可进入；等待期间可先自定义新页背景。
+    fun enterPendingAddPage() {
+        val current = mutableState.value
+        if (current.onPendingAddPage) return
+        val onLastPage = current.pageIndex == null || current.pageIndex == current.pageCount - 1
+        if (!onLastPage) return
+        val inherited = current.background.takeUnless { it is PageBackground.Asset }
+        mutableState.update {
+            it.copy(
+                onPendingAddPage = true,
+                pendingAddBackground = inherited ?: it.pendingAddBackground,
+            )
+        }
+        if (inherited == null) {
+            viewModelScope.launch {
+                val fallback = settingsRepository.settings.first().defaultBackground
+                mutableState.update { if (it.onPendingAddPage) it.copy(pendingAddBackground = fallback) else it }
+            }
+        }
+    }
+
+    fun exitPendingAddPage() {
+        mutableState.update { it.copy(onPendingAddPage = false) }
+    }
+
+    fun setPendingAddBackground(background: PageBackground) {
+        mutableState.update { it.copy(pendingAddBackground = background) }
+    }
+
+    // 新页沿用当前页面尺寸；背景默认沿用当前纸面，图片/PDF 背景不复制到新页，回退到默认背景。
+    fun addPage() {
+        viewModelScope.launch {
+            writeMutex.withLock {
+                // 空白临时会话首次物化即带首页：落在首页即可，不再额外追加一页。
+                val wasUnmaterialized = mutableState.value.documentId == null
+                val target = ensureDocument() ?: return@withLock
+                if (wasUnmaterialized) {
+                    mutableState.update { it.copy(onPendingAddPage = false) }
+                    documents.updateLastActivePage(target.first, target.second)
+                    return@withLock
+                }
+                val current = mutableState.value
+                val background = if (current.onPendingAddPage) {
+                    current.pendingAddBackground
+                } else {
+                    current.background.takeUnless { it is PageBackground.Asset }
+                        ?: settingsRepository.settings.first().defaultBackground
+                }
+                when (val result = documents.addPage(target.first, current.pageSize, background, clock.nowMillis())) {
+                    is DomainResult.Success -> {
+                        switchToPage(result.value.id)
+                        mutableState.update { it.copy(onPendingAddPage = false) }
+                        documents.updateLastActivePage(target.first, result.value.id)
+                    }
+                    is DomainResult.Failure -> showWriteFailure(result.error)
+                }
+            }
+        }
+    }
+
+    fun deleteCurrentPage() {
+        val pageId = mutableState.value.pageId ?: return
+        deletePage(pageId)
+    }
+
+    fun deletePage(pageId: PageId) {
+        viewModelScope.launch {
+            writeMutex.withLock {
+                val current = mutableState.value
+                val documentId = current.documentId ?: return@withLock
+                when (val result = documents.deletePage(documentId, pageId)) {
+                    is DomainResult.Success -> {
+                        // 页面删除不可撤销；历史中指向该页的笔迹命令一并清除，避免撤销撞上缺失页面。
+                        history.dropCommandsForPage(pageId)
+                        updateHistoryState()
+                        if (pageId == current.pageId) {
+                            mutableState.update { it.copy(onPendingAddPage = false) }
+                        }
+                        discardDocumentIfCanvasIsEmpty(documentId)
+                    }
+                    is DomainResult.Failure -> showWriteFailure(result.error)
+                }
+            }
+        }
+    }
+
+    fun togglePageBookmark(pageId: PageId) {
+        viewModelScope.launch {
+            val current = mutableState.value
+            val documentId = current.documentId ?: return@launch
+            val target = current.pages.firstOrNull { it.page.id == pageId } ?: return@launch
+            documents.setPageBookmarked(documentId, pageId, !target.page.bookmarked)
+        }
+    }
+
+    fun movePage(pageId: PageId, delta: Int) {
+        viewModelScope.launch {
+            writeMutex.withLock {
+                val documentId = mutableState.value.documentId ?: return@withLock
+                // 越界移动由界面禁用，这里对失败静默处理即可。
+                documents.movePage(documentId, pageId, delta)
+            }
+        }
+    }
+
     private suspend fun ensureDocument(): Pair<DocumentId, PageId>? {
         val current = mutableState.value
         if (current.documentId != null && current.pageId != null) return current.documentId to current.pageId
@@ -481,12 +618,12 @@ class EditorViewModel @Inject constructor(
                 mutableState.update {
                     it.copy(
                         documentId = created.value,
-                        pageId = document.lastActivePageId,
                         documentName = document.name.value,
                         isSaving = false,
                     )
                 }
                 observeDocument(created.value)
+                switchToPage(document.lastActivePageId)
                 return created.value to document.lastActivePageId
             }
             is DomainResult.Failure -> {
@@ -501,7 +638,30 @@ class EditorViewModel @Inject constructor(
         observationJob?.cancel()
         observationJob = viewModelScope.launch {
             documents.observeDocument(documentId).filterNotNull().collect { document ->
-                observePage(document)
+                mutableState.update {
+                    it.copy(
+                        documentId = document.id,
+                        documentName = document.name.value,
+                    )
+                }
+                // 只有尚未确定展示页时才跟随持久化的最后活跃页；切换页面后的文档回声不再抢占。
+                if (mutableState.value.pageId == null) {
+                    switchToPage(document.lastActivePageId)
+                }
+            }
+        }
+        pagesJob?.cancel()
+        pagesJob = viewModelScope.launch {
+            documents.observePageContents(documentId).collect { pages ->
+                val previousIds = mutableState.value.pages.map(PageContent::page).map(Page::id)
+                mutableState.update { it.copy(pages = pages) }
+                val activeId = mutableState.value.pageId ?: return@collect
+                if (activeId in previousIds && pages.isNotEmpty() && pages.none { it.page.id == activeId }) {
+                    // 展示页在会话外被删除：回退到原位置最近的相邻页并持久化。
+                    val fallback = pages[previousIds.indexOf(activeId).coerceAtMost(pages.size - 1)].page.id
+                    switchToPage(fallback)
+                    documents.updateLastActivePage(documentId, fallback)
+                }
             }
         }
     }
@@ -509,19 +669,14 @@ class EditorViewModel @Inject constructor(
     private var observedPageId: PageId? = null
     private var pageJob: Job? = null
 
-    private fun observePage(document: Document) {
-        mutableState.update {
-            it.copy(
-                documentId = document.id,
-                pageId = document.lastActivePageId,
-                documentName = document.name.value,
-            )
-        }
-        if (observedPageId == document.lastActivePageId) return
-        observedPageId = document.lastActivePageId
+    private fun switchToPage(pageId: PageId) {
+        // 先清空元素避免上一页的笔迹在新页面上闪现，页面内容流随后补齐。
+        mutableState.update { it.copy(pageId = pageId, elements = emptyList(), isSaving = false) }
+        if (observedPageId == pageId) return
+        observedPageId = pageId
         pageJob?.cancel()
         pageJob = viewModelScope.launch {
-            documents.observePage(document.lastActivePageId).filterNotNull().collect { content ->
+            documents.observePage(pageId).filterNotNull().collect { content ->
                 mutableState.update {
                     it.copy(
                         pageId = content.page.id,
@@ -570,6 +725,7 @@ class EditorViewModel @Inject constructor(
         when (documents.deleteDocument(documentId)) {
             is DomainResult.Success -> {
                 observationJob?.cancel()
+                pagesJob?.cancel()
                 pageJob?.cancel()
                 resourceJob?.cancel()
                 openedDocumentId = null
@@ -580,6 +736,8 @@ class EditorViewModel @Inject constructor(
                         current.copy(
                             documentId = null,
                             pageId = null,
+                            pages = emptyList(),
+                            onPendingAddPage = false,
                             documentName = "新文档",
                             elements = emptyList(),
                             backgroundResource = null,
@@ -616,6 +774,8 @@ class EditorViewModel @Inject constructor(
 
     private fun applyLocally(command: DocumentCommand) {
         mutableState.update { current ->
+            // 命令可能属于已切走的页面：只合并当前展示页的本地状态，其余由页面流重新读取。
+            if (current.pageId != command.pageId) return@update current
             when (command) {
                 is DocumentCommand.ReplaceElements -> {
                     val removed = command.removed.mapTo(hashSetOf(), PageElement::id)
@@ -638,6 +798,7 @@ class EditorViewModel @Inject constructor(
         val message = when (failure) {
             DomainFailure.StorageFull -> "存储空间不足"
             DomainFailure.DocumentNotFound, DomainFailure.PageNotFound -> "文档已不存在"
+            DomainFailure.LastPageRemaining -> "文档至少保留一页"
             else -> "保存失败，请重试"
         }
         effectsChannel.send(EditorUiEffect.ShowMessage(message))

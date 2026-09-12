@@ -153,6 +153,21 @@ class HandwriteCanvasTest {
         assertEquals(654, pieces[1].last().pressure)
     }
 
+    @Test
+    fun pageDragOverscrollStartsAfterThePanRoomIsExhausted() {
+        // 100% 缩放无平移余量：横向位移全部转为页面拖拽，方向以符号表示（向右为正）。
+        assertEquals(-50f, pageDragOverscroll(deltaX = -50f, panX = 0f, panLimitX = 0f), 0f)
+        assertEquals(50f, pageDragOverscroll(deltaX = 50f, panX = 0f, panLimitX = 0f), 0f)
+
+        // 仍有平移余量时不产生拖拽；超出余量的部分才计入。
+        assertEquals(0f, pageDragOverscroll(deltaX = -50f, panX = 80f, panLimitX = 100f), 0f)
+        assertEquals(0f, pageDragOverscroll(deltaX = 30f, panX = -80f, panLimitX = 100f), 0f)
+
+        // 页面已平移到左边界附近（pan 接近 -limit），仅越出余量的位移计入（带负号）。
+        assertEquals(-10f, pageDragOverscroll(deltaX = -30f, panX = -80f, panLimitX = 100f), 0f)
+        assertEquals(110f, pageDragOverscroll(deltaX = 130f, panX = 80f, panLimitX = 100f), 0f)
+    }
+
     private fun horizontalSamples(fromX: Int, toX: Int, y: Int): List<StrokeSample> =
         (fromX..toX step 10).map { x -> StrokeSample(point = LogicalPoint(x, y)) }
 }
