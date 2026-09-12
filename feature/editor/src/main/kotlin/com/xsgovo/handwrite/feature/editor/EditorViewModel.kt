@@ -57,6 +57,13 @@ enum class EditorTool {
     ERASER,
 }
 
+// 橡皮擦的工作方式：STROKE 划过的整条笔画被删除；PIXEL 只擦除橡皮圆盘覆盖的轨迹，
+// 笔画在擦除处断开并拆分为多条存留笔画。
+enum class EraserMode {
+    STROKE,
+    PIXEL,
+}
+
 data class EditorUiState(
     val documentId: DocumentId? = null,
     val pageId: PageId? = null,
@@ -66,6 +73,8 @@ data class EditorUiState(
     val backgroundResource: StoredResource? = null,
     val elements: List<PageElement> = emptyList(),
     val tool: EditorTool = EditorTool.PEN,
+    val eraserMode: EraserMode = EraserMode.STROKE,
+    val eraserSize: Int = DEFAULT_ERASER_SIZE,
     val inputMode: InputMode = InputMode.FINGER,
     val colorSlots: List<Int> = AppSettings.DEFAULT_COLOR_SLOTS,
     val activeColorSlot: Int = 0,
@@ -152,6 +161,14 @@ class EditorViewModel @Inject constructor(
 
     fun setTool(tool: EditorTool) {
         mutableState.update { it.copy(tool = tool) }
+    }
+
+    fun setEraserMode(mode: EraserMode) {
+        mutableState.update { it.copy(eraserMode = mode) }
+    }
+
+    fun setEraserSize(size: Int) {
+        mutableState.update { it.copy(eraserSize = size.coerceIn(MIN_ERASER_SIZE, MAX_ERASER_SIZE)) }
     }
 
     fun setZoom(percent: Int) {
@@ -302,6 +319,63 @@ class EditorViewModel @Inject constructor(
         val current = mutableState.value
         if (current.elements.isEmpty()) return
         eraseElements(current.elements.mapTo(linkedSetOf(), PageElement::id))
+    }
+
+    // 像素橡皮的提交：原笔画整体移除，未被擦除的样本片段按原笔画的样式重新落为新笔画；
+    // 单个 ReplaceElements 命令保证撤销/重做一步完成。
+    fun eraseByPixels(
+        removedIds: Set<ElementId>,
+        piecesByOriginalId: Map<ElementId, List<List<StrokeSample>>>,
+        onCompleted: () -> Unit = {},
+    ) {
+        if (removedIds.isEmpty()) {
+            onCompleted()
+            return
+        }
+        viewModelScope.launch {
+            writeMutex.withLock {
+                val current = mutableState.value
+                val documentId = current.documentId
+                val pageId = current.pageId
+                if (documentId == null || pageId == null) {
+                    onCompleted()
+                    return@withLock
+                }
+                val originals = current.elements.associateBy(PageElement::id)
+                val removed = removedIds.mapNotNull(originals::get)
+                if (removed.isEmpty()) {
+                    onCompleted()
+                    return@withLock
+                }
+                var orderKey = (current.elements.maxOfOrNull(PageElement::orderKey) ?: 0L) + ORDER_STEP
+                val added = removed.flatMap { original ->
+                    val stroke = original as? StrokeElement
+                    if (stroke == null) {
+                        emptyList()
+                    } else {
+                        piecesByOriginalId[stroke.id].orEmpty()
+                            .filter { it.size >= MIN_PIECE_SAMPLES }
+                            .map { pieceSamples ->
+                                StrokeElement(
+                                    id = ElementId(nextElementId.incrementAndGet()),
+                                    pageId = pageId,
+                                    orderKey = orderKey.also { orderKey += ORDER_STEP },
+                                    style = stroke.style,
+                                    samples = pieceSamples,
+                                )
+                            }
+                    }
+                }
+                if (commit(
+                        DocumentCommand.ReplaceElements(documentId, pageId, removed, added),
+                        recordHistory = true,
+                    )
+                ) {
+                    discardDocumentIfCanvasIsEmpty(documentId)
+                }
+                onCompleted()
+            }
+        }
     }
 
     fun setBackground(background: PageBackground) {

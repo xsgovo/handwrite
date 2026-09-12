@@ -1,7 +1,10 @@
 package com.xsgovo.handwrite.feature.editor
 
 import android.view.MotionEvent
+import com.xsgovo.handwrite.core.model.LogicalPoint
 import com.xsgovo.handwrite.core.model.SideButtonAction
+import com.xsgovo.handwrite.core.model.StrokeSample
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -68,4 +71,88 @@ class HandwriteCanvasTest {
                 )
             }
     }
+
+    @Test
+    fun pixelEraseKeepsStrokeWhenPathMisses() {
+        val samples = horizontalSamples(fromX = 100, toX = 200, y = 100)
+        val pieces = splitStrokeByErasePath(samples, erasePath = listOf(LogicalPoint(900, 900)), hitRadius = 50f)
+        assertEquals(listOf(samples), pieces)
+    }
+
+    @Test
+    fun pixelEraseSplitsStrokeAtThePath() {
+        // 擦除路径竖直穿过笔画中部：笔画切成左右两段，路径覆盖的样本不留在任何片段中。
+        val samples = horizontalSamples(fromX = 100, toX = 400, y = 200)
+        val erasePath = listOf(
+            LogicalPoint(240, 100),
+            LogicalPoint(260, 300),
+        )
+        val pieces = splitStrokeByErasePath(samples, erasePath, hitRadius = 25f)
+        assertEquals(2, pieces.size)
+        assertTrue(pieces[0].all { it.point.x < 230 })
+        assertTrue(pieces[1].all { it.point.x > 270 })
+        assertEquals(samples.first(), pieces[0].first())
+        assertEquals(samples.last(), pieces[1].last())
+    }
+
+    @Test
+    fun pixelEraseDropsShortRemaindersAndFullyErasedStrokes() {
+        // 路径扫过整条笔画 → 无存留；只擦除靠端头的一个样本 → 单样本残余被丢弃。
+        val samples = horizontalSamples(fromX = 100, toX = 400, y = 100)
+        val fullyErased = splitStrokeByErasePath(
+            samples,
+            erasePath = listOf(LogicalPoint(250, 100)),
+            hitRadius = 1_000f,
+        )
+        assertTrue(fullyErased.isEmpty())
+
+        val tailSampleDropped = splitStrokeByErasePath(
+            samples,
+            erasePath = listOf(LogicalPoint(390, 100)),
+            hitRadius = 5f,
+        )
+        assertEquals(1, tailSampleDropped.size)
+        assertTrue(tailSampleDropped.single().all { it.point.x < 390 })
+    }
+
+    @Test
+    fun pixelEraseHitRadiusIncludesStrokeHalfWidth() {
+        // 样本点在路径之外，但距离小于橡皮半径加半个笔宽时同样被擦除。
+        val samples = listOf(StrokeSample(point = LogicalPoint(100, 160)))
+        val pieces = splitStrokeByErasePath(
+            samples,
+            erasePath = listOf(LogicalPoint(100, 100)),
+            hitRadius = 80f,
+        )
+        assertTrue(pieces.isEmpty())
+    }
+
+    @Test
+    fun pixelErasePreservesSamplePayload() {
+        val stroke = StrokeSample(
+            point = LogicalPoint(100, 100),
+            pressure = 321,
+            elapsedMillis = 42,
+            tiltX = 11,
+            tiltY = -7,
+        )
+        val samples = listOf(
+            stroke,
+            StrokeSample(point = LogicalPoint(110, 100)),
+            StrokeSample(point = LogicalPoint(120, 100)),
+            StrokeSample(point = LogicalPoint(130, 100)),
+            StrokeSample(point = LogicalPoint(140, 100), pressure = 654),
+        )
+        val pieces = splitStrokeByErasePath(
+            samples,
+            erasePath = listOf(LogicalPoint(120, 100)),
+            hitRadius = 5f,
+        )
+        assertEquals(2, pieces.size)
+        assertEquals(stroke, pieces[0].first())
+        assertEquals(654, pieces[1].last().pressure)
+    }
+
+    private fun horizontalSamples(fromX: Int, toX: Int, y: Int): List<StrokeSample> =
+        (fromX..toX step 10).map { x -> StrokeSample(point = LogicalPoint(x, y)) }
 }

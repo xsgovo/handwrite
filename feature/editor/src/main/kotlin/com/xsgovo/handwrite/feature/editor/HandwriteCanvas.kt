@@ -41,6 +41,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+// androidx.ink.strokes.Stroke 占用了 Stroke 名称，drawscope 的描边参数用别名引入。
+import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -76,6 +79,7 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicLong
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -85,6 +89,8 @@ fun HandwriteCanvas(
     backgroundImage: ImageBitmap?,
     strokes: List<StrokeElement>,
     tool: EditorTool,
+    eraserMode: EraserMode,
+    eraserSize: Int,
     inputMode: InputMode,
     zoomPercent: Int,
     zoomLocked: Boolean,
@@ -96,6 +102,11 @@ fun HandwriteCanvas(
     onZoomChanged: (Int) -> Unit,
     onStrokesFinished: (List<List<StrokeSample>>, onCompleted: () -> Unit) -> Unit,
     onEraseFinished: (Set<ElementId>, onCompleted: () -> Unit) -> Unit,
+    onErasePixelsFinished: (
+        removedIds: Set<ElementId>,
+        piecesByOriginalId: Map<ElementId, List<List<StrokeSample>>>,
+        onCompleted: () -> Unit,
+    ) -> Unit,
     onToggleEraser: () -> Unit,
     onUndo: () -> Unit,
     onTemporaryEraserChanged: (Boolean) -> Unit,
@@ -104,6 +115,19 @@ fun HandwriteCanvas(
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var erasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
     var pendingErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
+    // 像素橡皮的擦除预览：原笔画 id → 存留片段（负数临时 id 仅供显示），手势结束时一并提交。
+    var pixelErasePieces by remember { mutableStateOf<Map<ElementId, List<StrokeElement>>>(emptyMap()) }
+    var pixelErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
+    // 已提交给 ViewModel、等待持久化回执的擦除内容；失败时恢复显示。
+    var pendingPixelPieces by remember { mutableStateOf<Map<ElementId, List<StrokeElement>>>(emptyMap()) }
+    var pendingPixelErasedIds by remember { mutableStateOf<Set<ElementId>>(emptySet()) }
+    // 像素橡皮光标位置（屏幕坐标），用于绘制可调大小的橡皮圆盘。
+    var pixelEraseCursor by remember { mutableStateOf<Offset?>(null) }
+    // 预览片段每次重切都分配全新临时 id：渲染层按笔画 id 缓存 Ink 笔画且不看内容，
+    // 复用 id 会让切分预览永远停留在首次接触时的内容。
+    val previewPieceIds = remember { AtomicLong(0) }
+    // 笔画包围盒在会话内不变，缓存后每次擦除事件对未触及笔画只需常数级剔除。
+    val strokeBoundsCache = remember { mutableMapOf<ElementId, Rect>() }
     var pendingStrokes by remember { mutableStateOf<List<Stroke>>(emptyList()) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     var zoomControlsVisible by remember { mutableStateOf(false) }
@@ -123,6 +147,7 @@ fun HandwriteCanvas(
     val strokesCallback by rememberUpdatedState(onStrokesFinished)
     val zoomCallback by rememberUpdatedState(onZoomChanged)
     val eraseCallback by rememberUpdatedState(onEraseFinished)
+    val erasePixelsCallback by rememberUpdatedState(onErasePixelsFinished)
     val toggleEraserCallback by rememberUpdatedState(onToggleEraser)
     val undoCallback by rememberUpdatedState(onUndo)
     val temporaryEraserCallback by rememberUpdatedState(onTemporaryEraserChanged)
@@ -161,17 +186,93 @@ fun HandwriteCanvas(
         if (hits.isNotEmpty()) erasedIds = erasedIds + hits
     }
 
+    // 预览片段用递减的负数临时 id，避免与持久化 id 冲突；提交时由 ViewModel 重新分配。
+    fun previewPieces(stroke: StrokeElement, pieces: List<List<StrokeSample>>): List<StrokeElement> =
+        pieces.mapIndexed { _, pieceSamples ->
+            StrokeElement(
+                id = ElementId(previewPieceIds.decrementAndGet()),
+                pageId = stroke.pageId,
+                orderKey = stroke.orderKey,
+                style = stroke.style,
+                samples = pieceSamples,
+            )
+        }
+
+    fun strokeBounds(stroke: StrokeElement): Rect = strokeBoundsCache.getOrPut(stroke.id) {
+        var left = Int.MAX_VALUE
+        var top = Int.MAX_VALUE
+        var right = Int.MIN_VALUE
+        var bottom = Int.MIN_VALUE
+        stroke.samples.forEach { sample ->
+            if (sample.point.x < left) left = sample.point.x
+            if (sample.point.x > right) right = sample.point.x
+            if (sample.point.y < top) top = sample.point.y
+            if (sample.point.y > bottom) bottom = sample.point.y
+        }
+        Rect(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
+    }
+
+    // 相邻路径点的间距不超过采样步长，端点都远于包围盒 hitRadius + 步长的线段必然
+    // 碰不到笔画；按此剪除后，长距离擦除不会让每次重算都扫描整条不断增长的路径。
+    fun pruneErasePath(path: List<LogicalPoint>, bounds: Rect, hitRadius: Float): List<LogicalPoint> {
+        val reach = hitRadius + (eraserSize / 4f).coerceAtLeast(ERASER_PATH_MIN_STEP.toFloat())
+        val pruned = path.filter { point ->
+            point.x >= bounds.left - reach && point.x <= bounds.right + reach &&
+                point.y >= bounds.top - reach && point.y <= bounds.bottom + reach
+        }
+        return if (pruned.size == path.size) path else pruned
+    }
+
+    fun erasePixelsAlongPath(path: List<LogicalPoint>) {
+        if (path.isEmpty()) return
+        val eraserRadius = eraserSize / 2f
+        val cursorX = path.last().x.toFloat()
+        val cursorY = path.last().y.toFloat()
+        currentStrokes.asSequence()
+            .filterNot { it.id in erasedIds || it.id in pendingErasedIds || it.id in pixelErasedIds }
+            .forEach { stroke ->
+                val hitRadius = eraserRadius + stroke.style.width / 2f
+                val bounds = strokeBounds(stroke)
+                // 圆盘未触及包围盒的笔画不会被新路径点影响，既有预览保持不变；
+                // 手写笔报点率很高，这一步剔除决定了擦除的整体开销。
+                if (cursorX < bounds.left - hitRadius || cursorX > bounds.right + hitRadius ||
+                    cursorY < bounds.top - hitRadius || cursorY > bounds.bottom + hitRadius
+                ) {
+                    return@forEach
+                }
+                val localPath = pruneErasePath(path, bounds, hitRadius)
+                if (localPath.isEmpty()) return@forEach
+                val pieces = splitStrokeByErasePath(
+                    samples = stroke.samples,
+                    erasePath = localPath,
+                    hitRadius = hitRadius,
+                )
+                when {
+                    pieces.isEmpty() -> {
+                        pixelErasePieces = pixelErasePieces - stroke.id
+                        pixelErasedIds = pixelErasedIds + stroke.id
+                    }
+                    pieces.size == 1 && pieces.single().size == stroke.samples.size ->
+                        pixelErasePieces = pixelErasePieces - stroke.id
+                    else -> pixelErasePieces = pixelErasePieces + (stroke.id to previewPieces(stroke, pieces))
+                }
+            }
+    }
+
     fun applyPanDelta(delta: Offset) {
         if (delta != Offset.Zero) pan = currentTransform.clampPan(pan + delta)
     }
 
-    val gestureModifier = Modifier.pointerInput(tool, inputMode, sideButtonAction) {
+    // eraserSize 必须在 key 中：pointerInput 不重启时协程闭包会一直捕获旧尺寸，
+    // 导致橡皮光标显示新大小而实际擦除仍按旧大小计算。
+    val gestureModifier = Modifier.pointerInput(tool, eraserMode, eraserSize, inputMode, sideButtonAction) {
         awaitEachGesture {
             var previousCentroid: Offset? = null
             var previousSpan = 0f
             var gestureZoom = currentZoom
             var sideActionHandled = false
             var zoomGestureDetected = false
+            val erasePath = mutableListOf<LogicalPoint>()
             do {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 val pressed = event.changes.filter { it.pressed }
@@ -244,7 +345,23 @@ fun HandwriteCanvas(
                         }
                             erasing && contactActive -> {
                                 change.consume()
-                                currentTransform.toLogical(change.position)?.let(::eraseAt)
+                                if (eraserMode == EraserMode.PIXEL) {
+                                    pixelEraseCursor = change.position
+                                    currentTransform.toLogical(change.position)?.let { logical ->
+                                        // 路径按步长采样：线段命中覆盖点间区域，精度无损；
+                                        // 采样同时限定路径长度，长距离擦除不会逐事件全量重算。
+                                        val step = (eraserSize / 4f).coerceAtLeast(ERASER_PATH_MIN_STEP.toFloat())
+                                        val last = erasePath.lastOrNull()
+                                        if (last == null ||
+                                            abs(logical.x - last.x) >= step || abs(logical.y - last.y) >= step
+                                        ) {
+                                            erasePath += logical
+                                            erasePixelsAlongPath(erasePath)
+                                        }
+                                    }
+                                } else {
+                                    currentTransform.toLogical(change.position)?.let(::eraseAt)
+                                }
                             }
                         }
                     }
@@ -252,6 +369,7 @@ fun HandwriteCanvas(
             } while (event.changes.any { it.pressed })
 
             if (zoomGestureDetected) zoomGestureActive = false
+            pixelEraseCursor = null
 
             if (erasedIds.isNotEmpty()) {
                 val completed = erasedIds
@@ -259,6 +377,21 @@ fun HandwriteCanvas(
                 pendingErasedIds = pendingErasedIds + completed
                 eraseCallback(completed) {
                     pendingErasedIds = pendingErasedIds - completed
+                }
+            }
+
+            val pixelRemovedIds = pixelErasePieces.keys + pixelErasedIds
+            if (pixelRemovedIds.isNotEmpty()) {
+                val piecesByOriginalId = pixelErasePieces.mapValues { (_, pieces) ->
+                    pieces.map(StrokeElement::samples)
+                }
+                pendingPixelPieces = pixelErasePieces
+                pendingPixelErasedIds = pixelErasedIds
+                pixelErasePieces = emptyMap()
+                pixelErasedIds = emptySet()
+                erasePixelsCallback(pixelRemovedIds, piecesByOriginalId) {
+                    pendingPixelPieces = emptyMap()
+                    pendingPixelErasedIds = emptySet()
                 }
             }
         }
@@ -286,11 +419,14 @@ fun HandwriteCanvas(
     }
 
     val inkRenderer = remember { InkDocumentRenderer() }
-    val visibleStrokes = remember(strokes, erasedIds, pendingErasedIds) {
-        strokes.filterNot { it.id in erasedIds || it.id in pendingErasedIds }
+    val hiddenOriginalIds = erasedIds + pendingErasedIds +
+        pixelErasePieces.keys + pixelErasedIds + pendingPixelPieces.keys + pendingPixelErasedIds
+    val displayStrokes = remember(strokes, hiddenOriginalIds, pixelErasePieces, pendingPixelPieces) {
+        strokes.filterNot { it.id in hiddenOriginalIds } +
+            (pixelErasePieces.values + pendingPixelPieces.values).flatten()
     }
-    val preparedStrokes = remember(visibleStrokes) {
-        runCatching { inkRenderer.prepare(visibleStrokes) }
+    val preparedStrokes = remember(displayStrokes) {
+        runCatching { inkRenderer.prepare(displayStrokes) }
             .onFailure { error -> Log.e(LOG_TAG, "Unable to prepare persisted Ink stroke", error) }
             .getOrDefault(emptyList())
     }
@@ -436,6 +572,27 @@ fun HandwriteCanvas(
                     }
                 },
             )
+        // 像素橡皮光标：圆盘直径即逻辑橡皮大小，随缩放同步，便于对准擦除轨迹。
+        val eraserCursorColor = MaterialTheme.colorScheme.primary
+        Canvas(Modifier.fillMaxSize()) {
+            pixelEraseCursor?.let { position ->
+                val radius = (eraserSize / 2f) * transform.scale
+                drawCircle(
+                    color = eraserCursorColor.copy(alpha = ERASER_CURSOR_FILL_ALPHA),
+                    radius = radius,
+                    center = position,
+                )
+                drawCircle(
+                    color = eraserCursorColor,
+                    radius = radius,
+                    center = position,
+                    style = DrawStroke(
+                        width = ERASER_CURSOR_BORDER_WIDTH_DP.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+                    ),
+                )
+            }
+        }
         }
         ZoomControlsOverlay(
             visible = zoomControlsVisible && !zoomLocked,
@@ -461,6 +618,18 @@ internal const val MAX_ZOOM_PERCENT = 400
 
 // 透明页面填充的主题色不透明度：过低会与桌面混淆，过高则失去通透感。
 private const val TRANSPARENT_PAGE_FILL_ALPHA = 0.45f
+
+// 像素橡皮大小为逻辑直径（文档坐标，随缩放同步）；下限覆盖常用笔宽，上限到笔画橡皮半径的两倍。
+internal const val MIN_ERASER_SIZE = 200
+internal const val MAX_ERASER_SIZE = 2_000
+internal const val DEFAULT_ERASER_SIZE = 600
+
+// 像素橡皮光标的填充不透明度与描边宽度：填充保证覆盖范围可感知，虚线边呼应选区类视觉。
+private const val ERASER_CURSOR_FILL_ALPHA = 0.12f
+private const val ERASER_CURSOR_BORDER_WIDTH_DP = 1.5f
+
+// 擦除路径的最小采样步长（逻辑单位）：路径按不小于该值的间距记录，限制路径规模。
+internal const val ERASER_PATH_MIN_STEP = 32
 private const val ZOOM_BUTTON_STEP = 25
 private const val ZOOM_GESTURE_SCALE_THRESHOLD = 0.005f
 private const val ZOOM_CONTROLS_HIDE_DELAY_MILLIS = 1_800L
@@ -519,6 +688,82 @@ internal fun isSingleFingerNavigationPointer(
 
 internal fun isPointerContactActive(pressed: Boolean, previousPressed: Boolean): Boolean =
     pressed || previousPressed
+
+// 像素橡皮的切分规则：样本点到擦除路径（点/线段）的距离不超过命中半径（橡皮半径 + 半个
+// 笔宽）即被擦除；存留样本按原顺序分段，不足两个点的片段无法构成笔画，直接丢弃。
+internal const val MIN_PIECE_SAMPLES = 2
+
+internal fun splitStrokeByErasePath(
+    samples: List<StrokeSample>,
+    erasePath: List<LogicalPoint>,
+    hitRadius: Float,
+): List<List<StrokeSample>> {
+    if (samples.isEmpty()) return emptyList()
+    if (erasePath.isEmpty()) return listOf(samples)
+    val hitRadiusSquared = hitRadius * hitRadius
+    val erased = BooleanArray(samples.size)
+    var anyErased = false
+    samples.forEachIndexed { index, sample ->
+        val x = sample.point.x.toFloat()
+        val y = sample.point.y.toFloat()
+        var previousX = Float.NaN
+        var previousY = Float.NaN
+        for (point in erasePath) {
+            val pointX = point.x.toFloat()
+            val pointY = point.y.toFloat()
+            val hit = if (previousX.isNaN()) {
+                squaredDistance(x, y, pointX, pointY) <= hitRadiusSquared
+            } else {
+                squaredSegmentDistance(x, y, previousX, previousY, pointX, pointY) <= hitRadiusSquared
+            }
+            if (hit) {
+                erased[index] = true
+                anyErased = true
+                break
+            }
+            previousX = pointX
+            previousY = pointY
+        }
+    }
+    if (!anyErased) return listOf(samples)
+    val pieces = mutableListOf<List<StrokeSample>>()
+    var current = mutableListOf<StrokeSample>()
+    samples.forEachIndexed { index, sample ->
+        if (erased[index]) {
+            if (current.size >= MIN_PIECE_SAMPLES) pieces += current
+            current = mutableListOf()
+        } else {
+            current += sample
+        }
+    }
+    if (current.size >= MIN_PIECE_SAMPLES) pieces += current
+    return pieces
+}
+
+private fun squaredDistance(x: Float, y: Float, otherX: Float, otherY: Float): Float {
+    val dx = x - otherX
+    val dy = y - otherY
+    return dx * dx + dy * dy
+}
+
+private fun squaredSegmentDistance(
+    x: Float,
+    y: Float,
+    ax: Float,
+    ay: Float,
+    bx: Float,
+    by: Float,
+): Float {
+    val abX = bx - ax
+    val abY = by - ay
+    val apX = x - ax
+    val apY = y - ay
+    val lengthSquared = abX * abX + abY * abY
+    val t = if (lengthSquared == 0f) 0f else ((apX * abX + apY * abY) / lengthSquared).coerceIn(0f, 1f)
+    val dx = apX - abX * t
+    val dy = apY - abY * t
+    return dx * dx + dy * dy
+}
 
 // 临时橡皮只跟随手写笔侧键位；系统返回等交互会终结指针事件流，侧键释放事件可能不再
 // 送达，悬停退出与取消事件必须强制复位，避免工具栏停留在橡皮高亮上。

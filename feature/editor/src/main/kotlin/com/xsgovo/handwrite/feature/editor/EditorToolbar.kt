@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.HighlightOff
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
@@ -107,6 +108,8 @@ fun EditorToolbar(
     onShare: () -> Unit,
     isSharing: Boolean,
     onTool: (EditorTool) -> Unit,
+    onEraserMode: (EraserMode) -> Unit,
+    onEraserSize: (Int) -> Unit,
     onColorSlot: (Int) -> Unit,
     onColorChange: (Int) -> Unit,
     onOpacityChange: (Int) -> Unit,
@@ -159,9 +162,54 @@ fun EditorToolbar(
                     Icon(Icons.Default.Share, contentDescription = "分享当前页面图片")
                 }
             }
-    val selectedTool = if (temporaryEraserActive) EditorTool.ERASER else state.tool
-    ToolButton(EditorTool.PEN, selectedTool, onTool, Icons.Default.Edit, "画笔")
-    ToolButton(EditorTool.ERASER, selectedTool, onTool, Icons.Default.AutoFixNormal, "橡皮擦")
+            val selectedTool = if (temporaryEraserActive) EditorTool.ERASER else state.tool
+            ToolButton(EditorTool.PEN, selectedTool, onTool, Icons.Default.Edit, "画笔")
+            // 橡皮擦图标跟随当前模式，与笔宽按钮显示当前档位的做法一致；
+            // 选中橡皮擦后再次点击弹出模式菜单，菜单内可调像素橡皮的大小。
+            var eraserMenuExpanded by remember { mutableStateOf(false) }
+            var pendingEraserSize by remember { mutableStateOf(state.eraserSize.toFloat()) }
+            LaunchedEffect(eraserMenuExpanded) {
+                if (eraserMenuExpanded) pendingEraserSize = state.eraserSize.toFloat()
+            }
+            val eraserIcon = if (state.eraserMode == EraserMode.PIXEL) {
+                Icons.Default.HighlightOff
+            } else {
+                Icons.Default.AutoFixNormal
+            }
+            Box {
+                ToolButton(
+                    tool = EditorTool.ERASER,
+                    selectedTool = selectedTool,
+                    onTool = { if (selectedTool == EditorTool.ERASER) eraserMenuExpanded = true else onTool(EditorTool.ERASER) },
+                    icon = eraserIcon,
+                    description = "橡皮擦",
+                )
+                DropdownMenu(
+                    expanded = eraserMenuExpanded,
+                    onDismissRequest = { eraserMenuExpanded = false },
+                ) {
+                    CheckableMenuItem("笔画橡皮擦", state.eraserMode == EraserMode.STROKE) {
+                        eraserMenuExpanded = false
+                        onTool(EditorTool.ERASER)
+                        onEraserMode(EraserMode.STROKE)
+                    }
+                    CheckableMenuItem("像素橡皮擦", state.eraserMode == EraserMode.PIXEL) {
+                        eraserMenuExpanded = false
+                        onTool(EditorTool.ERASER)
+                        onEraserMode(EraserMode.PIXEL)
+                    }
+                    HorizontalDivider()
+                    Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Text("橡皮大小 ${pendingEraserSize.roundToInt()}", style = MaterialTheme.typography.titleSmall)
+                        Slider(
+                            value = pendingEraserSize,
+                            onValueChange = { pendingEraserSize = it },
+                            onValueChangeFinished = { onEraserSize(pendingEraserSize.roundToInt()) },
+                            valueRange = MIN_ERASER_SIZE.toFloat()..MAX_ERASER_SIZE.toFloat(),
+                        )
+                    }
+                }
+            }
             state.colorSlots.forEachIndexed { index, argb ->
                 ColorSlotButton(
                     index = index,
@@ -458,20 +506,20 @@ private fun BackgroundMenuPanel(
         }
         Spacer(Modifier.height(6.dp))
         HorizontalDivider()
-        BackgroundStyleItem("无样式", currentStyle == null) {
+        CheckableMenuItem("无样式", currentStyle == null) {
             onSelect(backgroundWithStyle(currentColor, null))
         }
-        BackgroundStyleItem("横线", currentStyle == PatternType.LINED) {
+        CheckableMenuItem("横线", currentStyle == PatternType.LINED) {
             onSelect(backgroundWithStyle(currentColor, PatternType.LINED))
         }
-        BackgroundStyleItem("方格", currentStyle == PatternType.GRID) {
+        CheckableMenuItem("方格", currentStyle == PatternType.GRID) {
             onSelect(backgroundWithStyle(currentColor, PatternType.GRID))
         }
     }
 }
 
 @Composable
-private fun BackgroundStyleItem(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun CheckableMenuItem(label: String, selected: Boolean, onClick: () -> Unit) {
     DropdownMenuItem(
         text = { Text(label) },
         trailingIcon = {
