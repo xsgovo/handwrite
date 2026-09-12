@@ -99,6 +99,9 @@ fun EditorRoute(
         }
     }
     BackHandler {
+        // 系统返回会终结画布的指针事件流，临时橡皮的侧键释放事件可能不再送达；
+        // 导航前复位，避免返回过渡期间工具栏停在橡皮高亮上。
+        temporaryEraserActive = false
         if (state.backBehavior == BackBehavior.OPEN_LIBRARY) onLibrary() else onExitApplication()
     }
 

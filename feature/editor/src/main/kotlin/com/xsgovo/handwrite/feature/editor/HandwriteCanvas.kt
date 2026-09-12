@@ -181,7 +181,9 @@ fun HandwriteCanvas(
                     MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY,
                 ) != 0
                 val sideForEraser = sidePressed && sideButtonAction == SideButtonAction.TEMPORARY_ERASER
-                if (sidePressed && !sideActionHandled) {
+                // awaitEachGesture 的手势循环同样会收到悬停事件；侧键动作只在笔尖接触时分发，
+                // 悬停阶段只同步临时橡皮高亮，避免系统返回打断事件流时残留的键位翻转工具。
+                if (sidePressed && pressed.isNotEmpty() && !sideActionHandled) {
                     when (sideButtonAction) {
                         SideButtonAction.TEMPORARY_ERASER -> Unit
                         SideButtonAction.TOGGLE_ERASER -> toggleEraserCallback()
@@ -234,11 +236,11 @@ fun HandwriteCanvas(
                             sidePressed && sideButtonAction != SideButtonAction.TEMPORARY_ERASER -> {
                                 change.consume()
                             }
-                            navigationPointer -> {
-                                val delta = change.positionChange()
-                                change.consume()
-                                if (!currentZoomLocked) applyPanDelta(delta)
-                            }
+                        navigationPointer -> {
+                            val delta = change.positionChange()
+                            change.consume()
+                            if (!currentZoomLocked) applyPanDelta(delta)
+                        }
                             erasing && contactActive -> {
                                 change.consume()
                                 currentTransform.toLogical(change.position)?.let(::eraseAt)
@@ -261,17 +263,19 @@ fun HandwriteCanvas(
         }
     }
 
-    // awaitEachGesture 只在指针接触期间运行；侧键在悬停阶段按下时也必须同步临时橡皮状态，
-    // 因此用常驻事件循环监听包含 hover 在内的全部指针事件。
+    // 侧键在悬停阶段按下时也要同步临时橡皮状态，因此用常驻事件循环监听包含 hover 在内的
+    // 全部指针事件；事件流被系统返回等交互终结后释放事件可能不再送达，终结事件强制复位。
     val sideButtonWatcherModifier = Modifier.pointerInput(sideButtonAction) {
         awaitPointerEventScope {
             var temporaryEraserActive = false
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
-                val sideForEraser = sideButtonAction == SideButtonAction.TEMPORARY_ERASER &&
-                    event.motionEvent?.buttonState?.and(
-                        MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY,
-                    ) != 0
+                val motionEvent = event.motionEvent
+                val sideForEraser = isTemporaryEraserEvent(
+                    sideButtonAction = sideButtonAction,
+                    actionMasked = motionEvent?.actionMasked,
+                    buttonState = motionEvent?.buttonState ?: 0,
+                )
                 if (sideForEraser != temporaryEraserActive) {
                     temporaryEraserActive = sideForEraser
                     temporaryEraserCallback(sideForEraser)
@@ -514,6 +518,24 @@ internal fun isSingleFingerNavigationPointer(
 
 internal fun isPointerContactActive(pressed: Boolean, previousPressed: Boolean): Boolean =
     pressed || previousPressed
+
+// 临时橡皮只跟随手写笔侧键位；系统返回等交互会终结指针事件流，侧键释放事件可能不再
+// 送达，悬停退出与取消事件必须强制复位，避免工具栏停留在橡皮高亮上。
+internal fun isTemporaryEraserEvent(
+    sideButtonAction: SideButtonAction,
+    actionMasked: Int?,
+    buttonState: Int,
+): Boolean {
+    if (sideButtonAction != SideButtonAction.TEMPORARY_ERASER) return false
+    if (actionMasked == null || actionMasked == MotionEvent.ACTION_HOVER_EXIT ||
+        actionMasked == MotionEvent.ACTION_CANCEL
+    ) {
+        return false
+    }
+    return buttonState.and(
+        MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY,
+    ) != 0
+}
 
 internal fun clipStrokeToPage(
     samples: List<StrokeSample>,
