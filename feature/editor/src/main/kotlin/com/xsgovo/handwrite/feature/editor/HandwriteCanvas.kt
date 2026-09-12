@@ -236,7 +236,8 @@ fun HandwriteCanvas(
                             sidePressed && sideButtonAction != SideButtonAction.TEMPORARY_ERASER -> {
                                 change.consume()
                             }
-                        navigationPointer -> {
+                        // 导航指针只在接触期间平移：悬停事件（如鼠标划过）不得带动页面。
+                        navigationPointer && contactActive -> {
                             val delta = change.positionChange()
                             change.consume()
                             if (!currentZoomLocked) applyPanDelta(delta)
