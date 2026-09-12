@@ -62,6 +62,7 @@ data class PageEntity(
     val logicalWidth: Int,
     val logicalHeight: Int,
     val backgroundPayload: ByteArray,
+    val bookmarked: Boolean = false,
 )
 
 @Entity(

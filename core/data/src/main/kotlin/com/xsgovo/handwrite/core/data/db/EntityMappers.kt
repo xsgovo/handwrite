@@ -38,6 +38,7 @@ internal fun PageEntity.toDomain(): Page = Page(
     orderKey = orderKey,
     size = LogicalSize(logicalWidth, logicalHeight),
     background = persistedBackground(backgroundPayload),
+    bookmarked = bookmarked,
 )
 
 internal fun PageElement.toEntity(): PageElementEntity = when (this) {

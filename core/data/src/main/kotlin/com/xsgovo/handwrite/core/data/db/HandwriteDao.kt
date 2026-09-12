@@ -44,6 +44,40 @@ interface HandwriteDao {
     @Query("SELECT * FROM pages WHERE documentId = :documentId ORDER BY orderKey ASC")
     suspend fun findPageBundles(documentId: Long): List<PageBundle>
 
+    @Transaction
+    @Query("SELECT * FROM pages WHERE documentId = :documentId ORDER BY orderKey ASC")
+    fun observePageBundles(documentId: Long): Flow<List<PageBundle>>
+
+    @Query("SELECT * FROM pages WHERE documentId = :documentId ORDER BY orderKey ASC")
+    suspend fun findPages(documentId: Long): List<PageEntity>
+
+    @Query("SELECT COUNT(*) FROM pages WHERE documentId = :documentId")
+    suspend fun countPages(documentId: Long): Int
+
+    @Query("SELECT COALESCE(MAX(orderKey), 0) FROM pages WHERE documentId = :documentId")
+    suspend fun findMaxPageOrderKey(documentId: Long): Long
+
+    @Query("SELECT id FROM pages WHERE documentId = :documentId AND orderKey < :orderKey ORDER BY orderKey DESC LIMIT 1")
+    suspend fun findPageIdBefore(documentId: Long, orderKey: Long): Long?
+
+    @Query("SELECT id FROM pages WHERE documentId = :documentId ORDER BY orderKey ASC LIMIT 1")
+    suspend fun findFirstPageId(documentId: Long): Long?
+
+    @Query("DELETE FROM pages WHERE id = :pageId")
+    suspend fun deletePage(pageId: Long): Int
+
+    @Query("UPDATE document_states SET lastActivePageId = :pageId WHERE documentId = :documentId")
+    suspend fun updateLastActivePage(documentId: Long, pageId: Long): Int
+
+    @Query(
+        "UPDATE document_states SET lastActivePageId = :fallbackPageId " +
+            "WHERE documentId = :documentId AND lastActivePageId = :deletedPageId",
+    )
+    suspend fun replaceLastActivePageIfDeleted(documentId: Long, deletedPageId: Long, fallbackPageId: Long): Int
+
+    @Query("UPDATE library_items SET modifiedAtEpochMillis = :now WHERE id = :documentId AND kind = 'DOCUMENT'")
+    suspend fun touchDocument(documentId: Long, now: Long): Int
+
     @Query("SELECT documentId FROM pages WHERE id = :pageId")
     suspend fun findDocumentIdForPage(pageId: Long): Long?
 
@@ -64,6 +98,12 @@ interface HandwriteDao {
 
     @Query("UPDATE pages SET backgroundPayload = :payload WHERE id = :pageId")
     suspend fun updateBackground(pageId: Long, payload: ByteArray): Int
+
+    @Query("UPDATE pages SET bookmarked = :bookmarked WHERE id = :pageId")
+    suspend fun updateBookmarked(pageId: Long, bookmarked: Boolean): Int
+
+    @Query("UPDATE pages SET orderKey = :orderKey WHERE id = :pageId")
+    suspend fun updatePageOrderKey(pageId: Long, orderKey: Long): Int
 
     @Query("UPDATE library_items SET modifiedAtEpochMillis = :now WHERE id = (SELECT documentId FROM pages WHERE id = :pageId)")
     suspend fun touchDocumentForPage(pageId: Long, now: Long)

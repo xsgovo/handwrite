@@ -41,8 +41,23 @@ class CommandHistoryTest {
         assertEquals(2, history.undoCount)
     }
 
-    private fun addStroke(id: Long): DocumentCommand.ReplaceElements {
-        val pageId = PageId(1)
+    @Test
+    fun droppingCommandsForAPageKeepsOtherPagesUndoable() {
+        val history = CommandHistory(HistoryLimits(maxCommands = 10, maxEstimatedBytes = 10_000))
+        val pageOneCommand = addStroke(1)
+        history.recordCommitted(pageOneCommand)
+        history.recordCommitted(addStroke(2, pageId = PageId(2)))
+
+        history.dropCommandsForPage(PageId(2))
+
+        assertEquals(pageOneCommand.inverse(), history.commandToUndo())
+        history.confirmUndo()
+        assertFalse(history.canUndo)
+        assertTrue(history.canRedo)
+        assertEquals(pageOneCommand, history.commandToRedo())
+    }
+
+    private fun addStroke(id: Long, pageId: PageId = PageId(1)): DocumentCommand.ReplaceElements {
         val stroke = StrokeElement(
             id = ElementId(id),
             pageId = pageId,

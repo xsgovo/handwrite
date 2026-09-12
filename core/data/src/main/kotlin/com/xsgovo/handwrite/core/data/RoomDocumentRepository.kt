@@ -22,6 +22,7 @@ import com.xsgovo.handwrite.core.model.DomainFailure
 import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.PageBackground
+import com.xsgovo.handwrite.core.model.Page
 import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PageId
 import java.io.IOException
@@ -42,6 +43,9 @@ class RoomDocumentRepository(
 
     override fun observePage(pageId: PageId): Flow<PageContent?> =
         dao.observePage(pageId.value).map { it?.toDomain() }
+
+    override fun observePageContents(documentId: DocumentId): Flow<List<PageContent>> =
+        dao.observePageBundles(documentId.value).map { bundles -> bundles.map { it.toDomain() } }
 
     override suspend fun loadSnapshot(documentId: DocumentId): DomainResult<DocumentSnapshot> = guardedWrite {
         database.withTransaction {
@@ -91,6 +95,83 @@ class RoomDocumentRepository(
         }
     }
 
+    override suspend fun addPage(
+        documentId: DocumentId,
+        size: LogicalSize,
+        background: PageBackground,
+        nowEpochMillis: Long,
+    ): DomainResult<Page> = guardedWrite {
+        database.withTransaction {
+            val pageEntity = PageEntity(
+                documentId = documentId.value,
+                orderKey = dao.findMaxPageOrderKey(documentId.value) + ORDER_STEP,
+                logicalWidth = size.width,
+                logicalHeight = size.height,
+                backgroundPayload = PayloadCodec.encodeBackground(background),
+            )
+            val pageId = dao.insertPage(pageEntity)
+            background.resourceIdOrNull()?.let { requireResourceReference(it.value, 1) }
+            dao.touchDocument(documentId.value, clock.nowMillis())
+            pageEntity.copy(id = pageId).toDomain()
+        }
+    }
+
+    override suspend fun deletePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit> = guardedWrite {
+        database.withTransaction {
+            if (dao.findDocumentIdForPage(pageId.value) != documentId.value) throw MissingPageException()
+            if (dao.countPages(documentId.value) <= 1) throw LastPageException()
+            val page = dao.findPages(documentId.value).firstOrNull { it.id == pageId.value }
+                ?: throw MissingPageException()
+            val background = PayloadCodec.decodeBackground(page.backgroundPayload)
+            if (dao.deletePage(pageId.value) == 0) throw MissingPageException()
+            background.resourceIdOrNull()?.let { requireResourceReference(it.value, -1) }
+            // 最后活跃页被删除时回退到相邻页，优先前一个页面，否则取剩余第一页。
+            val fallbackPageId = dao.findPageIdBefore(documentId.value, page.orderKey)
+                ?: dao.findFirstPageId(documentId.value)
+            if (fallbackPageId != null) {
+                dao.replaceLastActivePageIfDeleted(documentId.value, pageId.value, fallbackPageId)
+            }
+            dao.touchDocument(documentId.value, clock.nowMillis())
+        }
+    }
+
+    override suspend fun updateLastActivePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit> =
+        guardedWrite {
+            database.withTransaction {
+                if (dao.findDocumentIdForPage(pageId.value) != documentId.value) throw MissingPageException()
+                if (dao.updateLastActivePage(documentId.value, pageId.value) == 0) throw MissingDocumentException()
+            }
+        }
+
+    override suspend fun movePage(documentId: DocumentId, pageId: PageId, delta: Int): DomainResult<Unit> =
+        guardedWrite {
+            database.withTransaction {
+                if (dao.findDocumentIdForPage(pageId.value) != documentId.value) throw MissingPageException()
+                val pages = dao.findPages(documentId.value)
+                val index = pages.indexOfFirst { it.id == pageId.value }
+                val targetIndex = index + delta
+                if (index < 0 || targetIndex !in pages.indices) throw MissingPageException()
+                // 唯一索引 (documentId, orderKey) 下交换键值：先挪到临时键再落位。
+                val page = pages[index]
+                val neighbor = pages[targetIndex]
+                dao.updatePageOrderKey(pageId.value, -1L - pageId.value)
+                dao.updatePageOrderKey(neighbor.id, page.orderKey)
+                dao.updatePageOrderKey(pageId.value, neighbor.orderKey)
+                dao.touchDocument(documentId.value, clock.nowMillis())
+            }
+        }
+
+    override suspend fun setPageBookmarked(
+        documentId: DocumentId,
+        pageId: PageId,
+        bookmarked: Boolean,
+    ): DomainResult<Unit> = guardedWrite {
+        database.withTransaction {
+            if (dao.findDocumentIdForPage(pageId.value) != documentId.value) throw MissingPageException()
+            if (dao.updateBookmarked(pageId.value, bookmarked) == 0) throw MissingPageException()
+        }
+    }
+
     override suspend fun apply(
         command: DocumentCommand,
     ): DomainResult<Unit> = guardedWrite {
@@ -134,6 +215,8 @@ class RoomDocumentRepository(
         DomainResult.Failure(DomainFailure.DocumentNotFound)
     } catch (exception: MissingPageException) {
         DomainResult.Failure(DomainFailure.PageNotFound)
+    } catch (exception: LastPageException) {
+        DomainResult.Failure(DomainFailure.LastPageRemaining)
     } catch (exception: MissingResourceException) {
         DomainResult.Failure(DomainFailure.ResourceNotFound)
     } catch (exception: IOException) {
@@ -142,6 +225,7 @@ class RoomDocumentRepository(
 
     private class MissingDocumentException : Exception()
     private class MissingPageException : Exception()
+    private class LastPageException : Exception()
 
     private suspend fun requireResourceReference(resourceId: Long, delta: Long) {
         if (dao.adjustResourceReferenceCount(resourceId, delta) == 0) throw MissingResourceException()

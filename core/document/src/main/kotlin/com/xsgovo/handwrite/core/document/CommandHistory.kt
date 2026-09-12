@@ -1,5 +1,7 @@
 package com.xsgovo.handwrite.core.document
 
+import com.xsgovo.handwrite.core.model.PageId
+
 data class HistoryLimits(
     val maxCommands: Int,
     val maxEstimatedBytes: Long,
@@ -41,6 +43,13 @@ class CommandHistory(
         val command = redo.removeLastOrNull() ?: return
         undo.addLast(command)
         trimToLimits()
+    }
+
+    // 页面删除不可撤销，但历史里可能残留指向已删页面的笔迹命令；
+    // 不清理的话，后续撤销会撞上缺失页面并反复报错。
+    fun dropCommandsForPage(pageId: PageId) {
+        undo.removeAll { it.pageId == pageId }
+        redo.removeAll { it.pageId == pageId }
     }
 
     fun clear() {

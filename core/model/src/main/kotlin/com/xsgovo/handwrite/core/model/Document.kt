@@ -19,6 +19,7 @@ data class Page(
     val orderKey: Long,
     val size: LogicalSize,
     val background: PageBackground,
+    val bookmarked: Boolean = false,
 )
 
 data class PageContent(

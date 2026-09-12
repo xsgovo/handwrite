@@ -4,6 +4,7 @@ sealed interface DomainFailure {
     data object StorageFull : DomainFailure
     data object DocumentNotFound : DomainFailure
     data object PageNotFound : DomainFailure
+    data object LastPageRemaining : DomainFailure
     data object DatabaseUnavailable : DomainFailure
     data object ResourceNotFound : DomainFailure
     data object InvalidResource : DomainFailure

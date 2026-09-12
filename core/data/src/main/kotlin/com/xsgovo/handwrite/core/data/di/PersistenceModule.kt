@@ -11,6 +11,7 @@ import com.xsgovo.handwrite.core.data.ProtoSettingsRepository
 import com.xsgovo.handwrite.core.data.RoomDocumentRepository
 import com.xsgovo.handwrite.core.data.db.HandwriteDao
 import com.xsgovo.handwrite.core.data.db.HandwriteDatabase
+import com.xsgovo.handwrite.core.data.db.MIGRATION_3_4
 import com.xsgovo.handwrite.core.data.settings.AppSettingsPayload
 import com.xsgovo.handwrite.core.data.settings.AppSettingsSerializer
 import com.xsgovo.handwrite.core.document.BackgroundResourceRepository
@@ -37,7 +38,10 @@ object PersistenceModule {
         context,
         HandwriteDatabase::class.java,
         "handwrite.db",
-    ).fallbackToDestructiveMigration(dropAllTables = true).build()
+    )
+        .addMigrations(MIGRATION_3_4)
+        .fallbackToDestructiveMigration(dropAllTables = true)
+        .build()
 
     @Provides
     fun provideDao(database: HandwriteDatabase): HandwriteDao = database.handwriteDao()

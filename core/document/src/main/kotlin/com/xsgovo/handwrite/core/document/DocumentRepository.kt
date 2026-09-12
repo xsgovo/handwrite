@@ -19,6 +19,8 @@ interface DocumentRepository {
 
     fun observePage(pageId: PageId): Flow<PageContent?>
 
+    fun observePageContents(documentId: DocumentId): Flow<List<PageContent>>
+
     suspend fun loadSnapshot(documentId: DocumentId): DomainResult<DocumentSnapshot>
 
     suspend fun createDocument(
@@ -29,6 +31,25 @@ interface DocumentRepository {
     ): DomainResult<DocumentId>
 
     suspend fun deleteDocument(documentId: DocumentId): DomainResult<Unit>
+
+    suspend fun addPage(
+        documentId: DocumentId,
+        size: LogicalSize,
+        background: PageBackground,
+        nowEpochMillis: Long,
+    ): DomainResult<Page>
+
+    suspend fun deletePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit>
+
+    suspend fun movePage(documentId: DocumentId, pageId: PageId, delta: Int): DomainResult<Unit>
+
+    suspend fun setPageBookmarked(
+        documentId: DocumentId,
+        pageId: PageId,
+        bookmarked: Boolean,
+    ): DomainResult<Unit>
+
+    suspend fun updateLastActivePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit>
 
     suspend fun apply(command: DocumentCommand): DomainResult<Unit>
 }
