@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,7 +31,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -104,6 +104,8 @@ fun HandwriteCanvas(
     pageSize: LogicalSize,
     background: PageBackground,
     backgroundImage: ImageBitmap?,
+    // 待添加虚拟页的纸面背景：虚拟页按真实纸面渲染，随翻页拖拽露出与停留。
+    pendingAddBackground: PageBackground,
     strokes: List<StrokeElement>,
     tool: EditorTool,
     eraserMode: EraserMode,
@@ -174,25 +176,6 @@ fun HandwriteCanvas(
     var pageDragPx by remember(canvasSession) { mutableFloatStateOf(0f) }
     var pageDragSettleJob by remember(canvasSession) { mutableStateOf<Job?>(null) }
     val inkingEnabledState by rememberUpdatedState(inkingEnabled)
-    // 派生状态里读取的 surface 必须来自 state：derivedStateOf 只追踪 snapshot state，
-    // 直接捕获函数参数会在 canvasSession 不变的表面切换（如进入待添加页）时读到旧值，
-    // 待添加页停留层因此永远不显示。
-    val currentSurface by rememberUpdatedState(surface)
-    // 待添加虚拟页内容的两个图层：页面图层之下的露出层（页面滑出时逐渐露出、返回时被
-    // 逐渐覆盖）与停留在虚拟页时的最上层交互层。同一组合两个摆放位，切换同帧无缝；
-    // 派生状态仅在翻转时触发重组。canvasSession 必须参与 key：pageDragPx 随会话重建
-    // 状态对象，派生状态不重建会一直读旧对象（物化文档等切面后露出失效）。
-    val pendingAddUnderlayVisible by remember(canvasSession, nextNeighbor) {
-        derivedStateOf {
-            (nextNeighbor is EditorNeighbor.PendingAdd && pageDragPx < -0.5f) ||
-                (currentSurface is EditorSurface.PendingAdd && pageDragPx > 0.5f)
-        }
-    }
-    val pendingAddOverlayVisible by remember(canvasSession) {
-        derivedStateOf {
-            currentSurface is EditorSurface.PendingAdd && abs(pageDragPx) <= 0.5f
-        }
-    }
     val pointerEventToLogicalTransform = remember(transform) {
         transform.pointerEventToLogicalTransform()
     }
@@ -425,7 +408,9 @@ fun HandwriteCanvas(
                     if (change != null) {
                         val contactActive = isPointerContactActive(change.pressed, change.previousPressed)
                         val erasing = tool == EditorTool.ERASER || change.type == PointerType.Eraser || sideForEraser
+                        // 待添加虚拟页不可书写：任何单指接触都作为导航指针，滑动即可翻回上一页。
                         val navigationPointer = isSingleFingerNavigationPointer(
+                            inkingEnabled = inkingEnabledState,
                             inputMode = inputMode,
                             pointerType = change.type,
                             rawToolType = motionEvent?.takeIf { it.pointerCount > 0 }?.getToolType(0),
@@ -628,11 +613,6 @@ fun HandwriteCanvas(
             .background(LocalHandwriteColors.current.canvasDesk)
             .onSizeChanged { canvasSize = it },
     ) {
-        // 待添加虚拟页露出阶段：内容铺在页面图层之下，随页面滑出逐渐露出；此阶段由画布
-        // 手势接管，内容无需交互。
-        if (pendingAddUnderlayVisible) {
-            pendingAddPageContent()
-        }
         Box(
             Modifier
                 .fillMaxSize()
@@ -642,40 +622,74 @@ fun HandwriteCanvas(
             Canvas(Modifier.fillMaxSize()) {
                 val drag = pageDragPx
                 val slideStep = canvasSize.width + NEIGHBOR_PAGE_GAP_DP.dp.toPx()
-                // 拖拽中在移动方向的一侧渲染相邻真实页：右滑上一页自左侧跟入，左滑下一页自右侧
-                // 跟入，与松手后的切面位置衔接，形成整屏翻页的连续预览。相邻面是待添加虚拟页时
-                // 不在此绘制：其内容由槽位图层铺在页面之下呈现。
+                // 拖拽中在移动方向的一侧渲染相邻展示面：右滑上一页自左侧跟入，左滑下一页
+                // （最后一页的下一面即待添加虚拟页）自右侧跟入。相邻面都按切换后的最终
+                // 布局渲染，松手落位与切面后画布的首帧逐像素一致。
                 val neighbor = when {
                     drag > 0.5f -> prevNeighborState
                     drag < -0.5f -> nextNeighborState
                     else -> null
                 }
-                if (neighbor is EditorNeighbor.Page) {
-                    val content = neighbor.content
+                if (neighbor != null) {
                     val neighborOffset = drag - sign(drag) * slideStep
-                    // 相邻页按切换后的最终布局渲染（自身页面尺寸、无平移），松手落位与
-                    // 切面后画布的首帧逐像素一致；沿用当前页变换会在缩放平移时错位。
-                    val neighborTransform = CanvasPageTransform.create(
-                        canvasSize,
-                        content.page.size,
-                        currentZoom / 100f,
-                        Offset.Zero,
-                    )
-                    withTransform({ translate(neighborOffset, 0f) }) {
-                        drawPaperLayer(
-                            renderer = inkRenderer,
-                            rect = neighborTransform.pageRect,
-                            background = content.page.background,
-                            scale = neighborTransform.scale,
-                            transparentFillColor = transparentPageColor,
-                            assetImage = null,
-                            preparedStrokes = if (drag > 0.5f) prevPreparedStrokes else nextPreparedStrokes,
-                        )
+                    when (neighbor) {
+                        is EditorNeighbor.Page -> {
+                            val content = neighbor.content
+                            // 相邻真实页按切换后的最终布局渲染（自身页面尺寸、无平移）；
+                            // 沿用当前页变换会在缩放平移时错位。
+                            val neighborTransform = CanvasPageTransform.create(
+                                canvasSize,
+                                content.page.size,
+                                currentZoom / 100f,
+                                Offset.Zero,
+                            )
+                            withTransform({ translate(neighborOffset, 0f) }) {
+                                drawPaperLayer(
+                                    renderer = inkRenderer,
+                                    rect = neighborTransform.pageRect,
+                                    background = content.page.background,
+                                    scale = neighborTransform.scale,
+                                    transparentFillColor = transparentPageColor,
+                                    assetImage = null,
+                                    preparedStrokes = if (drag > 0.5f) prevPreparedStrokes else nextPreparedStrokes,
+                                )
+                            }
+                        }
+                        // 待添加虚拟页没有落库内容：沿用当前页尺寸与当前视图状态（缩放、
+                        // 平移）渲染空纸面，切换前后位置不变，与真实页的翻页预览一致。
+                        EditorNeighbor.PendingAdd -> {
+                            val neighborTransform = CanvasPageTransform.create(
+                                canvasSize,
+                                pageSize,
+                                currentZoom / 100f,
+                                pan,
+                            )
+                            withTransform({ translate(neighborOffset, 0f) }) {
+                                drawPaperLayer(
+                                    renderer = inkRenderer,
+                                    rect = neighborTransform.pageRect,
+                                    background = pendingAddBackground,
+                                    scale = neighborTransform.scale,
+                                    transparentFillColor = transparentPageColor,
+                                    assetImage = null,
+                                    preparedStrokes = emptyList(),
+                                )
+                            }
+                        }
                     }
                 }
-                // 当前展示面是待添加虚拟页时没有纸面图层：内容完全交给槽位图层呈现。
-                if (surface !is EditorSurface.PendingAdd) {
-                    withTransform({ translate(drag, 0f) }) {
+                withTransform({ translate(drag, 0f) }) {
+                    if (surface is EditorSurface.PendingAdd) {
+                        drawPaperLayer(
+                            renderer = inkRenderer,
+                            rect = transform.pageRect,
+                            background = pendingAddBackground,
+                            scale = transform.scale,
+                            transparentFillColor = transparentPageColor,
+                            assetImage = null,
+                            preparedStrokes = emptyList(),
+                        )
+                    } else {
                         drawPaperLayer(
                             renderer = inkRenderer,
                             rect = transform.pageRect,
@@ -783,10 +797,26 @@ fun HandwriteCanvas(
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
         )
 
-        // 待添加虚拟页停留阶段：内容铺在手势层之上供按钮点击。此阶段没有纸面图层，
-        // 视觉与露出时一致；与露出层为同一组合、同帧切换，画面无缝。
-        if (pendingAddOverlayVisible) {
-            pendingAddPageContent()
+        // 待添加虚拟页停留层：纸面已由页面图层按真实页面渲染，这里只铺操作入口。
+        // 定位在纸面中心并随纸面平移（含翻页拖拽），返回手势开始后与纸面一同滑出；
+        // 铺在手势层之上保证按钮可点。
+        if (surface is EditorSurface.PendingAdd) {
+            Box(Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset {
+                            val center = currentTransform.pageRect.center + Offset(pageDragPx, 0f)
+                            IntOffset(
+                                (center.x - canvasSize.width / 2f).roundToInt(),
+                                (center.y - canvasSize.height / 2f).roundToInt(),
+                            )
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    pendingAddPageContent()
+                }
+            }
         }
     }
 }
@@ -946,15 +976,20 @@ private fun ZoomControlsOverlay(
     }
 }
 
+// 手指是否承担单指导航（平移/翻页）：手写笔模式下手指与鼠标导航，笔尖书写；
+// 待添加虚拟页等不可书写面上任何指针都是导航指针。
 internal fun isSingleFingerNavigationPointer(
+    inkingEnabled: Boolean,
     inputMode: InputMode,
     pointerType: PointerType,
     rawToolType: Int?,
-): Boolean = inputMode == InputMode.STYLUS &&
-    pointerType != PointerType.Stylus &&
-    pointerType != PointerType.Eraser &&
-    rawToolType != MotionEvent.TOOL_TYPE_STYLUS &&
-    rawToolType != MotionEvent.TOOL_TYPE_ERASER
+): Boolean = !inkingEnabled || (
+    inputMode == InputMode.STYLUS &&
+        pointerType != PointerType.Stylus &&
+        pointerType != PointerType.Eraser &&
+        rawToolType != MotionEvent.TOOL_TYPE_STYLUS &&
+        rawToolType != MotionEvent.TOOL_TYPE_ERASER
+    )
 
 internal fun isPointerContactActive(pressed: Boolean, previousPressed: Boolean): Boolean =
     pressed || previousPressed

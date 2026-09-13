@@ -74,14 +74,12 @@ fun EditorRoute(
         )
     }
     val backgroundImage by rememberBackgroundAssetImage(state.background, state.backgroundResource)
-    // 待添加页内容：铺在画布页面图层之下（拖拽露出）并在待添加页状态保持展示，
-    // 只此一份组合，露出预览与最终界面天然一致。
+    // 待添加页的停留交互层：纸面由画布渲染，这里只提供纸面上的操作入口。
     val pendingAddPageContent: @Composable () -> Unit = {
         AddPagePlaceholder(
             pendingBackground = state.pendingAddBackground,
             onAddPage = viewModel::addPage,
             onChangeBackground = viewModel::setPendingAddBackground,
-            modifier = Modifier.fillMaxSize(),
         )
     }
 
@@ -198,6 +196,7 @@ fun EditorRoute(
                     pageSize = state.pageSize,
                     background = state.background,
                     backgroundImage = backgroundImage,
+                    pendingAddBackground = state.pendingAddBackground,
                     strokes = state.strokes,
                     tool = state.tool,
                     eraserMode = state.eraserMode,

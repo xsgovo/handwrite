@@ -526,6 +526,7 @@ class EditorViewModelTest {
     fun onlyNonStylusPointersNavigateInStylusMode() {
         assertTrue(
             isSingleFingerNavigationPointer(
+                inkingEnabled = true,
                 inputMode = com.xsgovo.handwrite.core.model.InputMode.STYLUS,
                 pointerType = PointerType.Touch,
                 rawToolType = MotionEvent.TOOL_TYPE_FINGER,
@@ -533,11 +534,35 @@ class EditorViewModelTest {
         )
         assertFalse(
             isSingleFingerNavigationPointer(
+                inkingEnabled = true,
                 inputMode = com.xsgovo.handwrite.core.model.InputMode.STYLUS,
                 pointerType = PointerType.Stylus,
                 rawToolType = MotionEvent.TOOL_TYPE_STYLUS,
             ),
         )
+    }
+
+    @Test
+    fun everyPointerNavigatesWhenInkingIsDisabled() {
+        // 待添加虚拟页不可书写：任何单指都是导航指针，滑动即可翻回上一页。
+        com.xsgovo.handwrite.core.model.InputMode.entries.forEach { inputMode ->
+            assertTrue(
+                isSingleFingerNavigationPointer(
+                    inkingEnabled = false,
+                    inputMode = inputMode,
+                    pointerType = PointerType.Touch,
+                    rawToolType = MotionEvent.TOOL_TYPE_FINGER,
+                ),
+            )
+            assertTrue(
+                isSingleFingerNavigationPointer(
+                    inkingEnabled = false,
+                    inputMode = inputMode,
+                    pointerType = PointerType.Stylus,
+                    rawToolType = MotionEvent.TOOL_TYPE_STYLUS,
+                ),
+            )
+        }
     }
 
     @Test
