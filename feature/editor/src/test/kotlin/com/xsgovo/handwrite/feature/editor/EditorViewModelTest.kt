@@ -593,6 +593,25 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun selectPageShowsTheTargetPageContentImmediately() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+
+        // 翻页过渡的第一帧就要有目标页的内容：切页不等待异步内容流补齐，
+        // 否则新页面先渲染空白纸面、笔迹随后闪现。
+        viewModel.selectPage(firstPageId)
+
+        assertEquals(firstPageId, viewModel.state.value.pageId)
+        assertEquals(1, viewModel.state.value.strokes.size)
+        assertEquals(LogicalPoint(100, 200), viewModel.state.value.strokes.single().samples.single().point)
+    }
+
+    @Test
     fun undoTargetsThePageWhereTheStrokeWasCommitted() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val viewModel = createViewModel(repository)
@@ -678,7 +697,7 @@ class EditorViewModelTest {
         viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
         advanceUntilIdle()
 
-        viewModel.enterPendingAddPage()
+        viewModel.selectPendingAddPage()
         advanceUntilIdle()
         assertTrue(viewModel.state.value.onPendingAddPage)
         viewModel.setPendingAddBackground(PageBackground.Pattern(PatternType.GRID))
@@ -699,7 +718,7 @@ class EditorViewModelTest {
         advanceUntilIdle()
         val firstPageId = viewModel.state.value.pageId!!
 
-        viewModel.enterPendingAddPage()
+        viewModel.selectPendingAddPage()
         advanceUntilIdle()
         assertTrue(viewModel.state.value.onPendingAddPage)
 
@@ -707,6 +726,25 @@ class EditorViewModelTest {
         advanceUntilIdle()
 
         assertFalse(viewModel.state.value.onPendingAddPage)
+    }
+
+    @Test
+    fun exitingThePendingAddPageReturnsToTheLastPage() = runTest(dispatcher) {
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val lastPageId = viewModel.state.value.pageId!!
+
+        viewModel.selectPendingAddPage()
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.onPendingAddPage)
+
+        viewModel.exitPendingAddPage()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.value.onPendingAddPage)
+        assertEquals(lastPageId, viewModel.state.value.pageId)
     }
 
     @Test
@@ -721,7 +759,7 @@ class EditorViewModelTest {
         viewModel.selectPage(firstPageId)
         advanceUntilIdle()
 
-        viewModel.enterPendingAddPage()
+        viewModel.selectPendingAddPage()
         advanceUntilIdle()
 
         assertFalse(viewModel.state.value.onPendingAddPage)

@@ -9,15 +9,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -36,7 +27,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -45,9 +35,6 @@ import androidx.compose.ui.platform.LocalContext
 import com.xsgovo.handwrite.core.document.ResourceInput
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
-import com.xsgovo.handwrite.core.model.PageBackground
-import com.xsgovo.handwrite.core.model.PageContent
-import com.xsgovo.handwrite.core.model.PageId
 import com.xsgovo.handwrite.core.rendering.rememberBackgroundAssetImage
 import java.io.FileNotFoundException
 import kotlinx.coroutines.CancellationException
@@ -69,8 +56,6 @@ fun EditorRoute(
     var confirmClear by remember { mutableStateOf(false) }
     var confirmDeletePage by remember { mutableStateOf(false) }
     var pagesPanelOpen by remember { mutableStateOf(false) }
-    // 翻页手势已把旧页面顺滑出屏：切换时跳过退出动画，仅保留新页面的滑入。
-    var swipeCommittedSurface by remember { mutableStateOf(false) }
     var temporaryEraserActive by remember { mutableStateOf(false) }
     var isSharing by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -89,6 +74,16 @@ fun EditorRoute(
         )
     }
     val backgroundImage by rememberBackgroundAssetImage(state.background, state.backgroundResource)
+    // 待添加页内容：铺在画布页面图层之下（拖拽露出）并在待添加页状态保持展示，
+    // 只此一份组合，露出预览与最终界面天然一致。
+    val pendingAddPageContent: @Composable () -> Unit = {
+        AddPagePlaceholder(
+            pendingBackground = state.pendingAddBackground,
+            onAddPage = viewModel::addPage,
+            onChangeBackground = viewModel::setPendingAddBackground,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
 
     // 纸面底色延伸到状态栏并按明暗切换系统图标对比度；无底色时回到系统默认。
     DisposableEffect(state.background) {
@@ -178,98 +173,67 @@ fun EditorRoute(
             },
             snackbarHost = { SnackbarHost(snackbar) },
         ) { paddingValues ->
-            // 画布与待添加页共享同一过渡舞台：方向性滑动完成页面间切换。
-            val surface = if (state.onPendingAddPage) {
-                EditorSurface.PendingAddPage
-            } else {
-                EditorSurface.Page(state.pageId)
+            // 画布常驻：翻页手势的预览与提交都在画布内完成，切页只更换画布内容，不重建组合。
+            // InProgressStrokes 的低延迟湿墨 SurfaceView 若随画布组合销毁重建，每次切页都会
+            // 闪一下；页面面板选择发生在全屏覆盖层之下，直接呈现即可。
+            // 待添加虚拟页作为紧随最后一页的普通翻页目标参与 PREV/NEXT 切换。
+            val prevNeighbor = when (val index = state.pageIndex) {
+                null -> state.pages.lastOrNull()?.let { EditorNeighbor.Page(it) }
+                else -> if (index > 0) EditorNeighbor.Page(state.pages[index - 1]) else null
             }
-            AnimatedContent(
-                targetState = surface,
-                transitionSpec = {
-                    val direction = editorSurfaceNavDirection(initialState, targetState, state.pages)
-                    when {
-                        swipeCommittedSurface && targetState is EditorSurface.PendingAddPage ->
-                            EnterTransition.None togetherWith ExitTransition.None
-                        swipeCommittedSurface ->
-                            enterAfterSwipe(direction) togetherWith ExitTransition.None
-                        direction > 0 -> slideInHorizontally { -it } togetherWith slideOutHorizontally { it }
-                        direction < 0 -> slideInHorizontally { it } togetherWith slideOutHorizontally { -it }
-                        else -> fadeIn(tween(200)) togetherWith fadeOut(tween(200))
-                    }
-                },
-                contentAlignment = Alignment.TopStart,
-                modifier = Modifier.fillMaxSize(),
-            ) { target ->
-                Box(Modifier.fillMaxSize().padding(paddingValues)) {
-                    when (target) {
-                        is EditorSurface.Page ->
-                            if (!state.onPendingAddPage && target.pageId == state.pageId) {
-                                // 画布内部状态（平移、擦除预览、笔画包围盒缓存）以页面为生命周期。
-                                HandwriteCanvas(
-                                    pageSize = state.pageSize,
-                                    background = state.background,
-                                    backgroundImage = backgroundImage,
-                                    strokes = state.strokes,
-                                    tool = state.tool,
-                                    eraserMode = state.eraserMode,
-                                    eraserSize = state.eraserSize,
-                                    inputMode = state.inputMode,
-                                    zoomPercent = state.zoomPercent,
-                                    zoomLocked = state.zoomLocked,
-                                    activeColor = state.activeColor,
-                                    activeWidth = state.activeWidth,
-                                    activeBrushId = state.activeBrushId,
-                                    pressureSensitivity = state.pressureSensitivity,
-                                    sideButtonAction = state.sideButtonAction,
-                                    onZoomChanged = viewModel::setZoom,
-                                    onStrokesFinished = viewModel::commitStrokes,
-                                    onEraseFinished = viewModel::eraseElements,
-                                    onErasePixelsFinished = viewModel::eraseByPixels,
-                                    onToggleEraser = viewModel::toggleEraser,
-                                    onUndo = viewModel::undo,
-                                    canNavigatePrev = (state.pageIndex ?: 0) > 0,
-                                    isLastPage = state.pageCount == 0 ||
-                                        (state.pageIndex ?: 0) >= state.pageCount - 1,
-                                    prevPageContent = state.pageIndex?.takeIf { it > 0 }
-                                        ?.let { state.pages.getOrNull(it - 1) },
-                                    nextPageContent = state.pageIndex
-                                        ?.takeIf { it < state.pages.size - 1 }
-                                        ?.let { state.pages.getOrNull(it + 1) },
-                                    onSwipeNavigate = { direction ->
-                                        swipeCommittedSurface = true
-                                        val index = state.pageIndex
-                                        when (direction) {
-                                            SWIPE_NAVIGATE_PREV -> if (index != null && index > 0) {
-                                                viewModel.selectPage(state.pages[index - 1].page.id)
-                                            }
-                                            SWIPE_NAVIGATE_NEXT -> if (index != null && index < state.pages.size - 1) {
-                                                viewModel.selectPage(state.pages[index + 1].page.id)
-                                            }
-                                            SWIPE_NAVIGATE_ADD -> viewModel.enterPendingAddPage()
-                                        }
-                                    },
-                                    onTemporaryEraserChanged = { temporaryEraserActive = it },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                StaticPageSurface(
-                                    page = state.pages.firstOrNull { it.page.id == target.pageId },
-                                    fallbackSize = state.pageSize,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                        EditorSurface.PendingAddPage -> AddPagePlaceholder(
-                            pendingBackground = state.pendingAddBackground,
-                            onAddPage = viewModel::addPage,
-                            onChangeBackground = viewModel::setPendingAddBackground,
-                            onSwipeBack = viewModel::exitPendingAddPage,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
+            val nextNeighbor = when (val index = state.pageIndex) {
+                // 停留在待添加虚拟页时没有下一面；停在最后一页时下一面即虚拟页。
+                null -> null
+                else -> if (index < state.pages.size - 1) {
+                    EditorNeighbor.Page(state.pages[index + 1])
+                } else {
+                    EditorNeighbor.PendingAdd
                 }
             }
-            LaunchedEffect(surface) { swipeCommittedSurface = false }
+            Box(Modifier.fillMaxSize().padding(paddingValues)) {
+                HandwriteCanvas(
+                    surface = state.surface,
+                    inkingEnabled = !state.onPendingAddPage,
+                    pageSize = state.pageSize,
+                    background = state.background,
+                    backgroundImage = backgroundImage,
+                    strokes = state.strokes,
+                    tool = state.tool,
+                    eraserMode = state.eraserMode,
+                    eraserSize = state.eraserSize,
+                    inputMode = state.inputMode,
+                    zoomPercent = state.zoomPercent,
+                    zoomLocked = state.zoomLocked,
+                    activeColor = state.activeColor,
+                    activeWidth = state.activeWidth,
+                    activeBrushId = state.activeBrushId,
+                    pressureSensitivity = state.pressureSensitivity,
+                    sideButtonAction = state.sideButtonAction,
+                    onZoomChanged = viewModel::setZoom,
+                    onStrokesFinished = viewModel::commitStrokes,
+                    onEraseFinished = viewModel::eraseElements,
+                    onErasePixelsFinished = viewModel::eraseByPixels,
+                    onToggleEraser = viewModel::toggleEraser,
+                    onUndo = viewModel::undo,
+                    prevNeighbor = prevNeighbor,
+                    nextNeighbor = nextNeighbor,
+                    pendingAddPageContent = pendingAddPageContent,
+                    onSwipeNavigate = { direction ->
+                        val target = when (direction) {
+                            SWIPE_NAVIGATE_PREV -> prevNeighbor
+                            SWIPE_NAVIGATE_NEXT -> nextNeighbor
+                            else -> null
+                        }
+                        when (target) {
+                            is EditorNeighbor.Page -> viewModel.selectPage(target.content.page.id)
+                            EditorNeighbor.PendingAdd -> viewModel.selectPendingAddPage()
+                            null -> Unit
+                        }
+                    },
+                    onTemporaryEraserChanged = { temporaryEraserActive = it },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         PagePanel(
@@ -318,41 +282,4 @@ private tailrec fun Context.findComponentActivity(): ComponentActivity? = when (
     is ComponentActivity -> this
     is ContextWrapper -> baseContext.findComponentActivity()
     else -> null
-}
-
-// 过渡舞台：普通页面或待添加页。
-private sealed interface EditorSurface {
-    data class Page(val pageId: PageId?) : EditorSurface
-    data object PendingAddPage : EditorSurface
-}
-
-// 由前后界面推断滑动方向：+1 内容右移（回到更早的页面），-1 内容左移（进入更后的页面/待添加页），0 未知（淡入淡出）。
-private fun editorSurfaceNavDirection(
-    initial: EditorSurface,
-    target: EditorSurface,
-    pages: List<PageContent>,
-): Int = when {
-    initial is EditorSurface.PendingAddPage -> 1
-    target is EditorSurface.PendingAddPage -> -1
-    initial is EditorSurface.Page && target is EditorSurface.Page -> {
-        val from = pages.indexOfFirst { it.page.id == initial.pageId }
-        val to = pages.indexOfFirst { it.page.id == target.pageId }
-        if (from in pages.indices && to in pages.indices) {
-            when {
-                to > from -> -1
-                to < from -> 1
-                else -> 0
-            }
-        } else {
-            0
-        }
-    }
-    else -> 0
-}
-
-// 翻页手势切页时旧页面已滑出屏幕，新页面从拖拽方向的相邻侧滑入补位。
-private fun enterAfterSwipe(direction: Int): EnterTransition = if (direction < 0) {
-    slideInHorizontally { it }
-} else {
-    slideInHorizontally { -it }
 }

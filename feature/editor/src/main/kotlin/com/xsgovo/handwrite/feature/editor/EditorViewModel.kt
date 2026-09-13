@@ -59,6 +59,20 @@ enum class EditorTool {
     ERASER,
 }
 
+// 展示面：真实页面，或紧随最后一页的待添加虚拟页。虚拟页仅存在于会话状态，
+// 不落库、不参与导出与页数统计，作为普通翻页目标参与切换。
+sealed interface EditorSurface {
+    data class Page(val pageId: PageId) : EditorSurface
+    data object PendingAdd : EditorSurface
+}
+
+// 拖拽方向上的相邻展示面：真实页携带内容供画布预览渲染；
+// 待添加虚拟页以哨兵表示，其内容由界面槽位图层提供。
+sealed interface EditorNeighbor {
+    data class Page(val content: PageContent) : EditorNeighbor
+    data object PendingAdd : EditorNeighbor
+}
+
 // 橡皮擦的工作方式：STROKE 划过的整条笔画被删除；PIXEL 只擦除橡皮圆盘覆盖的轨迹，
 // 笔画在擦除处断开并拆分为多条存留笔画。
 enum class EraserMode {
@@ -68,9 +82,8 @@ enum class EraserMode {
 
 data class EditorUiState(
     val documentId: DocumentId? = null,
-    val pageId: PageId? = null,
+    val surface: EditorSurface? = null,
     val pages: List<PageContent> = emptyList(),
-    val onPendingAddPage: Boolean = false,
     val pendingAddBackground: PageBackground = PageBackground.Solid(),
     val documentName: String = "新文档",
     val pageSize: LogicalSize = PageTemplate.LEGACY_PORTRAIT.size,
@@ -101,6 +114,8 @@ data class EditorUiState(
     val activeColor: Int get() = colorSlots[activeColorSlot]
     val widthStep: Int get() = widthSteps[activeWidthSlot]
     val activeWidth: Int get() = 16 + widthStep * 8
+    val pageId: PageId? get() = (surface as? EditorSurface.Page)?.pageId
+    val onPendingAddPage: Boolean get() = surface is EditorSurface.PendingAdd
     val pageCount: Int get() = pages.size
     val pageIndex: Int? get() = pageId?.let { id -> pages.indexOfFirst { it.page.id == id }.takeIf { it >= 0 } }
 }
@@ -484,19 +499,16 @@ class EditorViewModel @Inject constructor(
 
     fun selectPage(pageId: PageId) {
         val current = mutableState.value
-        if (current.onPendingAddPage) {
-            mutableState.update { it.copy(onPendingAddPage = false) }
-            if (pageId == current.pageId) return
-        }
-        if (pageId == current.pageId || current.pages.none { it.page.id == pageId }) return
-        switchToPage(pageId)
+        if (current.surface == EditorSurface.Page(pageId)) return
+        if (current.pages.none { it.page.id == pageId }) return
+        switchToPage(EditorSurface.Page(pageId))
         current.documentId?.let { documentId ->
             viewModelScope.launch { documents.updateLastActivePage(documentId, pageId) }
         }
     }
 
-    // 待添加页是会话内界面状态：仅在最后一页可进入；等待期间可先自定义新页背景。
-    fun enterPendingAddPage() {
+    // 待添加虚拟页仅在最后一页可进入；等待期间可先自定义新页背景。
+    fun selectPendingAddPage() {
         val current = mutableState.value
         if (current.onPendingAddPage) return
         val onLastPage = current.pageIndex == null || current.pageIndex == current.pageCount - 1
@@ -504,7 +516,7 @@ class EditorViewModel @Inject constructor(
         val inherited = current.background.takeUnless { it is PageBackground.Asset }
         mutableState.update {
             it.copy(
-                onPendingAddPage = true,
+                surface = EditorSurface.PendingAdd,
                 pendingAddBackground = inherited ?: it.pendingAddBackground,
             )
         }
@@ -516,8 +528,16 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    // 离开待添加虚拟页即回到最后一页（虚拟页总是紧随最后一页存在）。
     fun exitPendingAddPage() {
-        mutableState.update { it.copy(onPendingAddPage = false) }
+        val current = mutableState.value
+        if (!current.onPendingAddPage) return
+        val lastPage = current.pages.lastOrNull()?.page?.id
+        if (lastPage == null) {
+            mutableState.update { it.copy(surface = null) }
+        } else {
+            switchToPage(EditorSurface.Page(lastPage))
+        }
     }
 
     fun setPendingAddBackground(background: PageBackground) {
@@ -532,7 +552,6 @@ class EditorViewModel @Inject constructor(
                 val wasUnmaterialized = mutableState.value.documentId == null
                 val target = ensureDocument() ?: return@withLock
                 if (wasUnmaterialized) {
-                    mutableState.update { it.copy(onPendingAddPage = false) }
                     documents.updateLastActivePage(target.first, target.second)
                     return@withLock
                 }
@@ -545,8 +564,7 @@ class EditorViewModel @Inject constructor(
                 }
                 when (val result = documents.addPage(target.first, current.pageSize, background, clock.nowMillis())) {
                     is DomainResult.Success -> {
-                        switchToPage(result.value.id)
-                        mutableState.update { it.copy(onPendingAddPage = false) }
+                        switchToPage(EditorSurface.Page(result.value.id))
                         documents.updateLastActivePage(target.first, result.value.id)
                     }
                     is DomainResult.Failure -> showWriteFailure(result.error)
@@ -570,9 +588,6 @@ class EditorViewModel @Inject constructor(
                         // 页面删除不可撤销；历史中指向该页的笔迹命令一并清除，避免撤销撞上缺失页面。
                         history.dropCommandsForPage(pageId)
                         updateHistoryState()
-                        if (pageId == current.pageId) {
-                            mutableState.update { it.copy(onPendingAddPage = false) }
-                        }
                         discardDocumentIfCanvasIsEmpty(documentId)
                     }
                     is DomainResult.Failure -> showWriteFailure(result.error)
@@ -602,7 +617,15 @@ class EditorViewModel @Inject constructor(
 
     private suspend fun ensureDocument(): Pair<DocumentId, PageId>? {
         val current = mutableState.value
-        if (current.documentId != null && current.pageId != null) return current.documentId to current.pageId
+        // 待添加虚拟页不代表文档缺失：写目标回落到最后一页，不触发重复建档。
+        val activePageId = when (val currentSurface = current.surface) {
+            is EditorSurface.Page -> currentSurface.pageId
+            EditorSurface.PendingAdd -> current.pages.lastOrNull()?.page?.id
+            null -> null
+        }
+        if (current.documentId != null && activePageId != null) {
+            return current.documentId to activePageId
+        }
 
         mutableState.update { it.copy(isSaving = true) }
         val name = when (
@@ -623,7 +646,7 @@ class EditorViewModel @Inject constructor(
                     )
                 }
                 observeDocument(created.value)
-                switchToPage(document.lastActivePageId)
+                switchToPage(EditorSurface.Page(document.lastActivePageId))
                 return created.value to document.lastActivePageId
             }
             is DomainResult.Failure -> {
@@ -644,9 +667,9 @@ class EditorViewModel @Inject constructor(
                         documentName = document.name.value,
                     )
                 }
-                // 只有尚未确定展示页时才跟随持久化的最后活跃页；切换页面后的文档回声不再抢占。
-                if (mutableState.value.pageId == null) {
-                    switchToPage(document.lastActivePageId)
+                // 只有尚未确定展示面时才跟随持久化的最后活跃页；切换页面后的文档回声不再抢占。
+                if (mutableState.value.surface == null) {
+                    switchToPage(EditorSurface.Page(document.lastActivePageId))
                 }
             }
         }
@@ -659,7 +682,7 @@ class EditorViewModel @Inject constructor(
                 if (activeId in previousIds && pages.isNotEmpty() && pages.none { it.page.id == activeId }) {
                     // 展示页在会话外被删除：回退到原位置最近的相邻页并持久化。
                     val fallback = pages[previousIds.indexOf(activeId).coerceAtMost(pages.size - 1)].page.id
-                    switchToPage(fallback)
+                    switchToPage(EditorSurface.Page(fallback))
                     documents.updateLastActivePage(documentId, fallback)
                 }
             }
@@ -669,17 +692,29 @@ class EditorViewModel @Inject constructor(
     private var observedPageId: PageId? = null
     private var pageJob: Job? = null
 
-    private fun switchToPage(pageId: PageId) {
-        // 先清空元素避免上一页的笔迹在新页面上闪现，页面内容流随后补齐。
-        mutableState.update { it.copy(pageId = pageId, elements = emptyList(), isSaving = false) }
-        if (observedPageId == pageId) return
+    private fun switchToPage(surface: EditorSurface) {
+        // 翻页过渡的第一帧就要呈现目标页的完整内容：优先用已观察到的页面列表同步填充，
+        // 避免清空元素后等待内容流，新页面先空白再闪现笔迹；页面内容流随后校准。
+        // 填充的是目标页自己的内容，不会让上一页的笔迹闪现在新页面上。
+        // 待添加虚拟页没有落库内容：保持空元素并沿用当前背景，等待期间可自定义。
+        val pageId = (surface as? EditorSurface.Page)?.pageId
+        val seeded = pageId?.let { id -> mutableState.value.pages.firstOrNull { it.page.id == id } }
+        mutableState.update {
+            it.copy(
+                surface = surface,
+                elements = seeded?.elements ?: emptyList(),
+                background = seeded?.page?.background ?: it.background,
+                pageSize = seeded?.page?.size ?: it.pageSize,
+                isSaving = false,
+            )
+        }
+        if (pageId == null || observedPageId == pageId) return
         observedPageId = pageId
         pageJob?.cancel()
         pageJob = viewModelScope.launch {
             documents.observePage(pageId).filterNotNull().collect { content ->
                 mutableState.update {
                     it.copy(
-                        pageId = content.page.id,
                         pageSize = content.page.size,
                         background = content.page.background,
                         elements = content.elements,
@@ -735,9 +770,8 @@ class EditorViewModel @Inject constructor(
                     if (current.documentId == documentId) {
                         current.copy(
                             documentId = null,
-                            pageId = null,
+                            surface = null,
                             pages = emptyList(),
-                            onPendingAddPage = false,
                             documentName = "新文档",
                             elements = emptyList(),
                             backgroundResource = null,

@@ -2,7 +2,6 @@ package com.xsgovo.handwrite.feature.editor
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,50 +21,30 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.xsgovo.handwrite.core.designsystem.LocalHandwriteColors
 import com.xsgovo.handwrite.core.model.PageBackground
 
-// 待添加页：最后一页继续右滑后进入的界面。画布让位，桌面底色保持不变，
-// 居中提供大号“添加新页面”按钮，下方小按钮可先自定义新页背景；左滑返回上一界面。
+// 待添加页：最后一页继续左滑时从页面之下露出并停留的界面。桌面底色与画布一致，
+// 居中提供大号“添加新页面”按钮，下方小按钮可先自定义新页背景；
+// 右滑返回上一页的手势由画布统一处理：把上一页从滑出位置拉回，形成自然过渡。
 @Composable
 fun AddPagePlaceholder(
     pendingBackground: PageBackground,
     onAddPage: () -> Unit,
     onChangeBackground: (PageBackground) -> Unit,
-    onSwipeBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var backgroundMenuOpen by remember { mutableStateOf(false) }
-    val density = LocalDensity.current
-    val swipeBackThresholdPx = with(density) { PAGE_SWIPE_COMMIT_THRESHOLD_DP.dp.toPx() }
-    var dragAccumulated by remember { mutableFloatStateOf(0f) }
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(LocalHandwriteColors.current.canvasDesk)
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = { dragAccumulated = 0f },
-                    onDragEnd = {
-                        // 与翻页手势同向：右滑回到上一界面。
-                        if (dragAccumulated >= swipeBackThresholdPx) onSwipeBack()
-                        dragAccumulated = 0f
-                    },
-                    onDragCancel = { dragAccumulated = 0f },
-                ) { change, dragAmount ->
-                    change.consume()
-                    dragAccumulated += dragAmount
-                }
-            },
+            .background(LocalHandwriteColors.current.canvasDesk),
         contentAlignment = Alignment.Center,
     ) {
         Column(
