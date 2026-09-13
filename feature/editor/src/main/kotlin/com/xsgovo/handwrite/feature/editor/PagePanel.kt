@@ -1,6 +1,7 @@
 package com.xsgovo.handwrite.feature.editor
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -55,6 +56,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,7 +77,6 @@ import com.xsgovo.handwrite.core.model.PageId
 import com.xsgovo.handwrite.core.model.PatternType
 import com.xsgovo.handwrite.core.model.StrokeElement
 import com.xsgovo.handwrite.core.rendering.InkDocumentRenderer
-import kotlinx.coroutines.delay
 
 // 页面管理面板：从右侧滑出的页面缩略图列表，支持切换、添加、删除、书签与拖拽移动页面。
 @Composable
@@ -147,9 +148,17 @@ private fun PagePanelSheet(
         shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp),
         modifier = Modifier
             .fillMaxHeight()
-            .fillMaxWidth(PANEL_WIDTH_FRACTION),
+            .fillMaxWidth(PANEL_WIDTH_FRACTION)
+            // 面板从状态栏之下开始：顶部圆角不被通知栏压住，与底部圆角对称。
+            .statusBarsPadding(),
     ) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(Modifier.fillMaxSize()) {
+            Text(
+                "页面",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            )
             PanelTabs(selectedTab) { selectedTab = it }
             when (selectedTab) {
                 TAB_PAGES -> PageThumbnailList(
@@ -189,8 +198,8 @@ private fun PanelTabs(selectedIndex: Int, onSelect: (Int) -> Unit) {
             .clip(shape),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        PanelTab("所有页", selectedIndex == TAB_PAGES, Modifier.weight(1f)) { onSelect(TAB_PAGES) }
-        PanelTab("书签", selectedIndex == TAB_BOOKMARKS, Modifier.weight(1f)) { onSelect(TAB_BOOKMARKS) }
+        PanelTab("所有页", selectedIndex == TAB_PAGES, Modifier.weight(1f).fillMaxHeight()) { onSelect(TAB_PAGES) }
+        PanelTab("书签", selectedIndex == TAB_BOOKMARKS, Modifier.weight(1f).fillMaxHeight()) { onSelect(TAB_BOOKMARKS) }
     }
 }
 
@@ -234,45 +243,12 @@ private fun PageThumbnailList(
     onToggleBookmark: (PageId) -> Unit,
     onMovePage: (PageId, Int) -> Unit,
 ) {
-    // 拖拽排序：拖拽中在 dragOrder 上即时预览，抬手后经 onMovePage 落库一次；
-    // pendingOrder 在仓储刷新前保持界面顺序，避免数据流回放把页面闪回原位。
-    var draggingPageId by remember { mutableStateOf<PageId?>(null) }
-    var dragOffsetY by remember { mutableStateOf(0f) }
-    var dragOrder by remember { mutableStateOf<List<PageId>?>(null) }
-    var pendingOrder by remember { mutableStateOf<List<PageId>?>(null) }
-
-    LaunchedEffect(pendingOrder) {
-        if (pendingOrder != null) {
-            // 正常路径下仓储刷新远快于此；兜底清除让落库失败的界面回到真实顺序。
-            delay(PENDING_ORDER_TIMEOUT_MILLIS)
-            pendingOrder = null
+    val dragState = remember(listState) { PageDragState(listState) }
+    LaunchedEffect(dragState.draggedId) {
+        while (dragState.draggedId != null) {
+            dragState.autoScrollStep()
+            withFrameNanos { }
         }
-    }
-
-    fun displayPages(): List<PageContent> {
-        val order = dragOrder ?: pendingOrder ?: return pages
-        val byId = pages.associateBy { it.page.id }
-        return order.mapNotNull { byId[it] }.takeIf { it.size == pages.size } ?: pages
-    }
-
-    // 每帧一次越点检测：被拖页的视觉中心落入相邻页范围即把预览顺序移动一格。
-    // 锚点随交换切换，反向补偿拖拽偏移让纸面视觉位置保持连续；layoutInfo 下一帧
-    // 才反映交换，因此不做循环推进，快速拖动时逐帧追赶。
-    fun resolveDragOverPoint(draggedId: PageId) {
-        val info = listState.layoutInfo.visibleItemsInfo
-        val self = info.firstOrNull { it.key == draggedId.value } ?: return
-        val visualCenter = self.offset + self.size / 2f + dragOffsetY
-        val target = info.firstOrNull { item ->
-            item.key != draggedId.value && item.key is Long &&
-                visualCenter >= item.offset && visualCenter < item.offset + item.size
-        } ?: return
-        val order = (dragOrder ?: pages.map { it.page.id }).toMutableList()
-        val from = order.indexOf(draggedId)
-        val to = order.indexOf(PageId(target.key as Long))
-        if (from < 0 || to < 0 || from == to) return
-        order.add(to, order.removeAt(from))
-        dragOrder = order.toList()
-        dragOffsetY += (self.offset + self.size / 2f) - (target.offset + target.size / 2f)
     }
 
     LazyColumn(
@@ -281,54 +257,123 @@ private fun PageThumbnailList(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = 4.dp, bottom = 20.dp),
     ) {
-        val displayPages = displayPages()
-        items(displayPages.size, key = { displayPages[it].page.id.value }) { index ->
-            val page = displayPages[index]
-            val isDragging = page.page.id == draggingPageId
+        items(pages.size, key = { pages[it].page.id.value }) { index ->
+            val page = pages[index]
+            val isDragging = page.page.id == dragState.draggedId
+            val avoidanceY = dragState.avoidanceTranslation(index)
+            val animatedAvoidanceY by animateFloatAsState(avoidanceY, label = "page avoidance")
             Box(
                 Modifier
-                    .then(if (isDragging) Modifier else Modifier.animateItem())
+                    .then(if (dragState.draggedId != null) Modifier else Modifier.animateItem())
                     .zIndex(if (isDragging) 1f else 0f)
                     .graphicsLayer {
-                        translationY = if (isDragging) dragOffsetY else 0f
+                        translationY = if (isDragging) dragState.translationY else animatedAvoidanceY
                     },
             ) {
                 PageThumbnailCell(
                     page = page,
                     pageNumber = index + 1,
                     index = index,
-                    pageCount = displayPages.size,
+                    pageCount = pages.size,
                     selected = page.page.id == currentPageId,
                     onSelect = { onSelectPage(page.page.id) },
                     onDelete = { onDeletePage(page.page.id) },
                     onToggleBookmark = { onToggleBookmark(page.page.id) },
                     onMove = { targetIndex -> onMovePage(page.page.id, targetIndex) },
-                    onLongPressDragStart = {
-                        draggingPageId = page.page.id
-                        dragOffsetY = 0f
-                        dragOrder = null
-                    },
-                    onLongPressDrag = { amount ->
-                        dragOffsetY += amount
-                        resolveDragOverPoint(page.page.id)
-                    },
-                    onLongPressDragEnd = {
-                        val draggedId = draggingPageId
-                        val finalOrder = dragOrder
-                        if (draggedId != null && finalOrder != null) {
-                            pendingOrder = finalOrder
-                            onMovePage(draggedId, finalOrder.indexOf(draggedId))
-                        }
-                        draggingPageId = null
-                        dragOrder = null
-                        dragOffsetY = 0f
-                    },
+                    onLongPressDragStart = { touchYInItem -> dragState.start(page.page.id, touchYInItem) },
+                    onLongPressDrag = { amount -> dragState.drag(amount) },
+                    onLongPressDragEnd = { dragState.end(onMovePage) },
                 )
             }
         }
         item(key = ADD_PAGE_ITEM_KEY) {
             AddPageCell(addPageSize, currentBackground, onAddPage)
         }
+    }
+}
+
+// 拖拽排序状态。每帧从 layoutInfo 实测被拖项的真实锚点，绘制位移 = 手指位置 - 实测中心，
+// 列表滚动、换格让位、首可见项锚定补偿等一切布局扰动都被下一帧实测吸收，保证不跟手漂移；
+// 手指偏离被拖项中心超过半格时，预览顺序向偏离方向移动一格。
+private class PageDragState(private val listState: LazyListState) {
+    var draggedId by mutableStateOf<PageId?>(null)
+        private set
+    var translationY by mutableStateOf(0f)
+        private set
+    private var targetIndex by mutableIntStateOf(-1)
+    private var originIndex = -1
+
+    private var fingerViewportY = 0f
+    private var userMoved = false
+
+    fun start(pageId: PageId, touchYInItem: Float) {
+        val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == pageId.value } ?: return
+        draggedId = pageId
+        fingerViewportY = touchYInItem + self.offset
+        translationY = fingerViewportY - (self.offset + self.size / 2f)
+        userMoved = false
+        targetIndex = self.index
+        originIndex = self.index
+    }
+
+    fun avoidanceTranslation(index: Int): Float {
+        if (draggedId == null || index == originIndex) return 0f
+        val distance = listState.layoutInfo.visibleItemsInfo
+            .zipWithNext()
+            .map { (first, second) -> second.offset - first.offset }
+            .filter { it > 0 }
+            .average()
+            .takeIf { it.isFinite() }
+            ?.toFloat()
+            ?: 0f
+        return when {
+            targetIndex > originIndex && index in (originIndex + 1)..targetIndex -> -distance
+            targetIndex < originIndex && index in targetIndex until originIndex -> distance
+            else -> 0f
+        }
+    }
+
+    fun drag(amount: Float) {
+        fingerViewportY += amount
+        userMoved = true
+        advance()
+    }
+
+    fun autoScrollStep() {
+        if (draggedId == null) return
+        advance()
+        if (!userMoved) return
+        val layout = listState.layoutInfo
+        val edge = (layout.viewportEndOffset - layout.viewportStartOffset) * AUTO_SCROLL_EDGE_FRACTION
+        val amount = when {
+            fingerViewportY < layout.viewportStartOffset + edge -> -AUTO_SCROLL_SPEED_PX
+            fingerViewportY > layout.viewportEndOffset - edge -> AUTO_SCROLL_SPEED_PX
+            else -> return
+        }
+        listState.dispatchRawDelta(amount)
+        advance()
+    }
+
+    fun end(onCommit: (PageId, Int) -> Unit) {
+        val id = draggedId
+        if (id != null) {
+            advance()
+            onCommit(id, targetIndex)
+        }
+        draggedId = null
+        translationY = 0f
+        targetIndex = -1
+        originIndex = -1
+    }
+
+    private fun advance() {
+        val info = listState.layoutInfo
+        val self = info.visibleItemsInfo.firstOrNull { it.key == draggedId?.value }
+        val selfCenter = self?.let { it.offset + it.size / 2f } ?: return
+        translationY = fingerViewportY - selfCenter
+        val visible = listState.layoutInfo.visibleItemsInfo
+        targetIndex = visible.count { it.key != draggedId?.value && fingerViewportY > it.offset + it.size / 2 }
+            .coerceIn(0, listState.layoutInfo.totalItemsCount - 2)
     }
 }
 
@@ -386,7 +431,7 @@ private fun PageThumbnailCell(
     onDelete: () -> Unit,
     onToggleBookmark: () -> Unit,
     onMove: (Int) -> Unit,
-    onLongPressDragStart: (() -> Unit)? = null,
+    onLongPressDragStart: ((Float) -> Unit)? = null,
     onLongPressDrag: ((Float) -> Unit)? = null,
     onLongPressDragEnd: (() -> Unit)? = null,
 ) {
@@ -411,26 +456,39 @@ private fun PageThumbnailCell(
         Box(
             modifier = Modifier
                 .fillMaxWidth(THUMBNAIL_WIDTH_FRACTION)
+                .widthIn(max = THUMBNAIL_MAX_WIDTH)
                 .aspectRatio(page.page.size.width.toFloat() / page.page.size.height.toFloat())
                 .clip(shape)
                 .border(width = if (selected) 2.dp else 1.dp, color = borderColor, shape = shape)
-                .combinedClickable(onClick = onSelect, onLongClick = { menuOpen = true })
                 .then(
                     if (dragStart != null && dragBy != null && dragEnd != null) {
-                        // 长按先弹出功能菜单；手指继续移动即收起菜单进入拖拽排序，
-                        // 原地抬手则只留菜单供点选。
+                        Modifier.clickable(onClick = onSelect)
+                    } else {
+                        Modifier.combinedClickable(onClick = onSelect)
+                    },
+                )
+                .then(
+                    if (dragStart != null && dragBy != null && dragEnd != null) {
+                        // 长按进入拖拽排序：原地抬手弹出功能菜单，手指移动则直接重排。
+                        // 拖拽期间不得弹出菜单——focusable Popup 出现会给手势流发取消
+                        // 事件，拖拽会被系统中断并留下不跟手的漂移。
                         Modifier.pointerInput(page.page.id) {
+                            var moved = false
                             detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    menuOpen = true
-                                    dragStart()
+                                onDragStart = { touchOffset ->
+                                    moved = false
+                                    dragStart(touchOffset.y)
                                 },
                                 onDrag = { change, amount ->
                                     change.consume()
+                                    moved = true
                                     if (menuOpen) menuOpen = false
                                     dragBy(amount.y)
                                 },
-                                onDragEnd = dragEnd,
+                                onDragEnd = {
+                                    dragEnd()
+                                    if (!moved) menuOpen = true
+                                },
                                 onDragCancel = dragEnd,
                             )
                         }
@@ -527,57 +585,56 @@ private fun AddPageCell(
     // 每次打开菜单回到“沿用当前纸面”的默认；图片/PDF 背景不可复制到新页，由调用方归一为可复制背景。
     var draft by remember(menuOpen) { mutableStateOf(currentBackground) }
     val shape = RoundedCornerShape(10.dp)
-    Box {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Column(Modifier.fillMaxWidth(THUMBNAIL_WIDTH_FRACTION)) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(pageSize.width.toFloat() / pageSize.height.toFloat())
-                        .clip(shape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { onAddPage(null) },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "添加页面",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(34.dp),
-                    )
-                }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Column(Modifier.fillMaxWidth(THUMBNAIL_WIDTH_FRACTION).widthIn(max = THUMBNAIL_MAX_WIDTH)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(pageSize.width.toFloat() / pageSize.height.toFloat())
+                    .clip(shape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onAddPage(null) },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "添加页面",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(34.dp),
+                )
+            }
+            // 菜单锚定在文字自身，弹出位置紧贴“新页面”文字，而不是整个单元格。
+            Box(Modifier.padding(top = 6.dp)) {
                 Text(
                     "新页面",
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier
-                        .padding(top = 6.dp)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { menuOpen = true },
-                        ),
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { menuOpen = true },
+                    ),
                 )
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    AddPageStyleMenu(
+                        pageSize = pageSize,
+                        draft = draft,
+                        onChange = { draft = it },
+                        onAdd = {
+                            menuOpen = false
+                            onAddPage(draft)
+                        },
+                    )
+                }
             }
-        }
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            AddPageStyleMenu(
-                pageSize = pageSize,
-                draft = draft,
-                onChange = { draft = it },
-                onAdd = {
-                    menuOpen = false
-                    onAddPage(draft)
-                },
-            )
         }
     }
 }
@@ -696,8 +753,13 @@ private fun AddPageSwatch(label: String, argb: Int, selected: Boolean, onClick: 
 private const val SCRIM_ALPHA = 0.45f
 private const val PANEL_WIDTH_FRACTION = 0.4f
 private const val THUMBNAIL_WIDTH_FRACTION = 0.58f
+// 缩略图宽度上限：横屏下面板变宽，用固定上限防止缩略图随面板等比膨胀。
+private val THUMBNAIL_MAX_WIDTH = 180.dp
 private const val THUMBNAIL_TRANSPARENT_FILL_ALPHA = 0.45f
 private const val PENDING_ORDER_TIMEOUT_MILLIS = 700L
+// 拖拽自动滚动：手指进入视口上下各一成半高度的区域即持续滚动。
+private const val AUTO_SCROLL_EDGE_FRACTION = 0.15f
+private const val AUTO_SCROLL_SPEED_PX = 14f
 private const val TAB_PAGES = 0
 private const val TAB_BOOKMARKS = 1
 private const val ADD_PAGE_ITEM_KEY = "add_page"
