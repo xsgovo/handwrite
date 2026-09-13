@@ -11,7 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -33,14 +33,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
@@ -88,7 +86,7 @@ fun PagePanel(
     addPageSize: LogicalSize,
     currentBackground: PageBackground,
     onSelectPage: (PageId) -> Unit,
-    onAddPage: (PageBackground) -> Unit,
+    onAddPage: (PageBackground?) -> Unit,
     onDeletePage: (PageId) -> Unit,
     onToggleBookmark: (PageId) -> Unit,
     onMovePage: (PageId, Int) -> Unit,
@@ -131,7 +129,7 @@ private fun PagePanelSheet(
     addPageSize: LogicalSize,
     currentBackground: PageBackground,
     onSelectPage: (PageId) -> Unit,
-    onAddPage: (PageBackground) -> Unit,
+    onAddPage: (PageBackground?) -> Unit,
     onDeletePage: (PageId) -> Unit,
     onToggleBookmark: (PageId) -> Unit,
     onMovePage: (PageId, Int) -> Unit,
@@ -231,7 +229,7 @@ private fun PageThumbnailList(
     currentBackground: PageBackground,
     listState: LazyListState,
     onSelectPage: (PageId) -> Unit,
-    onAddPage: (PageBackground) -> Unit,
+    onAddPage: (PageBackground?) -> Unit,
     onDeletePage: (PageId) -> Unit,
     onToggleBookmark: (PageId) -> Unit,
     onMovePage: (PageId, Int) -> Unit,
@@ -280,8 +278,8 @@ private fun PageThumbnailList(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-        contentPadding = PaddingValues(top = 4.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 20.dp),
     ) {
         val displayPages = displayPages()
         items(displayPages.size, key = { displayPages[it].page.id.value }) { index ->
@@ -305,29 +303,25 @@ private fun PageThumbnailList(
                     onDelete = { onDeletePage(page.page.id) },
                     onToggleBookmark = { onToggleBookmark(page.page.id) },
                     onMove = { targetIndex -> onMovePage(page.page.id, targetIndex) },
-                    dragHandle = {
-                        ThumbnailDragHandle(
-                            onDragStart = {
-                                draggingPageId = page.page.id
-                                dragOffsetY = 0f
-                                dragOrder = null
-                            },
-                            onDrag = { amount ->
-                                dragOffsetY += amount
-                                resolveDragOverPoint(page.page.id)
-                            },
-                            onDragEnd = {
-                                val draggedId = draggingPageId
-                                val finalOrder = dragOrder
-                                if (draggedId != null && finalOrder != null) {
-                                    pendingOrder = finalOrder
-                                    onMovePage(draggedId, finalOrder.indexOf(draggedId))
-                                }
-                                draggingPageId = null
-                                dragOrder = null
-                                dragOffsetY = 0f
-                            },
-                        )
+                    onLongPressDragStart = {
+                        draggingPageId = page.page.id
+                        dragOffsetY = 0f
+                        dragOrder = null
+                    },
+                    onLongPressDrag = { amount ->
+                        dragOffsetY += amount
+                        resolveDragOverPoint(page.page.id)
+                    },
+                    onLongPressDragEnd = {
+                        val draggedId = draggingPageId
+                        val finalOrder = dragOrder
+                        if (draggedId != null && finalOrder != null) {
+                            pendingOrder = finalOrder
+                            onMovePage(draggedId, finalOrder.indexOf(draggedId))
+                        }
+                        draggingPageId = null
+                        dragOrder = null
+                        dragOffsetY = 0f
                     },
                 )
             }
@@ -335,44 +329,6 @@ private fun PageThumbnailList(
         item(key = ADD_PAGE_ITEM_KEY) {
             AddPageCell(addPageSize, currentBackground, onAddPage)
         }
-    }
-}
-
-// 拖拽中的逐格越点检测：被拖页的视觉中心越过相邻页中点时预览顺序移动一格，
-// 并反向补偿拖拽偏移，使纸面视觉位置不因锚点切换而跳动。
-private fun resolveDragOverlaps(draggedId: PageId, pages: List<PageContent>) = Unit
-
-@Composable
-private fun ThumbnailDragHandle(
-    onDragStart: () -> Unit,
-    onDrag: (Float) -> Unit,
-    onDragEnd: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .padding(6.dp)
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = THUMBNAIL_OVERLAY_ALPHA))
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { onDragStart() },
-                    onDrag = { change, amount ->
-                        change.consume()
-                        onDrag(amount.y)
-                    },
-                    onDragEnd = onDragEnd,
-                    onDragCancel = onDragEnd,
-                )
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Default.DragHandle,
-            contentDescription = "拖动调整页面顺序",
-            tint = Color.White.copy(alpha = 0.9f),
-            modifier = Modifier.size(16.dp),
-        )
     }
 }
 
@@ -398,8 +354,8 @@ private fun BookmarkThumbnailList(
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-        contentPadding = PaddingValues(top = 4.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 20.dp),
     ) {
         items(bookmarked.size, key = { bookmarked[it].value.page.id.value }) { index ->
             val (originalIndex, page) = bookmarked[index]
@@ -430,7 +386,9 @@ private fun PageThumbnailCell(
     onDelete: () -> Unit,
     onToggleBookmark: () -> Unit,
     onMove: (Int) -> Unit,
-    dragHandle: (@Composable () -> Unit)? = null,
+    onLongPressDragStart: (() -> Unit)? = null,
+    onLongPressDrag: ((Float) -> Unit)? = null,
+    onLongPressDragEnd: (() -> Unit)? = null,
 ) {
     val renderer = remember { InkDocumentRenderer() }
     // 与主画布一致地渲染笔迹；渲染层按笔画 id 缓存，元素不变时 prepare 结果可复用。
@@ -441,6 +399,9 @@ private fun PageThumbnailCell(
     val shape = RoundedCornerShape(10.dp)
     val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
     var menuOpen by remember { mutableStateOf(false) }
+    val dragStart = onLongPressDragStart
+    val dragBy = onLongPressDrag
+    val dragEnd = onLongPressDragEnd
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -453,7 +414,30 @@ private fun PageThumbnailCell(
                 .aspectRatio(page.page.size.width.toFloat() / page.page.size.height.toFloat())
                 .clip(shape)
                 .border(width = if (selected) 2.dp else 1.dp, color = borderColor, shape = shape)
-                .combinedClickable(onClick = onSelect, onLongClick = { menuOpen = true }),
+                .combinedClickable(onClick = onSelect, onLongClick = { menuOpen = true })
+                .then(
+                    if (dragStart != null && dragBy != null && dragEnd != null) {
+                        // 长按先弹出功能菜单；手指继续移动即收起菜单进入拖拽排序，
+                        // 原地抬手则只留菜单供点选。
+                        Modifier.pointerInput(page.page.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    menuOpen = true
+                                    dragStart()
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    if (menuOpen) menuOpen = false
+                                    dragBy(amount.y)
+                                },
+                                onDragEnd = dragEnd,
+                                onDragCancel = dragEnd,
+                            )
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val scale = size.width / page.page.size.width
@@ -466,38 +450,32 @@ private fun PageThumbnailCell(
                     renderer.draw(this, prepared, scale, 0f, 0f)
                 }
             }
-            dragHandle?.invoke()
-            Box(
+            Icon(
+                if (page.page.bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                contentDescription = null,
+                tint = if (page.page.bookmarked) BOOKMARK_TINT else MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = THUMBNAIL_OVERLAY_ALPHA))
+                    // 顶边与缩略图顶边对齐，只保留水平方向的可点余量；无底色遮罩。
+                    .padding(start = 10.dp, bottom = 10.dp)
+                    .size(26.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = onToggleBookmark,
                     )
+                    .padding(3.dp)
                     .semantics {
                         contentDescription = if (page.page.bookmarked) "移出书签" else "添加到书签"
                     },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    if (page.page.bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                    contentDescription = null,
-                    tint = if (page.page.bookmarked) BOOKMARK_TINT else Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+            )
             Text(
                 text = "$pageNumber",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(8.dp),
+                    .padding(6.dp),
             )
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItemText(
@@ -537,12 +515,13 @@ private fun DropdownMenuItemText(
     )
 }
 
-// 新页面单元格：点击弹出样式菜单，先选底色与线型再添加，而非直接沿用当前页背景。
+// 新页面单元格：点击 + 号纸面按原有语义直接加页（沿用当前纸面背景），
+// 点击“新页面”文字弹出样式菜单，自定义底色与线型后添加。
 @Composable
 private fun AddPageCell(
     pageSize: LogicalSize,
     currentBackground: PageBackground,
-    onAddPage: (PageBackground) -> Unit,
+    onAddPage: (PageBackground?) -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     // 每次打开菜单回到“沿用当前纸面”的默认；图片/PDF 背景不可复制到新页，由调用方归一为可复制背景。
@@ -564,7 +543,7 @@ private fun AddPageCell(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = { menuOpen = true },
+                            onClick = { onAddPage(null) },
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -579,7 +558,13 @@ private fun AddPageCell(
                     "新页面",
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(top = 6.dp),
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { menuOpen = true },
+                        ),
                 )
             }
         }
@@ -710,9 +695,8 @@ private fun AddPageSwatch(label: String, argb: Int, selected: Boolean, onClick: 
 
 private const val SCRIM_ALPHA = 0.45f
 private const val PANEL_WIDTH_FRACTION = 0.4f
-private const val THUMBNAIL_WIDTH_FRACTION = 0.86f
+private const val THUMBNAIL_WIDTH_FRACTION = 0.58f
 private const val THUMBNAIL_TRANSPARENT_FILL_ALPHA = 0.45f
-private const val THUMBNAIL_OVERLAY_ALPHA = 0.35f
 private const val PENDING_ORDER_TIMEOUT_MILLIS = 700L
 private const val TAB_PAGES = 0
 private const val TAB_BOOKMARKS = 1
