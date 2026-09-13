@@ -74,7 +74,6 @@ import com.xsgovo.handwrite.core.model.InputMode
 import com.xsgovo.handwrite.core.model.LogicalPoint
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.PageBackground
-import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PagePattern
 import com.xsgovo.handwrite.core.model.PatternType
 import com.xsgovo.handwrite.core.model.PressureSensitivity

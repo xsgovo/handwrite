@@ -21,7 +21,6 @@ class CommandHistory(
     val canUndo: Boolean get() = undo.isNotEmpty()
     val canRedo: Boolean get() = redo.isNotEmpty()
     val undoCount: Int get() = undo.size
-    val redoCount: Int get() = redo.size
 
     fun recordCommitted(command: DocumentCommand) {
         undo.addLast(command)

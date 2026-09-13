@@ -1,7 +1,6 @@
 package com.xsgovo.handwrite.core.document
 
 import com.xsgovo.handwrite.core.model.DocumentId
-import com.xsgovo.handwrite.core.model.ElementId
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageElement
 import com.xsgovo.handwrite.core.model.PageId
@@ -48,9 +47,4 @@ sealed interface DocumentCommand {
 private fun PageElement.estimatedBytes(): Int = when (this) {
     is com.xsgovo.handwrite.core.model.StrokeElement -> 96 + samples.size * 20
     else -> 256
-}
-
-fun DocumentCommand.removedElementIds(): Set<ElementId> = when (this) {
-    is DocumentCommand.ReplaceElements -> removed.mapTo(linkedSetOf(), PageElement::id)
-    is DocumentCommand.UpdateBackground -> emptySet()
 }

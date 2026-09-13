@@ -17,7 +17,6 @@ import com.xsgovo.handwrite.core.model.BackgroundAssetKind
 import com.xsgovo.handwrite.core.model.BrushStyle
 import com.xsgovo.handwrite.core.model.BrushId
 import com.xsgovo.handwrite.core.model.DisplayName
-import com.xsgovo.handwrite.core.model.Document
 import com.xsgovo.handwrite.core.model.DocumentId
 import com.xsgovo.handwrite.core.model.DomainFailure
 import com.xsgovo.handwrite.core.model.DomainResult
@@ -99,7 +98,6 @@ data class EditorUiState(
     val pickerCandidates: List<Int> = AppSettings.DEFAULT_PICKER_CANDIDATES,
     val widthSteps: List<Int> = AppSettings.DEFAULT_WIDTH_STEPS,
     val activeWidthSlot: Int = 1,
-    val screenRatioLocked: Boolean = false,
     val activeBrushId: BrushId = BrushId.MONOLINE,
     val pressureSensitivity: PressureSensitivity = PressureSensitivity.STANDARD,
     val sideButtonAction: SideButtonAction = SideButtonAction.TEMPORARY_ERASER,

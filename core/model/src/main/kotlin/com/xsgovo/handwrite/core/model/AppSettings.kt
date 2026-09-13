@@ -29,8 +29,6 @@ data class AppSettings(
         require(defaultBackground !is PageBackground.Asset)
     }
 
-    val activeWidthStep: Int get() = widthSteps[activeWidthSlot]
-
     companion object {
         val DEFAULT_COLOR_SLOTS = listOf(0xFF1F1F1F.toInt(), 0xFFE53935.toInt(), 0xFF2E7D32.toInt())
         const val PICKER_CANDIDATE_COUNT = 14
