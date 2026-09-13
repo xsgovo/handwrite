@@ -167,6 +167,7 @@ fun HandwriteCanvas(
     }
     val density = LocalDensity.current
     val pageSwipeThresholdPx = with(density) { PAGE_SWIPE_COMMIT_THRESHOLD_DP.dp.toPx() }
+    val panModeSlopPx = with(density) { PAN_MODE_SLOP_DP.dp.toPx() }
     val scope = rememberCoroutineScope()
     // 页面拖拽位移（像素，向右为正）：平移到横向边界后继续拖动，页面整体跟手滑出；
     // 松手按阈值与方向决定切面，否则弹回。
@@ -345,9 +346,11 @@ fun HandwriteCanvas(
         awaitEachGesture {
             var previousCentroid: Offset? = null
             var previousSpan = 0f
+            var initialSpan = 0f
+            var accumulatedPanPx = 0f
+            var gestureMode: TwoFingerGestureMode? = null
             var gestureZoom = currentZoom
             var sideActionHandled = false
-            var zoomGestureDetected = false
             val erasePath = mutableListOf<LogicalPoint>()
             do {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -378,22 +381,36 @@ fun HandwriteCanvas(
                         pressed[0].position.x - pressed[1].position.x,
                         pressed[0].position.y - pressed[1].position.y,
                     )
-                    previousCentroid?.let { applyPanDeltaWithPageDrag(centroid - it) }
-                    if (previousSpan > 0f && span > 0f) {
-                        val scaleChange = span / previousSpan
-                        val nextZoom = (gestureZoom * scaleChange).roundToInt()
-                            .coerceIn(MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT)
-                        if (nextZoom != gestureZoom || abs(scaleChange - 1f) >= ZOOM_GESTURE_SCALE_THRESHOLD) {
-                            if (!zoomGestureDetected) {
-                                zoomGestureDetected = true
-                                zoomGestureActive = true
-                                zoomControlsVisible = true
+                    val centroidDelta = previousCentroid?.let { centroid - it }
+                    // 平移与缩放互斥：以手势起点为基准判定意图，先到阈值者锁定模式，
+                    // 锁定后整个手势不再切换，捏合时不拖动页面，拖动时不缩放。
+                    accumulatedPanPx += centroidDelta?.let { delta -> hypot(delta.x, delta.y) } ?: 0f
+                    if (initialSpan <= 0f && span > 0f) initialSpan = span
+                    gestureMode = resolveTwoFingerGestureMode(
+                        current = gestureMode,
+                        initialSpan = initialSpan,
+                        span = span,
+                        accumulatedPanPx = accumulatedPanPx,
+                        panSlopPx = panModeSlopPx,
+                    )
+                    when (gestureMode) {
+                        TwoFingerGestureMode.PAN -> {
+                            centroidDelta?.let(::applyPanDeltaWithPageDrag)
+                        }
+                        TwoFingerGestureMode.ZOOM -> {
+                            if (previousSpan > 0f && span > 0f) {
+                                val scaleChange = span / previousSpan
+                                val nextZoom = (gestureZoom * scaleChange).roundToInt()
+                                    .coerceIn(MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT)
+                                if (nextZoom != gestureZoom) {
+                                    gestureZoom = nextZoom
+                                    zoomCallback(gestureZoom)
+                                }
                             }
+                            zoomGestureActive = true
+                            zoomControlsVisible = true
                         }
-                        if (nextZoom != gestureZoom) {
-                            gestureZoom = nextZoom
-                            zoomCallback(gestureZoom)
-                        }
+                        null -> Unit
                     }
                     previousCentroid = centroid
                     previousSpan = span
@@ -444,7 +461,8 @@ fun HandwriteCanvas(
                 }
             } while (event.changes.any { it.pressed })
 
-            if (zoomGestureDetected) zoomGestureActive = false
+            // 只有缩放手势需要复位缩放控件的激活状态；平移手势从未激活过它。
+            if (gestureMode == TwoFingerGestureMode.ZOOM) zoomGestureActive = false
             pixelEraseCursor = null
 
             // 手势收尾：达到阈值先把当前展示面连同相邻面预览顺滑推到位再回调切面，否则弹回。
@@ -856,8 +874,31 @@ private fun DrawScope.drawPaperLayer(
 }
 
 private const val ZOOM_BUTTON_STEP = 25
-private const val ZOOM_GESTURE_SCALE_THRESHOLD = 0.005f
 private const val ZOOM_CONTROLS_HIDE_DELAY_MILLIS = 1_800L
+
+// 双指手势模式：判定锁定前平移与缩放都不生效，锁定后互斥到手势结束。
+internal enum class TwoFingerGestureMode { PAN, ZOOM }
+
+// 以手势起点为基准判定双指意图：缩放看总 span 相对起点的变化比例，平移看质心累计
+// 位移；先到阈值者锁定模式。已锁定时保持不变，防止捏合与拖动互相串扰。
+internal fun resolveTwoFingerGestureMode(
+    current: TwoFingerGestureMode?,
+    initialSpan: Float,
+    span: Float,
+    accumulatedPanPx: Float,
+    panSlopPx: Float,
+): TwoFingerGestureMode? {
+    if (current != null) return current
+    if (initialSpan > 0f && abs(span / initialSpan - 1f) >= ZOOM_MODE_LOCK_SCALE_DELTA) {
+        return TwoFingerGestureMode.ZOOM
+    }
+    if (accumulatedPanPx >= panSlopPx) return TwoFingerGestureMode.PAN
+    return null
+}
+
+// 模式判定阈值：span 相对起点的总变化比例（3%）判为缩放；质心累计位移的触控斜率判为平移。
+private const val ZOOM_MODE_LOCK_SCALE_DELTA = 0.03f
+internal const val PAN_MODE_SLOP_DP = 10
 
 @Composable
 private fun ZoomControlsOverlay(

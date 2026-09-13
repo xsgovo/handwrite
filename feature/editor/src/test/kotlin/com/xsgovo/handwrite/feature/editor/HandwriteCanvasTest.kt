@@ -168,6 +168,68 @@ class HandwriteCanvasTest {
         assertEquals(110f, pageDragOverscroll(deltaX = 130f, panX = 80f, panLimitX = 100f), 0f)
     }
 
+    @Test
+    fun twoFingerModeStaysUndecidedBelowBothThresholds() {
+        // span 变化与质心位移都不足：保持未判定，平移与缩放均不生效。
+        assertEquals(
+            null,
+            resolveTwoFingerGestureMode(
+                current = null,
+                initialSpan = 500f,
+                span = 510f,
+                accumulatedPanPx = 20f,
+                panSlopPx = 30f,
+            ),
+        )
+    }
+
+    @Test
+    fun twoFingerModeLocksToZoomWhenSpanShiftsFarEnough() {
+        // 总 span 相对起点变化达到阈值即判为缩放，放大与收缩两个方向同样成立。
+        assertEquals(
+            TwoFingerGestureMode.ZOOM,
+            resolveTwoFingerGestureMode(current = null, initialSpan = 500f, span = 520f, accumulatedPanPx = 0f, panSlopPx = 30f),
+        )
+        assertEquals(
+            TwoFingerGestureMode.ZOOM,
+            resolveTwoFingerGestureMode(current = null, initialSpan = 500f, span = 480f, accumulatedPanPx = 0f, panSlopPx = 30f),
+        )
+    }
+
+    @Test
+    fun twoFingerModeLocksToPanWhenCentroidTravelsFarEnough() {
+        assertEquals(
+            TwoFingerGestureMode.PAN,
+            resolveTwoFingerGestureMode(current = null, initialSpan = 500f, span = 505f, accumulatedPanPx = 30f, panSlopPx = 30f),
+        )
+    }
+
+    @Test
+    fun twoFingerModeStaysLockedUntilTheGestureEnds() {
+        // 锁定后不再随事件翻转：缩放中途的质心漂移、平移中途的 span 抖动都不改变模式。
+        assertEquals(
+            TwoFingerGestureMode.PAN,
+            resolveTwoFingerGestureMode(current = TwoFingerGestureMode.PAN, initialSpan = 500f, span = 900f, accumulatedPanPx = 999f, panSlopPx = 30f),
+        )
+        assertEquals(
+            TwoFingerGestureMode.ZOOM,
+            resolveTwoFingerGestureMode(current = TwoFingerGestureMode.ZOOM, initialSpan = 500f, span = 500f, accumulatedPanPx = 999f, panSlopPx = 30f),
+        )
+    }
+
+    @Test
+    fun twoFingerModeIgnoresZoomWithoutAValidInitialSpan() {
+        // 双指尚未同时接触（无有效起点 span）时只按质心位移判定平移。
+        assertEquals(
+            TwoFingerGestureMode.PAN,
+            resolveTwoFingerGestureMode(current = null, initialSpan = 0f, span = 0f, accumulatedPanPx = 30f, panSlopPx = 30f),
+        )
+        assertEquals(
+            null,
+            resolveTwoFingerGestureMode(current = null, initialSpan = 0f, span = 800f, accumulatedPanPx = 0f, panSlopPx = 30f),
+        )
+    }
+
     private fun horizontalSamples(fromX: Int, toX: Int, y: Int): List<StrokeSample> =
         (fromX..toX step 10).map { x -> StrokeSample(point = LogicalPoint(x, y)) }
 }
