@@ -105,8 +105,6 @@ fun HandwriteCanvas(
     pageSize: LogicalSize,
     background: PageBackground,
     backgroundImage: ImageBitmap?,
-    // 待添加虚拟页的纸面背景：虚拟页按真实纸面渲染，随翻页拖拽露出与停留。
-    pendingAddBackground: PageBackground,
     strokes: List<StrokeElement>,
     tool: EditorTool,
     eraserMode: EraserMode,
@@ -167,11 +165,6 @@ fun HandwriteCanvas(
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
-    }
-    // 待添加虚拟页不可书写，固定以 100% 适配屏幕、无平移的布局渲染：任何缩放平移
-    // 状态下滑到这一页，看到的都是同样的干净纸面。
-    val pendingPageTransform = remember(canvasSize, pageSize) {
-        CanvasPageTransform.create(canvasSize, pageSize, 1f, Offset.Zero)
     }
     val density = LocalDensity.current
     val pageSwipeThresholdPx = with(density) { PAGE_SWIPE_COMMIT_THRESHOLD_DP.dp.toPx() }
@@ -645,68 +638,39 @@ fun HandwriteCanvas(
             Canvas(Modifier.fillMaxSize()) {
                 val drag = pageDragPx
                 val slideStep = canvasSize.width + NEIGHBOR_PAGE_GAP_DP.dp.toPx()
-                // 拖拽中在移动方向的一侧渲染相邻展示面：右滑上一页自左侧跟入，左滑下一页
-                // （最后一页的下一面即待添加虚拟页）自右侧跟入。相邻面都按切换后的最终
-                // 布局渲染，松手落位与切面后画布的首帧逐像素一致。
+                // 拖拽中在移动方向的一侧渲染相邻真实页：右滑上一页自左侧跟入，左滑下一页
+                // 自右侧跟入。相邻页按切换后的最终布局渲染（自身页面尺寸、无平移），
+                // 松手落位与切面后画布的首帧逐像素一致。
+                // 待添加虚拟页不渲染纸面：拖拽中桌面底色直接露出，只有按钮层跟入。
                 val neighbor = when {
                     drag > 0.5f -> prevNeighborState
                     drag < -0.5f -> nextNeighborState
                     else -> null
                 }
-                if (neighbor != null) {
+                if (neighbor is EditorNeighbor.Page) {
+                    val content = neighbor.content
                     val neighborOffset = drag - sign(drag) * slideStep
-                    when (neighbor) {
-                        is EditorNeighbor.Page -> {
-                            val content = neighbor.content
-                            // 相邻真实页按切换后的最终布局渲染（自身页面尺寸、无平移）；
-                            // 沿用当前页变换会在缩放平移时错位。
-                            val neighborTransform = CanvasPageTransform.create(
-                                canvasSize,
-                                content.page.size,
-                                currentZoom / 100f,
-                                Offset.Zero,
-                            )
-                            withTransform({ translate(neighborOffset, 0f) }) {
-                                drawPaperLayer(
-                                    renderer = inkRenderer,
-                                    rect = neighborTransform.pageRect,
-                                    background = content.page.background,
-                                    scale = neighborTransform.scale,
-                                    transparentFillColor = transparentPageColor,
-                                    assetImage = null,
-                                    preparedStrokes = if (drag > 0.5f) prevPreparedStrokes else nextPreparedStrokes,
-                                )
-                            }
-                        }
-                        // 待添加虚拟页没有落库内容：按固定 100% 布局渲染空纸面，
-                        // 与停留时的渲染一致，切换前后位置不变。
-                        EditorNeighbor.PendingAdd -> {
-                            withTransform({ translate(neighborOffset, 0f) }) {
-                                drawPaperLayer(
-                                    renderer = inkRenderer,
-                                    rect = pendingPageTransform.pageRect,
-                                    background = pendingAddBackground,
-                                    scale = pendingPageTransform.scale,
-                                    transparentFillColor = transparentPageColor,
-                                    assetImage = null,
-                                    preparedStrokes = emptyList(),
-                                )
-                            }
-                        }
-                    }
-                }
-                withTransform({ translate(drag, 0f) }) {
-                    if (surface is EditorSurface.PendingAdd) {
+                    val neighborTransform = CanvasPageTransform.create(
+                        canvasSize,
+                        content.page.size,
+                        currentZoom / 100f,
+                        Offset.Zero,
+                    )
+                    withTransform({ translate(neighborOffset, 0f) }) {
                         drawPaperLayer(
                             renderer = inkRenderer,
-                            rect = pendingPageTransform.pageRect,
-                            background = pendingAddBackground,
-                            scale = pendingPageTransform.scale,
+                            rect = neighborTransform.pageRect,
+                            background = content.page.background,
+                            scale = neighborTransform.scale,
                             transparentFillColor = transparentPageColor,
                             assetImage = null,
-                            preparedStrokes = emptyList(),
+                            preparedStrokes = if (drag > 0.5f) prevPreparedStrokes else nextPreparedStrokes,
                         )
-                    } else {
+                    }
+                }
+                // 待添加虚拟页没有纸面图层：桌面底色直接可见，只有按钮层提供操作入口。
+                if (surface !is EditorSurface.PendingAdd) {
+                    withTransform({ translate(drag, 0f) }) {
                         drawPaperLayer(
                             renderer = inkRenderer,
                             rect = transform.pageRect,
@@ -815,11 +779,11 @@ fun HandwriteCanvas(
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
         )
 
-        // 待添加虚拟页按钮层：随虚拟页纸面平移——从当前页滑入的拖拽阶段就从相邻位置
-        // 跟入（与纸面同速），停留时在纸面中心，返回拖拽时随纸面滑出。切面瞬间
-        // （拖拽位移归零）两个阶段的偏移公式在纸面中心处衔接，按钮不跳动。
-        // 铺在手势层之上保证按钮可点；滑入阶段按钮未启用（见 AddPagePlaceholder），
-        // 避免拖拽中的手指恰好停在按钮上时误触。
+        // 待添加虚拟页按钮层：无纸面，按钮即待添加页的全部内容，定在画布中心并随
+        // 翻页拖拽平移——从当前页滑入的拖拽阶段就从相邻位置跟入，停留时居中，返回
+        // 拖拽时随页面滑出。切面瞬间（拖拽位移归零）两个阶段的偏移公式在中心处衔接，
+        // 按钮不跳动。铺在手势层之上保证按钮可点；滑入阶段按钮未启用
+        // （见 AddPagePlaceholder），避免拖拽中的手指恰好停在按钮上时误触。
         if (pendingAddButtonsVisible) {
             Box(Modifier.fillMaxSize()) {
                 Box(
@@ -832,11 +796,7 @@ fun HandwriteCanvas(
                             } else {
                                 drag + canvasSize.width + NEIGHBOR_PAGE_GAP_DP.dp.toPx()
                             }
-                            val center = pendingPageTransform.pageRect.center + Offset(shift, 0f)
-                            IntOffset(
-                                (center.x - canvasSize.width / 2f).roundToInt(),
-                                (center.y - canvasSize.height / 2f).roundToInt(),
-                            )
+                            IntOffset(shift.roundToInt(), 0)
                         },
                     contentAlignment = Alignment.Center,
                 ) {
