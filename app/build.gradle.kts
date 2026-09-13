@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("handwrite.android.application")
     id("handwrite.android.compose")
@@ -6,13 +8,37 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}
+
 android {
     namespace = "com.xsgovo.handwrite"
 
     defaultConfig {
         applicationId = "com.xsgovo.handwrite"
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "1.0.1"
+    }
+
+    if (keystoreProperties.isNotEmpty()) {
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (keystoreProperties.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 }
 
@@ -43,5 +69,4 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
-
 }

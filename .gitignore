@@ -15,3 +15,7 @@
 **/.kotlin/
 .externalNativeBuild
 .cxx
+
+# release signing (local only)
+/keystore/
+/keystore.properties
