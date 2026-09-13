@@ -174,6 +174,10 @@ fun HandwriteCanvas(
     var pageDragPx by remember(canvasSession) { mutableFloatStateOf(0f) }
     var pageDragSettleJob by remember(canvasSession) { mutableStateOf<Job?>(null) }
     val inkingEnabledState by rememberUpdatedState(inkingEnabled)
+    // 派生状态里读取的 surface 必须来自 state：derivedStateOf 只追踪 snapshot state，
+    // 直接捕获函数参数会在 canvasSession 不变的表面切换（如进入待添加页）时读到旧值，
+    // 待添加页停留层因此永远不显示。
+    val currentSurface by rememberUpdatedState(surface)
     // 待添加虚拟页内容的两个图层：页面图层之下的露出层（页面滑出时逐渐露出、返回时被
     // 逐渐覆盖）与停留在虚拟页时的最上层交互层。同一组合两个摆放位，切换同帧无缝；
     // 派生状态仅在翻转时触发重组。canvasSession 必须参与 key：pageDragPx 随会话重建
@@ -181,12 +185,12 @@ fun HandwriteCanvas(
     val pendingAddUnderlayVisible by remember(canvasSession, nextNeighbor) {
         derivedStateOf {
             (nextNeighbor is EditorNeighbor.PendingAdd && pageDragPx < -0.5f) ||
-                (surface is EditorSurface.PendingAdd && pageDragPx > 0.5f)
+                (currentSurface is EditorSurface.PendingAdd && pageDragPx > 0.5f)
         }
     }
     val pendingAddOverlayVisible by remember(canvasSession) {
         derivedStateOf {
-            surface is EditorSurface.PendingAdd && abs(pageDragPx) <= 0.5f
+            currentSurface is EditorSurface.PendingAdd && abs(pageDragPx) <= 0.5f
         }
     }
     val pointerEventToLogicalTransform = remember(transform) {
