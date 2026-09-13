@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.xsgovo.handwrite.core.document.ResourceInput
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
+import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.rendering.rememberBackgroundAssetImage
 import java.io.FileNotFoundException
 import kotlinx.coroutines.CancellationException
@@ -80,7 +81,7 @@ fun EditorRoute(
         AddPagePlaceholder(
             pendingBackground = state.pendingAddBackground,
             interactive = state.onPendingAddPage,
-            onAddPage = viewModel::addPage,
+            onAddPage = { viewModel.addPage() },
             onChangeBackground = viewModel::setPendingAddBackground,
         )
     }
@@ -162,7 +163,7 @@ fun EditorRoute(
                     onRedo = viewModel::redo,
                     onClear = { confirmClear = true },
                     onOpenPages = { pagesPanelOpen = true },
-                    onAddPage = viewModel::addPage,
+                    onAddPage = { viewModel.addPage() },
                     onDeletePage = { confirmDeletePage = true },
                     onZoomLock = viewModel::setZoomLocked,
                     onBackground = viewModel::setBackground,
@@ -242,15 +243,18 @@ fun EditorRoute(
             pages = state.pages,
             currentPageId = state.pageId,
             addPageSize = state.pageSize,
+            // 图片/PDF 背景不可复制到新页，新页面菜单的默认草稿回落到白底。
+            currentBackground = state.background.takeUnless { it is PageBackground.Asset }
+                ?: PageBackground.Solid(PageBackground.WHITE),
             onSelectPage = { targetPageId ->
                 pagesPanelOpen = false
                 viewModel.selectPage(targetPageId)
             },
-            onAddPage = viewModel::addPage,
+            onAddPage = { background -> viewModel.addPage(background) },
             onDismiss = { pagesPanelOpen = false },
             onDeletePage = viewModel::deletePage,
             onToggleBookmark = viewModel::togglePageBookmark,
-            onMovePage = viewModel::movePage,
+            onMovePage = viewModel::movePageTo,
         )
     }
 

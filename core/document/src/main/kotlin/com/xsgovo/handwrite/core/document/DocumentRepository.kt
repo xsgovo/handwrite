@@ -41,7 +41,8 @@ interface DocumentRepository {
 
     suspend fun deletePage(documentId: DocumentId, pageId: PageId): DomainResult<Unit>
 
-    suspend fun movePage(documentId: DocumentId, pageId: PageId, delta: Int): DomainResult<Unit>
+    // 页面移动以目标位置索引表达：页面以 orderKey 排序，不以数组位置作为身份。
+    suspend fun movePage(documentId: DocumentId, pageId: PageId, toIndex: Int): DomainResult<Unit>
 
     suspend fun setPageBookmarked(
         documentId: DocumentId,

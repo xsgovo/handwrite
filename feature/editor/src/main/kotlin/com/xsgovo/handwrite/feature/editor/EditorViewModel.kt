@@ -545,8 +545,9 @@ class EditorViewModel @Inject constructor(
         mutableState.update { it.copy(pendingAddBackground = background) }
     }
 
-    // 新页沿用当前页面尺寸；背景默认沿用当前纸面，图片/PDF 背景不复制到新页，回退到默认背景。
-    fun addPage() {
+    // 新页沿用当前页面尺寸；背景优先用调用方指定的样式（页面面板自定义），否则沿用当前纸面，
+    // 图片/PDF 背景不复制到新页，回退到默认背景。
+    fun addPage(background: PageBackground? = null) {
         viewModelScope.launch {
             writeMutex.withLock {
                 // 空白临时会话首次物化即带首页：落在首页即可，不再额外追加一页。
@@ -557,13 +558,17 @@ class EditorViewModel @Inject constructor(
                     return@withLock
                 }
                 val current = mutableState.value
-                val background = if (current.onPendingAddPage) {
-                    current.pendingAddBackground
-                } else {
-                    current.background.takeUnless { it is PageBackground.Asset }
-                        ?: settingsRepository.settings.first().defaultBackground
-                }
-                when (val result = documents.addPage(target.first, current.pageSize, background, clock.nowMillis())) {
+                val effectiveBackground = background
+                    ?: if (current.onPendingAddPage) {
+                        current.pendingAddBackground
+                    } else {
+                        current.background.takeUnless { it is PageBackground.Asset }
+                            ?: settingsRepository.settings.first().defaultBackground
+                    }
+                when (
+                    val result =
+                        documents.addPage(target.first, current.pageSize, effectiveBackground, clock.nowMillis())
+                ) {
                     is DomainResult.Success -> {
                         switchToPage(EditorSurface.Page(result.value.id))
                         documents.updateLastActivePage(target.first, result.value.id)
@@ -606,12 +611,12 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    fun movePage(pageId: PageId, delta: Int) {
+    fun movePageTo(pageId: PageId, toIndex: Int) {
         viewModelScope.launch {
             writeMutex.withLock {
                 val documentId = mutableState.value.documentId ?: return@withLock
                 // 越界移动由界面禁用，这里对失败静默处理即可。
-                documents.movePage(documentId, pageId, delta)
+                documents.movePage(documentId, pageId, toIndex)
             }
         }
     }

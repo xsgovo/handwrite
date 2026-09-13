@@ -858,12 +858,45 @@ class EditorViewModelTest {
         advanceUntilIdle()
         val secondPageId = viewModel.state.value.pageId!!
 
-        viewModel.movePage(secondPageId, -1)
+        viewModel.movePageTo(secondPageId, 0)
         advanceUntilIdle()
 
         assertEquals(listOf(secondPageId, firstPageId), viewModel.state.value.pages.map { it.page.id })
         // 当前页跟随内容，不随位置改变。
         assertEquals(secondPageId, viewModel.state.value.pageId)
+    }
+
+    @Test
+    fun pagesCanBeMovedToAnArbitraryPosition() = runTest(dispatcher) {
+        val viewModel = createViewModel(FakeDocumentRepository())
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+        val secondPageId = viewModel.state.value.pageId!!
+        viewModel.addPage()
+        advanceUntilIdle()
+        val thirdPageId = viewModel.state.value.pageId!!
+
+        // 非相邻移动：首页直接移动到末尾。
+        viewModel.movePageTo(firstPageId, 2)
+        advanceUntilIdle()
+
+        assertEquals(listOf(secondPageId, thirdPageId, firstPageId), viewModel.state.value.pages.map { it.page.id })
+    }
+
+    @Test
+    fun addedPageUsesTheGivenBackground() = runTest(dispatcher) {
+        val viewModel = createViewModel(FakeDocumentRepository())
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+
+        val styledBackground = PageBackground.Pattern(PatternType.GRID, PageBackground.CREAM)
+        viewModel.addPage(styledBackground)
+        advanceUntilIdle()
+
+        assertEquals(styledBackground, viewModel.state.value.pages.last().page.background)
     }
 
     @Test
@@ -994,18 +1027,15 @@ class EditorViewModelTest {
             return DomainResult.Success(Unit)
         }
 
-        override suspend fun movePage(documentId: DocumentId, pageId: PageId, delta: Int): DomainResult<Unit> {
+        override suspend fun movePage(documentId: DocumentId, pageId: PageId, toIndex: Int): DomainResult<Unit> {
             val current = pages.value
             val index = current.indexOfFirst { it.page.id == pageId }
-            val targetIndex = index + delta
-            if (index < 0 || targetIndex !in current.indices) {
+            if (index < 0 || toIndex !in current.indices) {
                 return DomainResult.Failure(DomainFailure.PageNotFound)
             }
-            val reordered = current.toMutableList().apply {
-                val page = removeAt(index)
-                add(targetIndex, page)
+            pages.value = current.toMutableList().apply {
+                add(toIndex, removeAt(index))
             }
-            pages.value = reordered
             return DomainResult.Success(Unit)
         }
 

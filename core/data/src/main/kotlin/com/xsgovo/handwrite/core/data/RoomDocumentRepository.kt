@@ -143,20 +143,24 @@ class RoomDocumentRepository(
             }
         }
 
-    override suspend fun movePage(documentId: DocumentId, pageId: PageId, delta: Int): DomainResult<Unit> =
+    override suspend fun movePage(documentId: DocumentId, pageId: PageId, toIndex: Int): DomainResult<Unit> =
         guardedWrite {
             database.withTransaction {
                 if (dao.findDocumentIdForPage(pageId.value) != documentId.value) throw MissingPageException()
                 val pages = dao.findPages(documentId.value)
-                val index = pages.indexOfFirst { it.id == pageId.value }
-                val targetIndex = index + delta
-                if (index < 0 || targetIndex !in pages.indices) throw MissingPageException()
-                // 唯一索引 (documentId, orderKey) 下交换键值：先挪到临时键再落位。
-                val page = pages[index]
-                val neighbor = pages[targetIndex]
-                dao.updatePageOrderKey(pageId.value, -1L - pageId.value)
-                dao.updatePageOrderKey(neighbor.id, page.orderKey)
-                dao.updatePageOrderKey(pageId.value, neighbor.orderKey)
+                val fromIndex = pages.indexOfFirst { it.id == pageId.value }
+                if (fromIndex < 0 || toIndex !in pages.indices) throw MissingPageException()
+                if (toIndex == fromIndex) return@withTransaction
+                val reordered = pages.toMutableList().apply {
+                    add(toIndex, removeAt(fromIndex))
+                }
+                // 唯一索引 (documentId, orderKey) 下整体重排：先挪临时键再按新顺序落位。
+                reordered.forEach { dao.updatePageOrderKey(it.id, -1L - it.id) }
+                var orderKey = ORDER_STEP
+                reordered.forEach { page ->
+                    dao.updatePageOrderKey(page.id, orderKey)
+                    orderKey += ORDER_STEP
+                }
                 dao.touchDocument(documentId.value, clock.nowMillis())
             }
         }
