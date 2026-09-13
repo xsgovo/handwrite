@@ -28,11 +28,13 @@ import androidx.compose.ui.unit.dp
 import com.xsgovo.handwrite.core.model.PageBackground
 
 // 待添加页的停留交互层：纸面本体由画布按真实页面渲染（同样的底色、阴影与翻页过渡），
-// 此层只提供纸面上的操作入口，由画布定位在纸面中心并随纸面平移。
+// 此层只提供纸面上的操作入口，由画布定位在纸面中心并随纸面平移（滑入阶段即随纸面跟入）。
+// interactive 为 false 的滑入阶段按钮只作视觉展示：拖拽中的手指恰好落在按钮上时不得误触。
 // 右滑返回上一页的手势由画布统一处理：把上一页从滑出位置拉回，形成自然过渡。
 @Composable
 fun AddPagePlaceholder(
     pendingBackground: PageBackground,
+    interactive: Boolean,
     onAddPage: () -> Unit,
     onChangeBackground: (PageBackground) -> Unit,
     modifier: Modifier = Modifier,
@@ -45,8 +47,10 @@ fun AddPagePlaceholder(
     ) {
         Surface(
             onClick = onAddPage,
+            enabled = interactive,
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = 2.dp,
             shadowElevation = 4.dp,
             border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
@@ -67,7 +71,7 @@ fun AddPagePlaceholder(
         }
         Spacer(Modifier.height(24.dp))
         Box {
-            TextButton(onClick = { backgroundMenuOpen = true }) {
+            TextButton(onClick = { backgroundMenuOpen = true }, enabled = interactive) {
                 Icon(
                     Icons.Default.Wallpaper,
                     contentDescription = null,

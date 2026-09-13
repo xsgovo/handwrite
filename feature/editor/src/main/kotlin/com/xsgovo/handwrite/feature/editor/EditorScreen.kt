@@ -74,10 +74,12 @@ fun EditorRoute(
         )
     }
     val backgroundImage by rememberBackgroundAssetImage(state.background, state.backgroundResource)
-    // 待添加页的停留交互层：纸面由画布渲染，这里只提供纸面上的操作入口。
+    // 待添加页的按钮层：纸面由画布渲染；滑入的拖拽阶段按钮即随纸面跟入但不可点，
+    // 停留在待添加页后才启用交互。
     val pendingAddPageContent: @Composable () -> Unit = {
         AddPagePlaceholder(
             pendingBackground = state.pendingAddBackground,
+            interactive = state.onPendingAddPage,
             onAddPage = viewModel::addPage,
             onChangeBackground = viewModel::setPendingAddBackground,
         )

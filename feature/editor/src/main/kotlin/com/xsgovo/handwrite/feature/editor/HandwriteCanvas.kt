@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -167,6 +168,11 @@ fun HandwriteCanvas(
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
     }
+    // 待添加虚拟页不可书写，固定以 100% 适配屏幕、无平移的布局渲染：任何缩放平移
+    // 状态下滑到这一页，看到的都是同样的干净纸面。
+    val pendingPageTransform = remember(canvasSize, pageSize) {
+        CanvasPageTransform.create(canvasSize, pageSize, 1f, Offset.Zero)
+    }
     val density = LocalDensity.current
     val pageSwipeThresholdPx = with(density) { PAGE_SWIPE_COMMIT_THRESHOLD_DP.dp.toPx() }
     val panModeSlopPx = with(density) { PAN_MODE_SLOP_DP.dp.toPx() }
@@ -191,6 +197,17 @@ fun HandwriteCanvas(
     val undoCallback by rememberUpdatedState(onUndo)
     val prevNeighborState by rememberUpdatedState(prevNeighbor)
     val nextNeighborState by rememberUpdatedState(nextNeighbor)
+    // 派生状态里读取的 surface 必须来自 state：derivedStateOf 只追踪 snapshot state，
+    // 直接捕获函数参数会在 canvasSession 不变的表面切换（如进入待添加页）时读到旧值。
+    val currentSurface by rememberUpdatedState(surface)
+    // 待添加虚拟页按钮层的可见性：停留（或从其上滑出）常显；从当前页滑入的拖拽阶段
+    // 就跟随纸面提前出现。派生状态只在翻转时触发重组，拖拽中的每帧位移不重组。
+    val pendingAddButtonsVisible by remember(canvasSession) {
+        derivedStateOf {
+            currentSurface is EditorSurface.PendingAdd ||
+                (nextNeighborState is EditorNeighbor.PendingAdd && pageDragPx < -0.5f)
+        }
+    }
     val swipeNavigateCallback by rememberUpdatedState(onSwipeNavigate)
     val temporaryEraserCallback by rememberUpdatedState(onTemporaryEraserChanged)
 
@@ -307,9 +324,15 @@ fun HandwriteCanvas(
 
     // 平移与翻页手势共用一条位移路径：横向平移触底后，剩余位移转为页面拖拽位移；
     // 缩放不大于 100% 时页面横向完全可见，横向拖动直接进入整屏翻页模式。
+    // 待添加虚拟页固定 100% 渲染、无平移空间：横向位移全部直接转为翻页拖拽，
+    // 避免放大的平移余量吞掉拖拽起点。
     // 拖拽位移存在时，反方向的位移先收回拖拽，再归还给平移。
     fun applyPanDeltaWithPageDrag(delta: Offset) {
-        val panLimitX = if (currentZoom <= 100) 0f else currentTransform.panLimit.x
+        val panLimitX = if (currentZoom <= 100 || currentSurface is EditorSurface.PendingAdd) {
+            0f
+        } else {
+            currentTransform.panLimit.x
+        }
         val overscroll = pageDragOverscroll(delta.x, pan.x, panLimitX)
         if (overscroll != 0f) {
             pageDragSettleJob?.cancel()
@@ -655,21 +678,15 @@ fun HandwriteCanvas(
                                 )
                             }
                         }
-                        // 待添加虚拟页没有落库内容：沿用当前页尺寸与当前视图状态（缩放、
-                        // 平移）渲染空纸面，切换前后位置不变，与真实页的翻页预览一致。
+                        // 待添加虚拟页没有落库内容：按固定 100% 布局渲染空纸面，
+                        // 与停留时的渲染一致，切换前后位置不变。
                         EditorNeighbor.PendingAdd -> {
-                            val neighborTransform = CanvasPageTransform.create(
-                                canvasSize,
-                                pageSize,
-                                currentZoom / 100f,
-                                pan,
-                            )
                             withTransform({ translate(neighborOffset, 0f) }) {
                                 drawPaperLayer(
                                     renderer = inkRenderer,
-                                    rect = neighborTransform.pageRect,
+                                    rect = pendingPageTransform.pageRect,
                                     background = pendingAddBackground,
-                                    scale = neighborTransform.scale,
+                                    scale = pendingPageTransform.scale,
                                     transparentFillColor = transparentPageColor,
                                     assetImage = null,
                                     preparedStrokes = emptyList(),
@@ -682,9 +699,9 @@ fun HandwriteCanvas(
                     if (surface is EditorSurface.PendingAdd) {
                         drawPaperLayer(
                             renderer = inkRenderer,
-                            rect = transform.pageRect,
+                            rect = pendingPageTransform.pageRect,
                             background = pendingAddBackground,
-                            scale = transform.scale,
+                            scale = pendingPageTransform.scale,
                             transparentFillColor = transparentPageColor,
                             assetImage = null,
                             preparedStrokes = emptyList(),
@@ -784,7 +801,8 @@ fun HandwriteCanvas(
         }
         }
         ZoomControlsOverlay(
-            visible = zoomControlsVisible && !zoomLocked,
+            // 待添加虚拟页固定 100% 渲染：缩放控件在那里没有意义。
+            visible = zoomControlsVisible && !zoomLocked && surface !is EditorSurface.PendingAdd,
             zoomPercent = zoomPercent,
             onZoomOut = {
                 keepZoomControlsVisible()
@@ -797,16 +815,24 @@ fun HandwriteCanvas(
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
         )
 
-        // 待添加虚拟页停留层：纸面已由页面图层按真实页面渲染，这里只铺操作入口。
-        // 定位在纸面中心并随纸面平移（含翻页拖拽），返回手势开始后与纸面一同滑出；
-        // 铺在手势层之上保证按钮可点。
-        if (surface is EditorSurface.PendingAdd) {
+        // 待添加虚拟页按钮层：随虚拟页纸面平移——从当前页滑入的拖拽阶段就从相邻位置
+        // 跟入（与纸面同速），停留时在纸面中心，返回拖拽时随纸面滑出。切面瞬间
+        // （拖拽位移归零）两个阶段的偏移公式在纸面中心处衔接，按钮不跳动。
+        // 铺在手势层之上保证按钮可点；滑入阶段按钮未启用（见 AddPagePlaceholder），
+        // 避免拖拽中的手指恰好停在按钮上时误触。
+        if (pendingAddButtonsVisible) {
             Box(Modifier.fillMaxSize()) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .offset {
-                            val center = currentTransform.pageRect.center + Offset(pageDragPx, 0f)
+                            val drag = pageDragPx
+                            val shift = if (currentSurface is EditorSurface.PendingAdd) {
+                                drag
+                            } else {
+                                drag + canvasSize.width + NEIGHBOR_PAGE_GAP_DP.dp.toPx()
+                            }
+                            val center = pendingPageTransform.pageRect.center + Offset(shift, 0f)
                             IntOffset(
                                 (center.x - canvasSize.width / 2f).roundToInt(),
                                 (center.y - canvasSize.height / 2f).roundToInt(),
