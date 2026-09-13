@@ -96,8 +96,11 @@ import java.util.concurrent.atomic.AtomicLong
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun HandwriteCanvas(
-    // 展示面：真实页面或待添加虚拟页，兼作会话状态键（切面时重建会话状态）。
+    // 展示面：真实页面或待添加虚拟页。
     surface: EditorSurface?,
+    // 画布会话状态键：真实切面时递增，物化（null → Page）保持不变。
+    // 会话状态（笔画回显、平移、擦除预览等）以此重建，与展示面身份解耦。
+    canvasSession: Int,
     pageSize: LogicalSize,
     background: PageBackground,
     backgroundImage: ImageBitmap?,
@@ -135,27 +138,29 @@ fun HandwriteCanvas(
     modifier: Modifier = Modifier,
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    // 以下会话状态均以展示面为生命周期：画布常驻后用 surface 作 key，切面即重置。
-    var erasedIds by remember(surface) { mutableStateOf<Set<ElementId>>(emptySet()) }
-    var pendingErasedIds by remember(surface) { mutableStateOf<Set<ElementId>>(emptySet()) }
+    // 以下会话状态均以 canvasSession 为生命周期：真实切面即重置，物化保持。
+    var erasedIds by remember(canvasSession) { mutableStateOf<Set<ElementId>>(emptySet()) }
+    var pendingErasedIds by remember(canvasSession) { mutableStateOf<Set<ElementId>>(emptySet()) }
     // 像素橡皮的擦除预览：原笔画 id → 存留片段（负数临时 id 仅供显示），手势结束时一并提交。
-    var pixelErasePieces by remember(surface) { mutableStateOf<Map<ElementId, List<StrokeElement>>>(emptyMap()) }
-    var pixelErasedIds by remember(surface) { mutableStateOf<Set<ElementId>>(emptySet()) }
+    var pixelErasePieces by remember(canvasSession) { mutableStateOf<Map<ElementId, List<StrokeElement>>>(emptyMap()) }
+    var pixelErasedIds by remember(canvasSession) { mutableStateOf<Set<ElementId>>(emptySet()) }
     // 已提交给 ViewModel、等待持久化回执的擦除内容；失败时恢复显示。
-    var pendingPixelPieces by remember(surface) { mutableStateOf<Map<ElementId, List<StrokeElement>>>(emptyMap()) }
-    var pendingPixelErasedIds by remember(surface) { mutableStateOf<Set<ElementId>>(emptySet()) }
+    var pendingPixelPieces by remember(canvasSession) { mutableStateOf<Map<ElementId, List<StrokeElement>>>(emptyMap()) }
+    var pendingPixelErasedIds by remember(canvasSession) { mutableStateOf<Set<ElementId>>(emptySet()) }
     // 像素橡皮光标位置（屏幕坐标），用于绘制可调大小的橡皮圆盘。
-    var pixelEraseCursor by remember(surface) { mutableStateOf<Offset?>(null) }
+    var pixelEraseCursor by remember(canvasSession) { mutableStateOf<Offset?>(null) }
     // 预览片段每次重切都分配全新临时 id：渲染层按笔画 id 缓存 Ink 笔画且不看内容，
     // 复用 id 会让切分预览永远停留在首次接触时的内容。
     val previewPieceIds = remember { AtomicLong(0) }
     // 笔画包围盒在会话内不变，缓存后每次擦除事件对未触及笔画只需常数级剔除。
-    val strokeBoundsCache = remember(surface) { mutableMapOf<ElementId, Rect>() }
-    var pendingStrokes by remember(surface) { mutableStateOf<List<Stroke>>(emptyList()) }
-    var pan by remember(surface) { mutableStateOf(Offset.Zero) }
-    var zoomControlsVisible by remember(surface) { mutableStateOf(false) }
-    var zoomGestureActive by remember(surface) { mutableStateOf(false) }
-    var zoomControlInteraction by remember(surface) { mutableStateOf(0) }
+    val strokeBoundsCache = remember(canvasSession) { mutableMapOf<ElementId, Rect>() }
+    // 正在提交、尚未进入持久层状态的笔画回显：以 canvasSession 为生命周期，物化时保留，
+    // 避免第一笔在建档期间（elements 尚未填充）从画面上消失。
+    var pendingStrokes by remember(canvasSession) { mutableStateOf<List<Stroke>>(emptyList()) }
+    var pan by remember(canvasSession) { mutableStateOf(Offset.Zero) }
+    var zoomControlsVisible by remember(canvasSession) { mutableStateOf(false) }
+    var zoomGestureActive by remember(canvasSession) { mutableStateOf(false) }
+    var zoomControlInteraction by remember(canvasSession) { mutableStateOf(0) }
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
@@ -165,20 +170,20 @@ fun HandwriteCanvas(
     val scope = rememberCoroutineScope()
     // 页面拖拽位移（像素，向右为正）：平移到横向边界后继续拖动，页面整体跟手滑出；
     // 松手按阈值与方向决定切面，否则弹回。
-    var pageDragPx by remember(surface) { mutableFloatStateOf(0f) }
-    var pageDragSettleJob by remember(surface) { mutableStateOf<Job?>(null) }
+    var pageDragPx by remember(canvasSession) { mutableFloatStateOf(0f) }
+    var pageDragSettleJob by remember(canvasSession) { mutableStateOf<Job?>(null) }
     val inkingEnabledState by rememberUpdatedState(inkingEnabled)
     // 待添加虚拟页内容的两个图层：页面图层之下的露出层（页面滑出时逐渐露出、返回时被
     // 逐渐覆盖）与停留在虚拟页时的最上层交互层。同一组合两个摆放位，切换同帧无缝；
-    // 派生状态仅在翻转时触发重组。surface 必须参与 key：pageDragPx 随 surface 重建
+    // 派生状态仅在翻转时触发重组。canvasSession 必须参与 key：pageDragPx 随会话重建
     // 状态对象，派生状态不重建会一直读旧对象（物化文档等切面后露出失效）。
-    val pendingAddUnderlayVisible by remember(surface, nextNeighbor) {
+    val pendingAddUnderlayVisible by remember(canvasSession, nextNeighbor) {
         derivedStateOf {
             (nextNeighbor is EditorNeighbor.PendingAdd && pageDragPx < -0.5f) ||
                 (surface is EditorSurface.PendingAdd && pageDragPx > 0.5f)
         }
     }
-    val pendingAddOverlayVisible by remember(surface) {
+    val pendingAddOverlayVisible by remember(canvasSession) {
         derivedStateOf {
             surface is EditorSurface.PendingAdd && abs(pageDragPx) <= 0.5f
         }
@@ -335,8 +340,8 @@ fun HandwriteCanvas(
 
     // eraserSize 必须在 key 中：pointerInput 不重启时协程闭包会一直捕获旧尺寸，
     // 导致橡皮光标显示新大小而实际擦除仍按旧大小计算。
-    // pageId 也在 key 中：切页重置会话状态后，闭包必须重新捕获新的状态对象。
-    val gestureModifier = Modifier.pointerInput(surface, tool, eraserMode, eraserSize, inputMode, sideButtonAction) {
+    // canvasSession 也在 key 中：切面重置会话状态后，闭包必须重新捕获新的状态对象。
+    val gestureModifier = Modifier.pointerInput(canvasSession, tool, eraserMode, eraserSize, inputMode, sideButtonAction) {
         awaitEachGesture {
             var previousCentroid: Offset? = null
             var previousSpan = 0f

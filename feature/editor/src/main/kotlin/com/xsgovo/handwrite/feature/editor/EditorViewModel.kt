@@ -82,6 +82,9 @@ enum class EraserMode {
 data class EditorUiState(
     val documentId: DocumentId? = null,
     val surface: EditorSurface? = null,
+    // 画布会话状态键：真实切面（翻页、进出待添加页）时递增，临时会话物化（null → Page）
+    // 不递增。画布据此重建会话状态，物化首笔不会误判为切面而清掉正在提交的笔画回显。
+    val canvasSession: Int = 0,
     val pages: List<PageContent> = emptyList(),
     val pendingAddBackground: PageBackground = PageBackground.Solid(),
     val documentName: String = "新文档",
@@ -695,11 +698,15 @@ class EditorViewModel @Inject constructor(
         // 避免清空元素后等待内容流，新页面先空白再闪现笔迹；页面内容流随后校准。
         // 填充的是目标页自己的内容，不会让上一页的笔迹闪现在新页面上。
         // 待添加虚拟页没有落库内容：保持空元素并沿用当前背景，等待期间可自定义。
+        // 临时会话物化（null → Page）与打开文档的首个展示面都不算切面：画布会话状态
+        // 保持不变，正在提交的第一笔才不会在物化瞬间从画面上消失又重现。
+        val advancingSession = mutableState.value.surface != null
         val pageId = (surface as? EditorSurface.Page)?.pageId
         val seeded = pageId?.let { id -> mutableState.value.pages.firstOrNull { it.page.id == id } }
         mutableState.update {
             it.copy(
                 surface = surface,
+                canvasSession = if (advancingSession) it.canvasSession + 1 else it.canvasSession,
                 elements = seeded?.elements ?: emptyList(),
                 background = seeded?.page?.background ?: it.background,
                 pageSize = seeded?.page?.size ?: it.pageSize,

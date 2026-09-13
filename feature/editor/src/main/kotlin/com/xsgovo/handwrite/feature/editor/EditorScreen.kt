@@ -193,6 +193,7 @@ fun EditorRoute(
             Box(Modifier.fillMaxSize().padding(paddingValues)) {
                 HandwriteCanvas(
                     surface = state.surface,
+                    canvasSession = state.canvasSession,
                     inkingEnabled = !state.onPendingAddPage,
                     pageSize = state.pageSize,
                     background = state.background,

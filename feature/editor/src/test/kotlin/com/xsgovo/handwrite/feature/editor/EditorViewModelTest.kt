@@ -81,6 +81,41 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun materializingATemporaryDocumentKeepsTheCanvasSession() = runTest(dispatcher) {
+        // 临时会话物化（null → Page）不是切面：画布会话状态必须保持，
+        // 第一笔才不会在建档期间从画面上消失又重现。
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+        assertEquals(0, viewModel.state.value.canvasSession)
+
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.state.value.documentId)
+        assertEquals(0, viewModel.state.value.canvasSession)
+    }
+
+    @Test
+    fun switchingPagesAdvancesTheCanvasSession() = runTest(dispatcher) {
+        // 真实切面（翻页、进出待添加页）递增会话键，画布据此重建会话状态。
+        val repository = FakeDocumentRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.commitStroke(listOf(StrokeSample(LogicalPoint(100, 200))))
+        advanceUntilIdle()
+        val firstPageId = viewModel.state.value.pageId!!
+
+        viewModel.addPage()
+        advanceUntilIdle()
+        val afterAddPage = viewModel.state.value.canvasSession
+        assertEquals(1, afterAddPage)
+
+        viewModel.selectPage(firstPageId)
+        advanceUntilIdle()
+        assertEquals(2, viewModel.state.value.canvasSession)
+    }
+
+    @Test
     fun changingThePaperPatternPersistsTheDefaultWithoutCreatingADocument() = runTest(dispatcher) {
         val repository = FakeDocumentRepository()
         val settings = FakeSettingsRepository()
