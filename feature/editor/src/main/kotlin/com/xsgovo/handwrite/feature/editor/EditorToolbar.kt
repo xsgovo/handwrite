@@ -157,14 +157,40 @@ fun EditorToolbar(
             IconButton(onClick = onLibrary) {
                 Icon(Icons.Default.FolderOpen, contentDescription = "文档库")
             }
-            IconButton(onClick = onExport, enabled = state.documentId != null) {
-                Icon(Icons.Default.FileDownload, contentDescription = "导出")
-            }
-            IconButton(onClick = onShare, enabled = !isSharing) {
-                if (isSharing) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Default.Share, contentDescription = "分享当前页面图片")
+            // 分享与导出共用一个入口：当前页图片走系统分享，整份文档走导出流程。
+            var shareExportMenuExpanded by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { shareExportMenuExpanded = true }) {
+                    Icon(Icons.Default.Share, contentDescription = "分享或导出")
+                }
+                DropdownMenu(
+                    expanded = shareExportMenuExpanded,
+                    onDismissRequest = { shareExportMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("分享当前页面图片") },
+                        leadingIcon = {
+                            if (isSharing) {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Share, contentDescription = null)
+                            }
+                        },
+                        enabled = !isSharing,
+                        onClick = {
+                            shareExportMenuExpanded = false
+                            onShare()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("导出文档") },
+                        leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                        enabled = state.documentId != null,
+                        onClick = {
+                            shareExportMenuExpanded = false
+                            onExport()
+                        },
+                    )
                 }
             }
             IconButton(onClick = onOpenPages) {
