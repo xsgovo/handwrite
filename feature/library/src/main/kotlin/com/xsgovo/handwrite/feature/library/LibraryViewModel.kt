@@ -1,5 +1,6 @@
 package com.xsgovo.handwrite.feature.library
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xsgovo.handwrite.core.document.DocumentRepository
@@ -21,7 +22,7 @@ data class LibraryUiState(
 )
 
 sealed interface LibraryUiEffect {
-    data class ShowMessage(val message: String) : LibraryUiEffect
+    data class ShowMessage(@StringRes val messageResId: Int) : LibraryUiEffect
 }
 
 @HiltViewModel
@@ -48,7 +49,7 @@ class LibraryViewModel @Inject constructor(
             mutableState.update { it.copy(deletingId = documentId) }
             when (repository.deleteDocument(documentId)) {
                 is DomainResult.Success -> Unit
-                is DomainResult.Failure -> effectsChannel.send(LibraryUiEffect.ShowMessage("无法删除文档"))
+                is DomainResult.Failure -> effectsChannel.send(LibraryUiEffect.ShowMessage(R.string.library_delete_failed))
             }
             mutableState.update { it.copy(deletingId = null) }
         }

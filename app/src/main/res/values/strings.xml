@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">随手写</string>
+    <string name="share_image_chooser_title">分享图片</string>
 </resources>

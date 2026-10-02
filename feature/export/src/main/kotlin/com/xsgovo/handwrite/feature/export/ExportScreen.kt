@@ -35,6 +35,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.ImageFormat
@@ -48,6 +50,8 @@ fun ExportRoute(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val resources = LocalResources.current
+    val longImageFileSuffix = stringResource(R.string.export_long_image_file_suffix)
     val snackbar = remember { SnackbarHostState() }
 
     fun acceptDestination(uri: Uri?) {
@@ -66,7 +70,7 @@ fun ExportRoute(
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is ExportUiEffect.ShowMessage -> snackbar.showSnackbar(effect.message)
+                is ExportUiEffect.ShowMessage -> snackbar.showSnackbar(resources.getString(effect.messageResId))
             }
         }
     }
@@ -74,10 +78,10 @@ fun ExportRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("导出") },
+                title = { Text(stringResource(R.string.export_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.export_back))
                     }
                 },
             )
@@ -107,7 +111,7 @@ fun ExportRoute(
                     val baseName = state.documentName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
                     when (state.format) {
                         DocumentExportFormat.PAGE_IMAGE -> imageTarget.launch("$baseName.${state.settings.imageExtension()}")
-                        DocumentExportFormat.LONG_IMAGE -> imageTarget.launch("$baseName-长图.${state.settings.imageExtension()}")
+                        DocumentExportFormat.LONG_IMAGE -> imageTarget.launch("$baseName-$longImageFileSuffix.${state.settings.imageExtension()}")
                         DocumentExportFormat.HYBRID_PDF -> pdfTarget.launch("$baseName.pdf")
                         DocumentExportFormat.NATIVE_PACKAGE -> packageTarget.launch("$baseName.handwrite.zip")
                     }
@@ -119,7 +123,7 @@ fun ExportRoute(
                 } else {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                 }
-                Text(if (state.isExporting) "正在导出" else "选择保存位置")
+                Text(stringResource(if (state.isExporting) R.string.export_button_exporting else R.string.export_button_ready))
             }
         }
     }
@@ -152,16 +156,16 @@ private fun ExportFormatCard(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
             RadioButton(selected = selected, onClick = null, enabled = enabled)
-            Text(format.label(), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 4.dp))
+            Text(stringResource(format.labelRes()), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 4.dp))
         }
     }
 }
 
-private fun DocumentExportFormat.label(): String = when (this) {
-    DocumentExportFormat.PAGE_IMAGE -> "当前页面图片"
-    DocumentExportFormat.LONG_IMAGE -> "全部页面长图"
-    DocumentExportFormat.HYBRID_PDF -> "混合 PDF"
-    DocumentExportFormat.NATIVE_PACKAGE -> "原生 ZIP 文档包"
+private fun DocumentExportFormat.labelRes(): Int = when (this) {
+    DocumentExportFormat.PAGE_IMAGE -> R.string.export_format_page_image
+    DocumentExportFormat.LONG_IMAGE -> R.string.export_format_long_image
+    DocumentExportFormat.HYBRID_PDF -> R.string.export_format_hybrid_pdf
+    DocumentExportFormat.NATIVE_PACKAGE -> R.string.export_format_native_package
 }
 
 private fun com.xsgovo.handwrite.core.model.AppSettings.imageExtension(): String = when (imageFormat) {

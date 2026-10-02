@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
@@ -74,14 +75,15 @@ import kotlin.math.roundToInt
 private const val MENU_EXIT_ANIMATION_MILLIS = 300L
 
 // 背景二级菜单的底色色板；透明底以棋盘格呈现，样式（横线/方格）可叠加在任意底色上。
+// 色板名称保存为字符串资源 ID，展示时再按当前语言解析。
 internal val backgroundSwatchChoices = listOf(
-    "透明" to PageBackground.TRANSPARENT,
-    "白色" to PageBackground.WHITE,
-    "浅灰" to PageBackground.GRAY,
-    "米黄" to PageBackground.CREAM,
-    "浅粉" to PageBackground.PINK,
-    "浅青" to PageBackground.TEAL,
-    "纯黑" to PageBackground.BLACK,
+    R.string.editor_background_transparent to PageBackground.TRANSPARENT,
+    R.string.editor_background_white to PageBackground.WHITE,
+    R.string.editor_background_gray to PageBackground.GRAY,
+    R.string.editor_background_cream to PageBackground.CREAM,
+    R.string.editor_background_pink to PageBackground.PINK,
+    R.string.editor_background_teal to PageBackground.TEAL,
+    R.string.editor_background_black to PageBackground.BLACK,
 )
 
 // 状态栏衬色跟随纸面底色，让画布颜色延伸到系统栏；透明底/图片背景时用工具栏表面色。
@@ -155,20 +157,20 @@ fun EditorToolbar(
                 .padding(horizontal = 8.dp),
         ) {
             IconButton(onClick = onLibrary) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "文档库")
+                Icon(Icons.Default.FolderOpen, contentDescription = stringResource(R.string.editor_tool_library))
             }
             // 分享与导出共用一个入口：当前页图片走系统分享，整份文档走导出流程。
             var shareExportMenuExpanded by remember { mutableStateOf(false) }
             Box {
                 IconButton(onClick = { shareExportMenuExpanded = true }) {
-                    Icon(Icons.Default.Share, contentDescription = "分享或导出")
+                    Icon(Icons.Default.Share, contentDescription = stringResource(R.string.editor_tool_share_or_export))
                 }
                 DropdownMenu(
                     expanded = shareExportMenuExpanded,
                     onDismissRequest = { shareExportMenuExpanded = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text("分享当前页面图片") },
+                        text = { Text(stringResource(R.string.editor_share_current_page_image)) },
                         leadingIcon = {
                             if (isSharing) {
                                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -183,7 +185,7 @@ fun EditorToolbar(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("导出文档") },
+                        text = { Text(stringResource(R.string.editor_export_document)) },
                         leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
                         enabled = state.documentId != null,
                         onClick = {
@@ -194,10 +196,10 @@ fun EditorToolbar(
                 }
             }
             IconButton(onClick = onOpenPages) {
-                Icon(Icons.Default.LibraryBooks, contentDescription = "页面管理")
+                Icon(Icons.Default.LibraryBooks, contentDescription = stringResource(R.string.editor_tool_page_manager))
             }
             val selectedTool = if (temporaryEraserActive) EditorTool.ERASER else state.tool
-            ToolButton(EditorTool.PEN, selectedTool, onTool, Icons.Default.Edit, "画笔")
+            ToolButton(EditorTool.PEN, selectedTool, onTool, Icons.Default.Edit, stringResource(R.string.editor_tool_pen))
             // 橡皮擦图标跟随当前模式，与笔宽按钮显示当前档位的做法一致；
             // 选中橡皮擦后再次点击弹出模式菜单，菜单内可调像素橡皮的大小。
             var eraserMenuExpanded by remember { mutableStateOf(false) }
@@ -210,31 +212,34 @@ fun EditorToolbar(
             } else {
                 Icons.Default.AutoFixNormal
             }
-            Box {
-                ToolButton(
-                    tool = EditorTool.ERASER,
-                    selectedTool = selectedTool,
-                    onTool = { if (selectedTool == EditorTool.ERASER) eraserMenuExpanded = true else onTool(EditorTool.ERASER) },
-                    icon = eraserIcon,
-                    description = "橡皮擦",
-                )
-                DropdownMenu(
-                    expanded = eraserMenuExpanded,
-                    onDismissRequest = { eraserMenuExpanded = false },
-                ) {
-                    CheckableMenuItem("笔画橡皮擦", state.eraserMode == EraserMode.STROKE) {
-                        eraserMenuExpanded = false
-                        onTool(EditorTool.ERASER)
-                        onEraserMode(EraserMode.STROKE)
-                    }
-                    CheckableMenuItem("像素橡皮擦", state.eraserMode == EraserMode.PIXEL) {
-                        eraserMenuExpanded = false
-                        onTool(EditorTool.ERASER)
-                        onEraserMode(EraserMode.PIXEL)
-                    }
-                    HorizontalDivider()
-                    Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text("橡皮大小 ${pendingEraserSize.roundToInt()}", style = MaterialTheme.typography.titleSmall)
+                Box {
+                    ToolButton(
+                        tool = EditorTool.ERASER,
+                        selectedTool = selectedTool,
+                        onTool = { if (selectedTool == EditorTool.ERASER) eraserMenuExpanded = true else onTool(EditorTool.ERASER) },
+                        icon = eraserIcon,
+                        description = stringResource(R.string.editor_tool_eraser),
+                    )
+                    DropdownMenu(
+                        expanded = eraserMenuExpanded,
+                        onDismissRequest = { eraserMenuExpanded = false },
+                    ) {
+                        CheckableMenuItem(stringResource(R.string.editor_eraser_mode_stroke), state.eraserMode == EraserMode.STROKE) {
+                            eraserMenuExpanded = false
+                            onTool(EditorTool.ERASER)
+                            onEraserMode(EraserMode.STROKE)
+                        }
+                        CheckableMenuItem(stringResource(R.string.editor_eraser_mode_pixel), state.eraserMode == EraserMode.PIXEL) {
+                            eraserMenuExpanded = false
+                            onTool(EditorTool.ERASER)
+                            onEraserMode(EraserMode.PIXEL)
+                        }
+                        HorizontalDivider()
+                        Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text(
+                                stringResource(R.string.editor_eraser_size, pendingEraserSize.roundToInt()),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
                         Slider(
                             value = pendingEraserSize,
                             onValueChange = { pendingEraserSize = it },
@@ -285,7 +290,10 @@ fun EditorToolbar(
                         },
                     ) {
                         Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                            Text("笔宽 ${pendingWidthStep.roundToInt()}", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.editor_brush_width, pendingWidthStep.roundToInt()),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
                             Slider(
                                 value = pendingWidthStep,
                                 onValueChange = { pendingWidthStep = it },
@@ -317,21 +325,21 @@ fun EditorToolbar(
             ) {
                 Icon(
                     if (state.zoomLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                    contentDescription = "锁定画布",
+                    contentDescription = stringResource(R.string.editor_zoom_lock),
                 )
             }
             IconButton(onClick = onUndo, enabled = state.canUndo) {
-                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "撤销")
+                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.editor_undo))
             }
             IconButton(onClick = onRedo, enabled = state.canRedo) {
-                Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "重做")
+                Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.editor_redo))
             }
             IconButton(onClick = onClear, enabled = state.elements.isNotEmpty()) {
-                Icon(Icons.Default.DeleteSweep, contentDescription = "清空页面")
+                Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.editor_clear_page))
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "画布选项")
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.editor_canvas_options))
                 }
                 DropdownMenu(
                     expanded = menuExpanded,
@@ -342,30 +350,30 @@ fun EditorToolbar(
                 ) {
                     if (!backgroundPanelOpen) {
                         DropdownMenuItem(
-                            text = { Text("背景") },
+                            text = { Text(stringResource(R.string.editor_background)) },
                             leadingIcon = { Icon(Icons.Default.Wallpaper, contentDescription = null) },
                             onClick = { backgroundPanelOpen = true },
                         )
                         DropdownMenuItem(
-                            text = { Text("导入图片或 PDF 背景") },
+                            text = { Text(stringResource(R.string.editor_import_background)) },
                             leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, contentDescription = null) },
                             onClick = { menuExpanded = false; onImportBackground() },
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
-                            text = { Text("添加页面") },
+                            text = { Text(stringResource(R.string.editor_add_page)) },
                             leadingIcon = { Icon(Icons.Default.LibraryAdd, contentDescription = null) },
                             onClick = { menuExpanded = false; onAddPage() },
                         )
                         DropdownMenuItem(
-                            text = { Text("删除本页") },
+                            text = { Text(stringResource(R.string.editor_delete_current_page)) },
                             leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
                             onClick = { menuExpanded = false; onDeletePage() },
                             enabled = state.pageCount > 1,
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
-                            text = { Text("设置") },
+                            text = { Text(stringResource(R.string.editor_settings)) },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                             onClick = { menuExpanded = false; onSettings() },
                         )
@@ -450,7 +458,7 @@ private fun BrushWidthPresetButton(
     ) {
         Icon(
             imageVector = Icons.Default.Circle,
-            contentDescription = "${step}档笔宽",
+            contentDescription = stringResource(R.string.editor_brush_width_content_description, step),
             modifier = Modifier.size(brushWidthIconSizeDp(step).dp),
         )
     }
@@ -532,18 +540,18 @@ internal fun BackgroundMenuPanel(
     Column(Modifier.padding(vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回背景选项")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.editor_back_to_background_options))
             }
-            Text("背景", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.editor_background), style = MaterialTheme.typography.titleMedium)
         }
         Spacer(Modifier.height(6.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(horizontal = 16.dp),
         ) {
-            backgroundSwatchChoices.forEach { (label, argb) ->
+            backgroundSwatchChoices.forEach { (labelRes, argb) ->
                 BackgroundSwatch(
-                    label = label,
+                    labelRes = labelRes,
                     argb = argb,
                     selected = currentColor == argb,
                     onClick = { onSelect(backgroundWithStyle(argb, currentStyle)) },
@@ -552,13 +560,13 @@ internal fun BackgroundMenuPanel(
         }
         Spacer(Modifier.height(6.dp))
         HorizontalDivider()
-        CheckableMenuItem("无样式", currentStyle == null) {
+        CheckableMenuItem(stringResource(R.string.editor_background_style_none), currentStyle == null) {
             onSelect(backgroundWithStyle(currentColor, null))
         }
-        CheckableMenuItem("横线", currentStyle == PatternType.LINED) {
+        CheckableMenuItem(stringResource(R.string.editor_background_style_lined), currentStyle == PatternType.LINED) {
             onSelect(backgroundWithStyle(currentColor, PatternType.LINED))
         }
-        CheckableMenuItem("方格", currentStyle == PatternType.GRID) {
+        CheckableMenuItem(stringResource(R.string.editor_background_style_grid), currentStyle == PatternType.GRID) {
             onSelect(backgroundWithStyle(currentColor, PatternType.GRID))
         }
     }
@@ -570,7 +578,7 @@ private fun CheckableMenuItem(label: String, selected: Boolean, onClick: () -> U
         text = { Text(label) },
         trailingIcon = {
             if (selected) {
-                Icon(Icons.Default.Check, contentDescription = "已选中")
+                Icon(Icons.Default.Check, contentDescription = stringResource(R.string.editor_selected))
             }
         },
         onClick = onClick,
@@ -579,7 +587,9 @@ private fun CheckableMenuItem(label: String, selected: Boolean, onClick: () -> U
 
 // 底色色块：透明底垫棋盘格；选中时主色描边加对勾。
 @Composable
-private fun BackgroundSwatch(label: String, argb: Int, selected: Boolean, onClick: () -> Unit) {
+private fun BackgroundSwatch(labelRes: Int, argb: Int, selected: Boolean, onClick: () -> Unit) {
+    val label = stringResource(labelRes)
+    val swatchDescription = stringResource(R.string.editor_background_swatch_content_description, label)
     Box(
         modifier = Modifier
             .size(36.dp)
@@ -596,7 +606,7 @@ private fun BackgroundSwatch(label: String, argb: Int, selected: Boolean, onClic
                 shape = RoundedCornerShape(10.dp),
             )
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "$label 背景" },
+            .semantics { contentDescription = swatchDescription },
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {

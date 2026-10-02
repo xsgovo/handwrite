@@ -38,7 +38,7 @@ class PageImageSharer @Inject constructor(
             clipData = ClipData.newUri(context.contentResolver, request.documentName, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val chooser = Intent.createChooser(sendIntent, "分享图片").apply {
+        val chooser = Intent.createChooser(sendIntent, context.getString(R.string.share_image_chooser_title)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(chooser)

@@ -1,0 +1,13 @@
+<resources>
+    <string name="export_title">导出</string>
+    <string name="export_back">返回</string>
+    <string name="export_button_ready">选择保存位置</string>
+    <string name="export_button_exporting">正在导出</string>
+    <string name="export_format_page_image">当前页面图片</string>
+    <string name="export_format_long_image">全部页面长图</string>
+    <string name="export_format_hybrid_pdf">混合 PDF</string>
+    <string name="export_format_native_package">原生 ZIP 文档包</string>
+    <string name="export_long_image_file_suffix">长图</string>
+    <string name="export_completed">导出完成</string>
+    <string name="export_failed">导出失败</string>
+</resources>

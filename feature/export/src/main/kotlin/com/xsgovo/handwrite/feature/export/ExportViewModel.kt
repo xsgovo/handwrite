@@ -2,6 +2,7 @@ package com.xsgovo.handwrite.feature.export
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.Data
@@ -36,7 +37,7 @@ data class ExportUiState(
 )
 
 sealed interface ExportUiEffect {
-    data class ShowMessage(val message: String) : ExportUiEffect
+    data class ShowMessage(@StringRes val messageResId: Int) : ExportUiEffect
 }
 
 @HiltViewModel
@@ -100,18 +101,18 @@ class ExportViewModel @Inject constructor(
                 val info = withContext(Dispatchers.IO) { workManager.getWorkInfoById(request.id).get() }
                 if (info == null) {
                     mutableState.update { it.copy(isExporting = false) }
-                    effectsChannel.send(ExportUiEffect.ShowMessage("导出失败"))
+                    effectsChannel.send(ExportUiEffect.ShowMessage(R.string.export_failed))
                     break
                 }
                 when (info.state) {
                     WorkInfo.State.SUCCEEDED -> {
                         mutableState.update { it.copy(isExporting = false) }
-                        effectsChannel.send(ExportUiEffect.ShowMessage("导出完成"))
+                        effectsChannel.send(ExportUiEffect.ShowMessage(R.string.export_completed))
                         break
                     }
                     WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
                         mutableState.update { it.copy(isExporting = false) }
-                        effectsChannel.send(ExportUiEffect.ShowMessage("导出失败"))
+                        effectsChannel.send(ExportUiEffect.ShowMessage(R.string.export_failed))
                         break
                     }
                     else -> Unit

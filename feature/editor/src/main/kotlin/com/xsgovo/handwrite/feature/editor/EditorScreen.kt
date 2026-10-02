@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import com.xsgovo.handwrite.core.document.ResourceInput
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
@@ -60,6 +62,8 @@ fun EditorRoute(
     var temporaryEraserActive by remember { mutableStateOf(false) }
     var isSharing by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val resources = LocalResources.current
+    val shareFailedMessage = stringResource(R.string.editor_share_image_failed)
     val backgroundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         val resolver = context.contentResolver
@@ -107,7 +111,7 @@ fun EditorRoute(
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is EditorUiEffect.ShowMessage -> snackbar.showSnackbar(effect.message)
+                is EditorUiEffect.ShowMessage -> snackbar.showSnackbar(resources.getString(effect.messageResId))
             }
         }
     }
@@ -144,7 +148,7 @@ fun EditorRoute(
                                     false
                                 }
                                 isSharing = false
-                                if (!shared) snackbar.showSnackbar("分享图片失败")
+                                if (!shared) snackbar.showSnackbar(shareFailedMessage)
                             }
                         }
                     },
@@ -261,24 +265,28 @@ fun EditorRoute(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("清空当前页面？") },
-            text = { Text("本次编辑会话中可以撤销此操作。") },
+            title = { Text(stringResource(R.string.editor_clear_page_dialog_title)) },
+            text = { Text(stringResource(R.string.editor_clear_page_dialog_message)) },
             confirmButton = {
-                TextButton(onClick = { confirmClear = false; viewModel.clearPage() }) { Text("清空") }
+                TextButton(onClick = { confirmClear = false; viewModel.clearPage() }) {
+                    Text(stringResource(R.string.editor_action_clear))
+                }
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.editor_action_cancel)) } },
         )
     }
 
     if (confirmDeletePage) {
         AlertDialog(
             onDismissRequest = { confirmDeletePage = false },
-            title = { Text("删除当前页面？") },
-            text = { Text("页面上的内容将一并删除，此操作无法撤销。") },
+            title = { Text(stringResource(R.string.editor_delete_page_dialog_title)) },
+            text = { Text(stringResource(R.string.editor_delete_page_dialog_message)) },
             confirmButton = {
-                TextButton(onClick = { confirmDeletePage = false; viewModel.deleteCurrentPage() }) { Text("删除") }
+                TextButton(onClick = { confirmDeletePage = false; viewModel.deleteCurrentPage() }) {
+                    Text(stringResource(R.string.editor_action_delete))
+                }
             },
-            dismissButton = { TextButton(onClick = { confirmDeletePage = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { confirmDeletePage = false }) { Text(stringResource(R.string.editor_action_cancel)) } },
         )
     }
 }

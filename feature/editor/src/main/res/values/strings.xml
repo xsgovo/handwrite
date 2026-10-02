@@ -1,0 +1,86 @@
+<resources>
+    <!-- 工具栏 -->
+    <string name="editor_tool_library">文档库</string>
+    <string name="editor_tool_share_or_export">分享或导出</string>
+    <string name="editor_share_current_page_image">分享当前页面图片</string>
+    <string name="editor_export_document">导出文档</string>
+    <string name="editor_tool_page_manager">页面管理</string>
+    <string name="editor_tool_pen">画笔</string>
+    <string name="editor_tool_eraser">橡皮擦</string>
+    <string name="editor_eraser_mode_stroke">笔画橡皮擦</string>
+    <string name="editor_eraser_mode_pixel">像素橡皮擦</string>
+    <string name="editor_eraser_size">橡皮大小 %1$d</string>
+    <string name="editor_brush_width">笔宽 %1$d</string>
+    <string name="editor_zoom_lock">锁定画布</string>
+    <string name="editor_undo">撤销</string>
+    <string name="editor_redo">重做</string>
+    <string name="editor_clear_page">清空页面</string>
+    <string name="editor_canvas_options">画布选项</string>
+    <string name="editor_background">背景</string>
+    <string name="editor_import_background">导入图片或 PDF 背景</string>
+    <string name="editor_add_page">添加页面</string>
+    <string name="editor_delete_current_page">删除本页</string>
+    <string name="editor_settings">设置</string>
+    <string name="editor_brush_width_content_description">%1$d档笔宽</string>
+    <string name="editor_back_to_background_options">返回背景选项</string>
+    <string name="editor_selected">已选中</string>
+    <string name="editor_background_swatch_content_description">%1$s 背景</string>
+
+    <!-- 背景底色与样式 -->
+    <string name="editor_background_transparent">透明</string>
+    <string name="editor_background_white">白色</string>
+    <string name="editor_background_gray">浅灰</string>
+    <string name="editor_background_cream">米黄</string>
+    <string name="editor_background_pink">浅粉</string>
+    <string name="editor_background_teal">浅青</string>
+    <string name="editor_background_black">纯黑</string>
+    <string name="editor_background_style_none">无样式</string>
+    <string name="editor_background_style_lined">横线</string>
+    <string name="editor_background_style_grid">方格</string>
+
+    <!-- 取色器 -->
+    <string name="editor_picker_tab_palette">色板</string>
+    <string name="editor_picker_tab_spectrum">光谱</string>
+    <string name="editor_palette_grid_content_description">色板颜色网格</string>
+    <string name="editor_opacity">透明度</string>
+    <string name="editor_remove_candidate">移除</string>
+    <string name="editor_add_candidate_color">新增候选颜色</string>
+
+    <!-- 画布与待添加页 -->
+    <string name="editor_zoom_out">缩小页面</string>
+    <string name="editor_zoom_in">放大页面</string>
+    <string name="editor_add_new_page">添加新页面</string>
+    <string name="editor_custom_background">自定义背景</string>
+
+    <!-- 页面面板 -->
+    <string name="editor_panel_title_pages">页面</string>
+    <string name="editor_panel_tab_all_pages">所有页</string>
+    <string name="editor_panel_tab_bookmarks">书签</string>
+    <string name="editor_no_bookmarks">暂无书签</string>
+    <string name="editor_remove_bookmark">移出书签</string>
+    <string name="editor_add_bookmark">添加到书签</string>
+    <string name="editor_move_page_up">上移</string>
+    <string name="editor_move_page_down">下移</string>
+    <string name="editor_delete_page">删除页面</string>
+    <string name="editor_new_page">新页面</string>
+    <string name="editor_base_color">底色</string>
+
+    <!-- 提示消息 -->
+    <string name="editor_share_image_failed">分享图片失败</string>
+    <string name="editor_import_background_failed">无法导入背景文件</string>
+    <string name="editor_background_file_missing">背景文件已丢失</string>
+    <string name="editor_discard_blank_document_failed">无法丢弃空白文档</string>
+    <string name="editor_failure_storage_full">存储空间不足</string>
+    <string name="editor_failure_document_missing">文档已不存在</string>
+    <string name="editor_failure_last_page_remaining">文档至少保留一页</string>
+    <string name="editor_failure_save_failed">保存失败，请重试</string>
+
+    <!-- 确认对话框 -->
+    <string name="editor_clear_page_dialog_title">清空当前页面？</string>
+    <string name="editor_clear_page_dialog_message">本次编辑会话中可以撤销此操作。</string>
+    <string name="editor_delete_page_dialog_title">删除当前页面？</string>
+    <string name="editor_delete_page_dialog_message">页面上的内容将一并删除，此操作无法撤销。</string>
+    <string name="editor_action_clear">清空</string>
+    <string name="editor_action_delete">删除</string>
+    <string name="editor_action_cancel">取消</string>
+</resources>

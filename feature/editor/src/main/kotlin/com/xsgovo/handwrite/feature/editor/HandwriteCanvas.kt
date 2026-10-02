@@ -61,6 +61,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -946,7 +947,7 @@ private fun ZoomControlsOverlay(
                 modifier = Modifier.height(48.dp),
             ) {
                 IconButton(onClick = onZoomOut, enabled = zoomPercent > MIN_ZOOM_PERCENT) {
-                    Icon(Icons.Default.Remove, contentDescription = "缩小页面")
+                    Icon(Icons.Default.Remove, contentDescription = stringResource(R.string.editor_zoom_out))
                 }
                 Text(
                     text = "$zoomPercent%",
@@ -955,7 +956,7 @@ private fun ZoomControlsOverlay(
                     modifier = Modifier.width(64.dp),
                 )
                 IconButton(onClick = onZoomIn, enabled = zoomPercent < MAX_ZOOM_PERCENT) {
-                    Icon(Icons.Default.Add, contentDescription = "放大页面")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.editor_zoom_in))
                 }
             }
         }

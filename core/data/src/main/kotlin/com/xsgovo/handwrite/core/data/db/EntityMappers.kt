@@ -91,4 +91,5 @@ private fun PageElementEntity.toDomain(): PageElement? {
 }
 
 private const val LOG_TAG = "EntityMappers"
+// 数据行名称缺失时的落库回退名：写入数据库后不随界面语言变化，因此不用字符串资源。
 private const val DEFAULT_DOCUMENT_NAME = "未命名文档"

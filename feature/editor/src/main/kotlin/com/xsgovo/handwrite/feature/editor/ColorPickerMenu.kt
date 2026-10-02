@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -151,7 +152,7 @@ private fun PickerTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(4.dp),
     ) {
-        listOf("色板", "光谱").forEachIndexed { index, label ->
+        listOf(R.string.editor_picker_tab_palette, R.string.editor_picker_tab_spectrum).forEachIndexed { index, labelRes ->
             val selected = index == selectedTab
             Box(
                 modifier = Modifier
@@ -163,7 +164,7 @@ private fun PickerTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    label,
+                    stringResource(labelRes),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (selected) {
@@ -181,6 +182,7 @@ private fun PickerTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
 private fun PaletteGrid(activeColor: Int, onColorPicked: (Int) -> Unit) {
     val rows = remember { paletteGridRows() }
     val ringColor = MaterialTheme.colorScheme.primary
+    val paletteGridDescription = stringResource(R.string.editor_palette_grid_content_description)
     fun pick(position: Offset, size: IntSize) {
         paletteCellAt(position.x, position.y, size.width.toFloat(), size.height.toFloat())
             ?.let { (row, column) -> onColorPicked(rows[row][column]) }
@@ -189,7 +191,7 @@ private fun PaletteGrid(activeColor: Int, onColorPicked: (Int) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(PALETTE_COLUMN_COUNT / PALETTE_ROW_COUNT.toFloat())
-            .semantics { contentDescription = "色板颜色网格" }
+            .semantics { contentDescription = paletteGridDescription }
             .pointerInput(rows) {
                 detectTapGestures { position -> pick(position, size) }
             }
@@ -240,7 +242,7 @@ private fun OpacityRow(activeColor: Int, onOpacityChanged: (Int) -> Unit) {
 
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(
-            "透明度",
+            stringResource(R.string.editor_opacity),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -505,7 +507,7 @@ private fun CandidateRow(
                         onDismissRequest = { pendingDeleteIndex = null },
                     ) {
                         DropdownMenuItem(
-                            text = { Text("移除") },
+                            text = { Text(stringResource(R.string.editor_remove_candidate)) },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                             onClick = {
                                 pendingDeleteIndex = null
@@ -546,7 +548,7 @@ private fun AddCandidateCircle(onClick: () -> Unit) {
     ) {
         Icon(
             Icons.Default.Add,
-            contentDescription = "新增候选颜色",
+            contentDescription = stringResource(R.string.editor_add_candidate_color),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp),
         )

@@ -66,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.zIndex
@@ -154,7 +155,7 @@ private fun PagePanelSheet(
     ) {
         Column(Modifier.fillMaxSize()) {
             Text(
-                "页面",
+                stringResource(R.string.editor_panel_title_pages),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
@@ -198,8 +199,8 @@ private fun PanelTabs(selectedIndex: Int, onSelect: (Int) -> Unit) {
             .clip(shape),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        PanelTab("所有页", selectedIndex == TAB_PAGES, Modifier.weight(1f).fillMaxHeight()) { onSelect(TAB_PAGES) }
-        PanelTab("书签", selectedIndex == TAB_BOOKMARKS, Modifier.weight(1f).fillMaxHeight()) { onSelect(TAB_BOOKMARKS) }
+        PanelTab(stringResource(R.string.editor_panel_tab_all_pages), selectedIndex == TAB_PAGES, Modifier.weight(1f).fillMaxHeight()) { onSelect(TAB_PAGES) }
+        PanelTab(stringResource(R.string.editor_panel_tab_bookmarks), selectedIndex == TAB_BOOKMARKS, Modifier.weight(1f).fillMaxHeight()) { onSelect(TAB_BOOKMARKS) }
     }
 }
 
@@ -390,7 +391,7 @@ private fun BookmarkThumbnailList(
     if (bookmarked.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                "暂无书签",
+                stringResource(R.string.editor_no_bookmarks),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -508,6 +509,9 @@ private fun PageThumbnailCell(
                     renderer.draw(this, prepared, scale, 0f, 0f)
                 }
             }
+            val bookmarkActionDescription = stringResource(
+                if (page.page.bookmarked) R.string.editor_remove_bookmark else R.string.editor_add_bookmark,
+            )
             Icon(
                 if (page.page.bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                 contentDescription = null,
@@ -524,7 +528,7 @@ private fun PageThumbnailCell(
                     )
                     .padding(3.dp)
                     .semantics {
-                        contentDescription = if (page.page.bookmarked) "移出书签" else "添加到书签"
+                        contentDescription = bookmarkActionDescription
                     },
             )
             Text(
@@ -537,22 +541,24 @@ private fun PageThumbnailCell(
             )
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItemText(
-                    label = if (page.page.bookmarked) "移出书签" else "添加到书签",
+                    label = stringResource(
+                        if (page.page.bookmarked) R.string.editor_remove_bookmark else R.string.editor_add_bookmark,
+                    ),
                     onClick = { menuOpen = false; onToggleBookmark() },
                 )
                 DropdownMenuItemText(
-                    label = "上移",
+                    label = stringResource(R.string.editor_move_page_up),
                     enabled = index > 0,
                     onClick = { menuOpen = false; onMove(index - 1) },
                 )
                 DropdownMenuItemText(
-                    label = "下移",
+                    label = stringResource(R.string.editor_move_page_down),
                     enabled = index < pageCount - 1,
                     onClick = { menuOpen = false; onMove(index + 1) },
                 )
                 HorizontalDivider()
                 DropdownMenuItemText(
-                    label = "删除页面",
+                    label = stringResource(R.string.editor_delete_page),
                     onClick = { menuOpen = false; onDelete() },
                 )
             }
@@ -606,7 +612,7 @@ private fun AddPageCell(
             ) {
                 Icon(
                     Icons.Default.Add,
-                    contentDescription = "添加页面",
+                    contentDescription = stringResource(R.string.editor_add_page),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(34.dp),
                 )
@@ -614,7 +620,7 @@ private fun AddPageCell(
             // 菜单锚定在文字自身，弹出位置紧贴“新页面”文字，而不是整个单元格。
             Box(Modifier.padding(top = 6.dp)) {
                 Text(
-                    "新页面",
+                    stringResource(R.string.editor_new_page),
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.clickable(
@@ -678,7 +684,7 @@ private fun AddPageStyleMenu(
             }
         }
         Text(
-            "底色",
+            stringResource(R.string.editor_base_color),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),
@@ -688,9 +694,9 @@ private fun AddPageStyleMenu(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
-            backgroundSwatchChoices.forEach { (label, argb) ->
+            backgroundSwatchChoices.forEach { (labelRes, argb) ->
                 AddPageSwatch(
-                    label = label,
+                    labelRes = labelRes,
                     argb = argb,
                     selected = currentColor == argb,
                     onClick = { onChange(backgroundWithStyle(argb, currentStyle)) },
@@ -702,11 +708,15 @@ private fun AddPageStyleMenu(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(horizontal = 8.dp),
         ) {
-            listOf(null to "无样式", PatternType.LINED to "横线", PatternType.GRID to "方格").forEach { (style, label) ->
+            listOf(
+                null to R.string.editor_background_style_none,
+                PatternType.LINED to R.string.editor_background_style_lined,
+                PatternType.GRID to R.string.editor_background_style_grid,
+            ).forEach { (style, labelRes) ->
                 FilterChip(
                     selected = currentStyle == style,
                     onClick = { onChange(backgroundWithStyle(currentColor, style)) },
-                    label = { Text(label) },
+                    label = { Text(stringResource(labelRes)) },
                 )
             }
         }
@@ -716,15 +726,17 @@ private fun AddPageStyleMenu(
                 .align(Alignment.CenterHorizontally)
                 .padding(vertical = 8.dp),
         ) {
-            Text("添加页面")
+            Text(stringResource(R.string.editor_add_page))
         }
     }
 }
 
 // 底色色块：透明底垫棋盘格，选中时主色描边加对勾。
 @Composable
-private fun AddPageSwatch(label: String, argb: Int, selected: Boolean, onClick: () -> Unit) {
+private fun AddPageSwatch(labelRes: Int, argb: Int, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(8.dp)
+    val label = stringResource(labelRes)
+    val contentDescriptionText = stringResource(R.string.editor_background_swatch_content_description, label)
     Box(
         modifier = Modifier
             .size(34.dp)
@@ -737,7 +749,7 @@ private fun AddPageSwatch(label: String, argb: Int, selected: Boolean, onClick: 
                 shape = shape,
             )
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "$label 背景" },
+            .semantics { contentDescription = contentDescriptionText },
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {

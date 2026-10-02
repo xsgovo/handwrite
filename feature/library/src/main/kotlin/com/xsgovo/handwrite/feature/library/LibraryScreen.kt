@@ -44,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.Document
@@ -60,13 +62,14 @@ fun LibraryRoute(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val resources = LocalResources.current
     val snackbar = remember { SnackbarHostState() }
     var deleteTarget by remember { mutableStateOf<Document?>(null) }
 
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is LibraryUiEffect.ShowMessage -> snackbar.showSnackbar(effect.message)
+                is LibraryUiEffect.ShowMessage -> snackbar.showSnackbar(resources.getString(effect.messageResId))
             }
         }
     }
@@ -74,10 +77,10 @@ fun LibraryRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("文档库") },
+                title = { Text(stringResource(R.string.library_title)) },
                 actions = {
                     IconButton(onClick = onSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置")
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.library_settings))
                     }
                 },
             )
@@ -86,7 +89,7 @@ fun LibraryRoute(
             ExtendedFloatingActionButton(
                 onClick = onNewDocument,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("新文档") },
+                text = { Text(stringResource(R.string.library_new_document)) },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -107,9 +110,9 @@ fun LibraryRoute(
                             modifier = Modifier.size(40.dp),
                         )
                     }
-                    Text("暂无文档", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.library_empty_title), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "点击右下角按钮开始新的手写",
+                        stringResource(R.string.library_empty_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -132,7 +135,12 @@ fun LibraryRoute(
                         ListItem(
                             headlineContent = { Text(document.name.value, style = MaterialTheme.typography.titleMedium) },
                             supportingContent = {
-                                Text("修改于 ${DATE_FORMAT.format(Instant.ofEpochMilli(document.modifiedAtEpochMillis))}")
+                                Text(
+                                    stringResource(
+                                        R.string.library_modified_at,
+                                        DATE_FORMAT.format(Instant.ofEpochMilli(document.modifiedAtEpochMillis)),
+                                    ),
+                                )
                             },
                             leadingContent = {
                                 Box(
@@ -153,7 +161,7 @@ fun LibraryRoute(
                                     onClick = { deleteTarget = document },
                                     enabled = state.deletingId == null,
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = "永久删除")
+                                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.library_delete_document))
                                 }
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -167,12 +175,14 @@ fun LibraryRoute(
     deleteTarget?.let { document ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("永久删除文档？") },
-            text = { Text("“${document.name.value}”将立即删除，无法恢复。") },
+            title = { Text(stringResource(R.string.library_delete_dialog_title)) },
+            text = { Text(stringResource(R.string.library_delete_dialog_message, document.name.value)) },
             confirmButton = {
-                TextButton(onClick = { deleteTarget = null; viewModel.delete(document.id) }) { Text("删除") }
+                TextButton(onClick = { deleteTarget = null; viewModel.delete(document.id) }) {
+                    Text(stringResource(R.string.library_action_delete))
+                }
             },
-            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.library_action_cancel)) } },
         )
     }
 }

@@ -1,5 +1,6 @@
 package com.xsgovo.handwrite.feature.editor
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xsgovo.handwrite.core.document.CommandHistory
@@ -87,6 +88,7 @@ data class EditorUiState(
     val canvasSession: Int = 0,
     val pages: List<PageContent> = emptyList(),
     val pendingAddBackground: PageBackground = PageBackground.Solid(),
+    // 未物化临时会话的占位名：物化后即被文档名覆盖，属会话状态而非界面文案，不本地化。
     val documentName: String = "新文档",
     val pageSize: LogicalSize = PageTemplate.LEGACY_PORTRAIT.size,
     val background: PageBackground = PageBackground.Solid(),
@@ -122,7 +124,7 @@ data class EditorUiState(
 }
 
 sealed interface EditorUiEffect {
-    data class ShowMessage(val message: String) : EditorUiEffect
+    data class ShowMessage(@StringRes val messageResId: Int) : EditorUiEffect
 }
 
 @HiltViewModel
@@ -459,7 +461,7 @@ class EditorViewModel @Inject constructor(
                     }
                     is DomainResult.Failure -> {
                         mutableState.update { it.copy(isSaving = false) }
-                        effectsChannel.send(EditorUiEffect.ShowMessage("无法导入背景文件"))
+                        effectsChannel.send(EditorUiEffect.ShowMessage(R.string.editor_import_background_failed))
                     }
                 }
             }
@@ -634,6 +636,7 @@ class EditorViewModel @Inject constructor(
         }
 
         mutableState.update { it.copy(isSaving = true) }
+        // 默认文档名是落库数据：创建后不再随界面语言变化，因此不用字符串资源。
         val name = when (
             val result = DisplayName.create("未命名 ${NAME_FORMAT.format(Instant.ofEpochMilli(clock.nowMillis()))}")
         ) {
@@ -752,7 +755,7 @@ class EditorViewModel @Inject constructor(
                         mutableState.update { it.copy(backgroundResource = resource.value) }
                     }
                 }
-                is DomainResult.Failure -> effectsChannel.send(EditorUiEffect.ShowMessage("背景文件已丢失"))
+                is DomainResult.Failure -> effectsChannel.send(EditorUiEffect.ShowMessage(R.string.editor_background_file_missing))
             }
         }
     }
@@ -794,7 +797,7 @@ class EditorViewModel @Inject constructor(
                     }
                 }
             }
-            is DomainResult.Failure -> effectsChannel.send(EditorUiEffect.ShowMessage("无法丢弃空白文档"))
+            is DomainResult.Failure -> effectsChannel.send(EditorUiEffect.ShowMessage(R.string.editor_discard_blank_document_failed))
         }
     }
 
@@ -839,13 +842,13 @@ class EditorViewModel @Inject constructor(
     }
 
     private suspend fun showWriteFailure(failure: DomainFailure) {
-        val message = when (failure) {
-            DomainFailure.StorageFull -> "存储空间不足"
-            DomainFailure.DocumentNotFound, DomainFailure.PageNotFound -> "文档已不存在"
-            DomainFailure.LastPageRemaining -> "文档至少保留一页"
-            else -> "保存失败，请重试"
+        val messageResId = when (failure) {
+            DomainFailure.StorageFull -> R.string.editor_failure_storage_full
+            DomainFailure.DocumentNotFound, DomainFailure.PageNotFound -> R.string.editor_failure_document_missing
+            DomainFailure.LastPageRemaining -> R.string.editor_failure_last_page_remaining
+            else -> R.string.editor_failure_save_failed
         }
-        effectsChannel.send(EditorUiEffect.ShowMessage(message))
+        effectsChannel.send(EditorUiEffect.ShowMessage(messageResId))
     }
 
     private companion object {

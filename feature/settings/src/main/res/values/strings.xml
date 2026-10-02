@@ -1,0 +1,38 @@
+<resources>
+    <string name="settings_title">设置</string>
+    <string name="settings_back">返回</string>
+
+    <string name="settings_section_input">输入</string>
+    <string name="settings_stylus_only">仅手写笔输入</string>
+    <string name="settings_stylus_only_subtitle">开启后忽略手指绘制</string>
+    <string name="settings_pressure">压感</string>
+    <string name="settings_pressure_subtitle">开启后笔迹粗细随书写力度变化</string>
+    <string name="settings_side_button_action">笔侧键动作</string>
+
+    <string name="settings_section_appearance">外观</string>
+    <string name="settings_dynamic_color">动态取色</string>
+    <string name="settings_dynamic_color_subtitle">根据壁纸生成 Material You 主题色</string>
+    <string name="settings_theme">主题</string>
+
+    <string name="settings_section_export">导出</string>
+    <string name="settings_image_format">图片编码</string>
+    <string name="settings_compression_quality">压缩质量</string>
+
+    <string name="settings_section_navigation">导航</string>
+    <string name="settings_back_opens_library">返回键进入文档库</string>
+    <string name="settings_back_opens_library_subtitle">关闭时从画布直接退出应用</string>
+
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_image_format_auto">自动</string>
+    <string name="settings_image_format_png">PNG</string>
+    <string name="settings_image_format_webp">WebP</string>
+    <string name="settings_image_format_jpeg">JPEG</string>
+    <string name="settings_compression_low">更小文件</string>
+    <string name="settings_compression_balanced">平衡</string>
+    <string name="settings_compression_high">高质量</string>
+    <string name="settings_side_button_temporary_eraser">按住临时橡皮</string>
+    <string name="settings_side_button_toggle_eraser">切换橡皮</string>
+    <string name="settings_side_button_undo">撤销</string>
+</resources>

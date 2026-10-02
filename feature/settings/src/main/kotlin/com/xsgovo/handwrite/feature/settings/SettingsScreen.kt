@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
@@ -52,10 +53,10 @@ fun SettingsRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("设置") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                     }
                 },
             )
@@ -67,16 +68,16 @@ fun SettingsRoute(
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState()),
         ) {
-            SettingSection("输入") {
+            SettingSection(stringResource(R.string.settings_section_input)) {
                 ToggleRow(
-                    title = "仅手写笔输入",
-                    subtitle = "开启后忽略手指绘制",
+                    title = stringResource(R.string.settings_stylus_only),
+                    subtitle = stringResource(R.string.settings_stylus_only_subtitle),
                     checked = settings.inputMode == InputMode.STYLUS,
                     onChecked = { viewModel.setInputMode(if (it) InputMode.STYLUS else InputMode.FINGER) },
                 )
                 ToggleRow(
-                    title = "压感",
-                    subtitle = "开启后笔迹粗细随书写力度变化",
+                    title = stringResource(R.string.settings_pressure),
+                    subtitle = stringResource(R.string.settings_pressure_subtitle),
                     checked = settings.pressureSensitivity != PressureSensitivity.OFF,
                     onChecked = {
                         viewModel.setPressureSensitivity(
@@ -85,51 +86,51 @@ fun SettingsRoute(
                     },
                 )
                 MenuRow(
-                    title = "笔侧键动作",
-                    selected = sideButtonLabel(settings.sideButtonAction),
+                    title = stringResource(R.string.settings_side_button_action),
+                    selectedResId = sideButtonLabel(settings.sideButtonAction),
                     options = SideButtonAction.entries,
                     label = ::sideButtonLabel,
                     onSelect = viewModel::setSideButtonAction,
                 )
             }
 
-            SettingSection("外观") {
+            SettingSection(stringResource(R.string.settings_section_appearance)) {
                 ToggleRow(
-                    title = "动态取色",
-                    subtitle = "根据壁纸生成 Material You 主题色",
+                    title = stringResource(R.string.settings_dynamic_color),
+                    subtitle = stringResource(R.string.settings_dynamic_color_subtitle),
                     checked = settings.dynamicColor,
                     onChecked = viewModel::setDynamicColor,
                 )
                 MenuRow(
-                    title = "主题",
-                    selected = themeLabel(settings.themeMode),
+                    title = stringResource(R.string.settings_theme),
+                    selectedResId = themeLabel(settings.themeMode),
                     options = ThemeMode.entries,
                     label = ::themeLabel,
                     onSelect = viewModel::setThemeMode,
                 )
             }
 
-            SettingSection("导出") {
+            SettingSection(stringResource(R.string.settings_section_export)) {
                 MenuRow(
-                    title = "图片编码",
-                    selected = imageFormatLabel(settings.imageFormat),
+                    title = stringResource(R.string.settings_image_format),
+                    selectedResId = imageFormatLabel(settings.imageFormat),
                     options = ImageFormat.entries,
                     label = ::imageFormatLabel,
                     onSelect = viewModel::setImageFormat,
                 )
                 MenuRow(
-                    title = "压缩质量",
-                    selected = compressionLabel(settings.compressionQuality),
+                    title = stringResource(R.string.settings_compression_quality),
+                    selectedResId = compressionLabel(settings.compressionQuality),
                     options = CompressionQuality.entries,
                     label = ::compressionLabel,
                     onSelect = viewModel::setCompressionQuality,
                 )
             }
 
-            SettingSection("导航") {
+            SettingSection(stringResource(R.string.settings_section_navigation)) {
                 ToggleRow(
-                    title = "返回键进入文档库",
-                    subtitle = "关闭时从画布直接退出应用",
+                    title = stringResource(R.string.settings_back_opens_library),
+                    subtitle = stringResource(R.string.settings_back_opens_library_subtitle),
                     checked = settings.backBehavior == BackBehavior.OPEN_LIBRARY,
                     onChecked = {
                         viewModel.setBackBehavior(if (it) BackBehavior.OPEN_LIBRARY else BackBehavior.EXIT_APP)
@@ -179,9 +180,9 @@ private fun ToggleRow(
 @Composable
 private fun <T> MenuRow(
     title: String,
-    selected: String,
+    selectedResId: Int,
     options: List<T>,
-    label: (T) -> String,
+    label: (T) -> Int,
     onSelect: (T) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -189,11 +190,11 @@ private fun <T> MenuRow(
         headlineContent = { Text(title) },
         trailingContent = {
             Row {
-                TextButton(onClick = { expanded = true }) { Text(selected) }
+                TextButton(onClick = { expanded = true }) { Text(stringResource(selectedResId)) }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     options.forEach { option ->
                         DropdownMenuItem(
-                            text = { Text(label(option)) },
+                            text = { Text(stringResource(label(option))) },
                             onClick = { expanded = false; onSelect(option) },
                         )
                     }
@@ -204,27 +205,27 @@ private fun <T> MenuRow(
     )
 }
 
-private fun themeLabel(value: ThemeMode): String = when (value) {
-    ThemeMode.SYSTEM -> "跟随系统"
-    ThemeMode.LIGHT -> "浅色"
-    ThemeMode.DARK -> "深色"
+private fun themeLabel(value: ThemeMode): Int = when (value) {
+    ThemeMode.SYSTEM -> R.string.settings_theme_system
+    ThemeMode.LIGHT -> R.string.settings_theme_light
+    ThemeMode.DARK -> R.string.settings_theme_dark
 }
 
-private fun imageFormatLabel(value: ImageFormat): String = when (value) {
-    ImageFormat.AUTO -> "自动"
-    ImageFormat.PNG -> "PNG"
-    ImageFormat.WEBP -> "WebP"
-    ImageFormat.JPEG -> "JPEG"
+private fun imageFormatLabel(value: ImageFormat): Int = when (value) {
+    ImageFormat.AUTO -> R.string.settings_image_format_auto
+    ImageFormat.PNG -> R.string.settings_image_format_png
+    ImageFormat.WEBP -> R.string.settings_image_format_webp
+    ImageFormat.JPEG -> R.string.settings_image_format_jpeg
 }
 
-private fun compressionLabel(value: CompressionQuality): String = when (value) {
-    CompressionQuality.LOW -> "更小文件"
-    CompressionQuality.BALANCED -> "平衡"
-    CompressionQuality.HIGH -> "高质量"
+private fun compressionLabel(value: CompressionQuality): Int = when (value) {
+    CompressionQuality.LOW -> R.string.settings_compression_low
+    CompressionQuality.BALANCED -> R.string.settings_compression_balanced
+    CompressionQuality.HIGH -> R.string.settings_compression_high
 }
 
-private fun sideButtonLabel(value: SideButtonAction): String = when (value) {
-    SideButtonAction.TEMPORARY_ERASER -> "按住临时橡皮"
-    SideButtonAction.TOGGLE_ERASER -> "切换橡皮"
-    SideButtonAction.UNDO -> "撤销"
+private fun sideButtonLabel(value: SideButtonAction): Int = when (value) {
+    SideButtonAction.TEMPORARY_ERASER -> R.string.settings_side_button_temporary_eraser
+    SideButtonAction.TOGGLE_ERASER -> R.string.settings_side_button_toggle_eraser
+    SideButtonAction.UNDO -> R.string.settings_side_button_undo
 }
