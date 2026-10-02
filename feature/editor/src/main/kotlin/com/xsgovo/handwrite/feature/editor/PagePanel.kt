@@ -78,6 +78,7 @@ import com.xsgovo.handwrite.core.model.PageId
 import com.xsgovo.handwrite.core.model.PatternType
 import com.xsgovo.handwrite.core.model.StrokeElement
 import com.xsgovo.handwrite.core.rendering.InkDocumentRenderer
+import kotlin.math.abs
 
 // 页面管理面板：从右侧滑出的页面缩略图列表，支持切换、添加、删除、书签与拖拽移动页面。
 @Composable
@@ -245,9 +246,12 @@ private fun PageThumbnailList(
     onMovePage: (PageId, Int) -> Unit,
 ) {
     val dragState = remember(listState) { PageDragState(listState) }
+    // 被拖项在当前 pages 顺序中的位置：数据重排生效后它等于 targetIndex，
+    // 避让据此在重组当帧就归零，不必等待逐帧实测。
+    val draggedIndex = pages.indexOfFirst { it.page.id == dragState.draggedId }.takeIf { it >= 0 }
     LaunchedEffect(dragState.draggedId) {
         while (dragState.draggedId != null) {
-            dragState.autoScrollStep()
+            dragState.frameStep()
             withFrameNanos { }
         }
     }
@@ -261,14 +265,14 @@ private fun PageThumbnailList(
         items(pages.size, key = { pages[it].page.id.value }) { index ->
             val page = pages[index]
             val isDragging = page.page.id == dragState.draggedId
-            val avoidanceY = dragState.avoidanceTranslation(index)
+            val avoidanceY = dragState.avoidanceTranslation(index, draggedIndex)
             val animatedAvoidanceY by animateFloatAsState(avoidanceY, label = "page avoidance")
             Box(
                 Modifier
                     .then(if (dragState.draggedId != null) Modifier else Modifier.animateItem())
                     .zIndex(if (isDragging) 1f else 0f)
                     .graphicsLayer {
-                        translationY = if (isDragging) dragState.translationY else animatedAvoidanceY
+                        translationY = if (isDragging) dragState.dragVisualTranslationY(page.page.id) else animatedAvoidanceY
                     },
             ) {
                 PageThumbnailCell(
@@ -293,32 +297,41 @@ private fun PageThumbnailList(
     }
 }
 
-// 拖拽排序状态。每帧从 layoutInfo 实测被拖项的真实锚点，绘制位移 = 手指位置 - 实测中心，
-// 列表滚动、换格让位、首可见项锚定补偿等一切布局扰动都被下一帧实测吸收，保证不跟手漂移；
+// 拖拽排序状态。拖拽期间被拖项保持拖拽态（zIndex 提升、animateItem 缺席、避让维持），
+// 松手后进入落位阶段并继续持有拖拽态：此时重排尚未写回，若立即清空，被拖项会先跳回
+// 原布局位，随后数据重排到达时 animateItem 重新挂上，把这段移动重放一遍，且重放期间
+// 已失去 zIndex 提升而以底层姿态掠过其他页面。落位阶段等待重排在布局中生效，其他项
+// 避让以动画归零、被拖项吸附到目标格中心，全部收敛后才解除拖拽态。
+// 绘制位移 = 手指位置 - 实测项中心，在绘制阶段实时计算（dragVisualTranslationY），
+// 列表滚动、重排换位、首可见项锚定补偿等一切布局扰动都在当帧绘制中被吸收，不跟手漂移；
 // 手指偏离被拖项中心超过半格时，预览顺序向偏离方向移动一格。
 private class PageDragState(private val listState: LazyListState) {
     var draggedId by mutableStateOf<PageId?>(null)
         private set
-    var translationY by mutableStateOf(0f)
-        private set
+    private var fingerViewportY by mutableStateOf(0f)
     private var targetIndex by mutableIntStateOf(-1)
     private var originIndex = -1
-
-    private var fingerViewportY = 0f
     private var userMoved = false
+    private var settling = false
+    private var settleFrameCount = 0
 
     fun start(pageId: PageId, touchYInItem: Float) {
         val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == pageId.value } ?: return
         draggedId = pageId
         fingerViewportY = touchYInItem + self.offset
-        translationY = fingerViewportY - (self.offset + self.size / 2f)
         userMoved = false
+        settling = false
+        settleFrameCount = 0
         targetIndex = self.index
         originIndex = self.index
     }
 
-    fun avoidanceTranslation(index: Int): Float {
-        if (draggedId == null || index == originIndex) return 0f
+    // index 是当前 pages 顺序中的位置；draggedIndex 是被拖项在同一顺序中的位置。
+    // 数据重排生效后 draggedIndex == targetIndex，布局已在最终位置，避让立即归零，
+    // 由 animateFloatAsState 平滑过渡，与布局跳变叠加后视觉上连续。
+    fun avoidanceTranslation(index: Int, draggedIndex: Int?): Float {
+        if (draggedId == null || draggedIndex == null || draggedIndex == targetIndex) return 0f
+        if (index == originIndex) return 0f
         val distance = listState.layoutInfo.visibleItemsInfo
             .zipWithNext()
             .map { (first, second) -> second.offset - first.offset }
@@ -334,14 +347,27 @@ private class PageDragState(private val listState: LazyListState) {
         }
     }
 
+    // 被拖项的绘制位移，供绘制阶段的 graphicsLayer 实时读取：手指或布局任一变化
+    // 都在当帧生效，重排把项布局换到新格时视觉位置不变（始终锚定手指松开处）。
+    fun dragVisualTranslationY(id: PageId): Float {
+        val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id.value } ?: return 0f
+        return fingerViewportY - (self.offset + self.size / 2f)
+    }
+
     fun drag(amount: Float) {
+        if (settling) return
         fingerViewportY += amount
         userMoved = true
         advance()
     }
 
-    fun autoScrollStep() {
+    // 每帧推进：拖拽中做换格预览与边缘滚动；落位中等待重排生效并吸附。
+    fun frameStep() {
         if (draggedId == null) return
+        if (settling) {
+            settleStep()
+            return
+        }
         advance()
         if (!userMoved) return
         val layout = listState.layoutInfo
@@ -356,25 +382,46 @@ private class PageDragState(private val listState: LazyListState) {
     }
 
     fun end(onCommit: (PageId, Int) -> Unit) {
-        val id = draggedId
-        if (id != null) {
-            advance()
-            onCommit(id, targetIndex)
+        val id = draggedId ?: return
+        advance()
+        // 不清空拖拽态：提交后重排经 Room 异步写回，落位阶段继续持有拖拽态，
+        // 被 frameStep 推进直到收敛后解除。
+        settling = true
+        onCommit(id, targetIndex)
+    }
+
+    private fun settleStep() {
+        val id = draggedId ?: return
+        val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id.value }
+        if (self == null || settleFrameCount >= SETTLE_MAX_FRAMES) {
+            // 重排未到达（提交被丢弃）或项已不可见：解除拖拽态，避免状态悬挂。
+            clear()
+            return
         }
+        settleFrameCount++
+        if (self.index != targetIndex) return
+        // 重排已生效：布局已在最终位置（避让归零由重组期的 draggedIndex == targetIndex
+        // 判定负责）。手指锚点向实测格中心指数趋近，收敛后解除拖拽态（残余位移低于
+        // 感知阈值）。targetIndex 保持不变，让本判定逐帧持续成立。
+        val center = self.offset + self.size / 2f
+        fingerViewportY += (center - fingerViewportY) * SETTLE_APPROACH_FACTOR
+        if (abs(center - fingerViewportY) < SETTLE_SNAP_PX) clear()
+    }
+
+    private fun clear() {
         draggedId = null
-        translationY = 0f
+        fingerViewportY = 0f
         targetIndex = -1
         originIndex = -1
+        userMoved = false
+        settling = false
+        settleFrameCount = 0
     }
 
     private fun advance() {
         val info = listState.layoutInfo
-        val self = info.visibleItemsInfo.firstOrNull { it.key == draggedId?.value }
-        val selfCenter = self?.let { it.offset + it.size / 2f } ?: return
-        translationY = fingerViewportY - selfCenter
-        val visible = listState.layoutInfo.visibleItemsInfo
-        targetIndex = visible.count { it.key != draggedId?.value && fingerViewportY > it.offset + it.size / 2 }
-            .coerceIn(0, listState.layoutInfo.totalItemsCount - 2)
+        targetIndex = info.visibleItemsInfo.count { it.key != draggedId?.value && fingerViewportY > it.offset + it.size / 2 }
+            .coerceIn(0, info.totalItemsCount - 2)
     }
 }
 
@@ -772,6 +819,11 @@ private const val PENDING_ORDER_TIMEOUT_MILLIS = 700L
 // 拖拽自动滚动：手指进入视口上下各一成半高度的区域即持续滚动。
 private const val AUTO_SCROLL_EDGE_FRACTION = 0.15f
 private const val AUTO_SCROLL_SPEED_PX = 14f
+// 松手落位吸附：每帧把手位锚点向格中心指数趋近，低于半像素即视为落位完成。
+private const val SETTLE_APPROACH_FACTOR = 0.35f
+private const val SETTLE_SNAP_PX = 0.5f
+// 落位等待帧数上限（约两秒）：重排提交被丢弃时兜底解除拖拽态，避免状态悬挂。
+private const val SETTLE_MAX_FRAMES = 120
 private const val TAB_PAGES = 0
 private const val TAB_BOOKMARKS = 1
 private const val ADD_PAGE_ITEM_KEY = "add_page"
