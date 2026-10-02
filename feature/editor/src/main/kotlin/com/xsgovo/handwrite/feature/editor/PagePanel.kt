@@ -82,6 +82,7 @@ import com.xsgovo.handwrite.core.model.PatternType
 import com.xsgovo.handwrite.core.model.StrokeElement
 import com.xsgovo.handwrite.core.rendering.InkDocumentRenderer
 import kotlin.math.abs
+import kotlin.math.exp
 
 // 页面管理面板：从右侧滑出的页面缩略图列表，支持切换、添加、删除、书签与拖拽移动页面。
 @Composable
@@ -254,9 +255,11 @@ private fun PageThumbnailList(
     // 被拖项在当前 pages 顺序中的位置：数据重排生效后它等于 targetIndex。
     val draggedIndex = pages.indexOfFirst { it.page.id == dragState.draggedId }.takeIf { it >= 0 }
     LaunchedEffect(dragState.draggedId) {
+        var previousFrameMillis = withFrameNanos { it / 1_000_000L }
         while (dragState.draggedId != null) {
-            dragState.frameStep()
-            withFrameNanos { }
+            val frameMillis = withFrameNanos { it / 1_000_000L }
+            dragState.frameStep(frameMillis - previousFrameMillis, frameMillis)
+            previousFrameMillis = frameMillis
         }
     }
     // 数据层顺序一有变化就通报拖拽状态机：被拖项出现在目标格位即重排已落地，此后
@@ -288,7 +291,7 @@ private fun PageThumbnailList(
                         },
                         onDrag = { change, amount ->
                             change.consume()
-                            dragState.drag(amount.y)
+                            dragState.drag(amount.y, change.uptimeMillis)
                         },
                         onDragEnd = {
                             val finishedId = dragState.end(onMovePage)
@@ -380,6 +383,11 @@ private class PageDragState(private val listState: LazyListState) {
     private var userMoved = false
     private var settling = false
 
+    // 边缘自动滚动的当前速度与平滑后的手指速度：均带符号（px/秒），帧率无关。
+    private var scrollSpeedPxPerSec = 0f
+    private var fingerVelocityPxPerSec = 0f
+    private var lastDragEventMillis = 0L
+
     // 重排数据是否已落地（被拖项出现在目标格位）。落地前掠过的页面停留在避让预演位；
     // 落地后布局位与预演位一致，绘制位移直接归零，不再有任何回正过渡。状态跨落位
     // 收敛保持，直到下一次拖拽开始才复位。
@@ -414,6 +422,9 @@ private class PageDragState(private val listState: LazyListState) {
         settleFrameCount = 0
         targetIndex = self.index
         originIndex = self.index
+        scrollSpeedPxPerSec = 0f
+        fingerVelocityPxPerSec = 0f
+        lastDragEventMillis = 0L
     }
 
     // 数据层顺序通报：进入落位阶段后，被拖项出现在目标格位即重排已写回。此后绘制层
@@ -448,15 +459,23 @@ private class PageDragState(private val listState: LazyListState) {
         }
     }
 
-    fun drag(amount: Float) {
+    fun drag(amount: Float, eventTimeMillis: Long) {
         if (settling) return
         fingerViewportY += amount
         userMoved = true
+        // 手指速度估计：按事件间隔折算成带符号的 px/秒并指数平滑。事件流中断后
+        // 恢复时间隔封顶，避免速度被极端低估；首个事件自会话起点计，速度自然从零起步。
+        val sampleMillis = (eventTimeMillis - lastDragEventMillis).coerceIn(1L, GESTURE_SPEED_SAMPLE_MAX_INTERVAL_MS)
+        lastDragEventMillis = eventTimeMillis
+        val instantVelocity = amount / sampleMillis * 1000f
+        fingerVelocityPxPerSec += (instantVelocity - fingerVelocityPxPerSec) * (1f - exp(-sampleMillis / FINGER_SPEED_TAU_MS))
         advance()
     }
 
     // 每帧推进：拖拽中做换格预览与边缘滚动；落位中等待重排生效并吸附。
-    fun frameStep() {
+    // frameDeltaMillis 为帧间时长（滚动速度按秒定义、按帧折算位移，帧率无关），
+    // frameTimeMillis 为当前帧时间戳，与手势事件共用 uptime 时钟。
+    fun frameStep(frameDeltaMillis: Long, frameTimeMillis: Long) {
         if (draggedId == null) return
         if (settling) {
             settleStep()
@@ -464,15 +483,46 @@ private class PageDragState(private val listState: LazyListState) {
         }
         advance()
         if (!userMoved) return
-        val layout = listState.layoutInfo
-        val edge = (layout.viewportEndOffset - layout.viewportStartOffset) * AUTO_SCROLL_EDGE_FRACTION
-        val amount = when {
-            fingerViewportY < layout.viewportStartOffset + edge -> -AUTO_SCROLL_SPEED_PX
-            fingerViewportY > layout.viewportEndOffset - edge -> AUTO_SCROLL_SPEED_PX
-            else -> return
+        // 手指停止拖动后手势速度逐帧回落，速度加成随之平滑消失，滚动收敛到深度基准速度。
+        if (frameTimeMillis - lastDragEventMillis > FINGER_SPEED_IDLE_DELAY_MS && frameDeltaMillis > 0) {
+            fingerVelocityPxPerSec *= exp(-frameDeltaMillis / FINGER_SPEED_IDLE_TAU_MS)
         }
-        listState.dispatchRawDelta(amount)
-        advance()
+        val layout = listState.layoutInfo
+        val viewportHeight = (layout.viewportEndOffset - layout.viewportStartOffset).toFloat()
+        if (viewportHeight <= 0f) return
+        val edgeZone = viewportHeight * AUTO_SCROLL_EDGE_FRACTION
+        val topDepth = layout.viewportStartOffset + edgeZone - fingerViewportY
+        val bottomDepth = fingerViewportY - (layout.viewportEndOffset - edgeZone)
+        val (direction, depth) = when {
+            topDepth > 0f -> -1f to topDepth
+            bottomDepth > 0f -> 1f to bottomDepth
+            else -> 0f to 0f
+        }
+        // 目标速度：基础速度随超出边缘的深度线性提升；只有与滚动同向的手指速度提供
+        // 加成，快速拖拽时列表跟得上手势，往回拖时列表不被惯性冲过头。
+        val target = if (direction == 0f) {
+            0f
+        } else {
+            val depthFactor = (depth / edgeZone).coerceIn(0f, 1f)
+            val base = viewportHeight * (AUTO_SCROLL_MIN_SPEED_FRACTION +
+                (AUTO_SCROLL_MAX_SPEED_FRACTION - AUTO_SCROLL_MIN_SPEED_FRACTION) * depthFactor)
+            val sameDirVelocity = (fingerVelocityPxPerSec * direction).coerceAtLeast(0f)
+            val boost = 1f + (sameDirVelocity / (viewportHeight * AUTO_SCROLL_GESTURE_REF_FRACTION))
+                .coerceIn(0f, AUTO_SCROLL_MAX_BOOST - 1f)
+            direction * base * boost
+        }
+        // 滚动速度向目标指数趋近：同向提升用短时间常数保证响应及时，减速与反向用
+        // 长时间常数保证收势平稳，杜绝触边突进与离边骤停。
+        val accelerating = target * scrollSpeedPxPerSec >= 0f && abs(target) > abs(scrollSpeedPxPerSec)
+        val tauMillis = if (accelerating) AUTO_SCROLL_ACCEL_TAU_MS else AUTO_SCROLL_DECEL_TAU_MS
+        if (frameDeltaMillis > 0) {
+            scrollSpeedPxPerSec += (target - scrollSpeedPxPerSec) * (1f - exp(-frameDeltaMillis / tauMillis))
+            if (target == 0f && abs(scrollSpeedPxPerSec) < AUTO_SCROLL_STOP_PX_PER_SEC) scrollSpeedPxPerSec = 0f
+            if (scrollSpeedPxPerSec != 0f) {
+                listState.dispatchRawDelta(scrollSpeedPxPerSec * frameDeltaMillis / 1000f)
+                advance()
+            }
+        }
     }
 
     // 返回结束拖拽的页面：调用方据此判定“原地长按（未拖动）松手弹出功能菜单”。
@@ -522,6 +572,9 @@ private class PageDragState(private val listState: LazyListState) {
         userMoved = false
         settling = false
         settleFrameCount = 0
+        scrollSpeedPxPerSec = 0f
+        fingerVelocityPxPerSec = 0f
+        lastDragEventMillis = 0L
     }
 
     // 换格判定：目标格位 = 手指中心线之上的页面项数量（被拖项自身不计）。
@@ -924,7 +977,23 @@ private const val THUMBNAIL_TRANSPARENT_FILL_ALPHA = 0.45f
 private const val PENDING_ORDER_TIMEOUT_MILLIS = 700L
 // 拖拽自动滚动：手指进入视口上下各一成半高度的区域即持续滚动。
 private const val AUTO_SCROLL_EDGE_FRACTION = 0.15f
-private const val AUTO_SCROLL_SPEED_PX = 14f
+// 基础滚动速度随超出边缘的深度线性提升：刚触边为视口高度的 0.45 倍/秒，深抵视口
+// 边界时升至 2.2 倍/秒（速度按秒定义、按帧间时长折算位移，帧率无关）。
+private const val AUTO_SCROLL_MIN_SPEED_FRACTION = 0.45f
+private const val AUTO_SCROLL_MAX_SPEED_FRACTION = 2.2f
+// 手势加速：与滚动同向的手指速度达到视口高度 * 该系数 / 秒时，加成升满。
+private const val AUTO_SCROLL_GESTURE_REF_FRACTION = 1.5f
+private const val AUTO_SCROLL_MAX_BOOST = 2.5f
+// 滚动速度的指数平滑时间常数：加速取短保证响应及时，减速取长保证收势平稳（毫秒）。
+private const val AUTO_SCROLL_ACCEL_TAU_MS = 60f
+private const val AUTO_SCROLL_DECEL_TAU_MS = 160f
+// 低于该速度即视为停止，滚动速度归零（px/秒）。
+private const val AUTO_SCROLL_STOP_PX_PER_SEC = 1f
+// 手指速度估计：指数平滑时间常数、事件间隔折算上限与停止拖动后的回落参数（毫秒）。
+private const val FINGER_SPEED_TAU_MS = 60f
+private const val GESTURE_SPEED_SAMPLE_MAX_INTERVAL_MS = 100L
+private const val FINGER_SPEED_IDLE_DELAY_MS = 64L
+private const val FINGER_SPEED_IDLE_TAU_MS = 90f
 // 松手落位吸附：每帧把手位锚点向格中心指数趋近，低于半像素即视为落位完成。
 private const val SETTLE_APPROACH_FACTOR = 0.35f
 private const val SETTLE_SNAP_PX = 0.5f
