@@ -50,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -60,12 +61,14 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -139,8 +142,10 @@ private fun PagePanelSheet(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_PAGES) }
     val listState = rememberLazyListState()
-    // 面板只在展开时进入组合：首次组合定位到当前页，加页后跟随新页。
-    LaunchedEffect(pages.size, currentPageId, selectedTab) {
+    // 面板只在展开时进入组合：首次组合定位到当前页一次。不跟随后续数据与选中态变化
+    // 自动滚动——拖拽排序松手、删除页面等链路一旦触发这里的强制滚动，就会把选中页
+    // 顶到视口最顶端；加页的新单元格出现在列表尾部，本身就在用户操作位置附近。
+    LaunchedEffect(Unit) {
         val index = pages.indexOfFirst { it.page.id == currentPageId }
         if (selectedTab == TAB_PAGES && index > 0) listState.scrollToItem(index)
     }
@@ -246,8 +251,7 @@ private fun PageThumbnailList(
     onMovePage: (PageId, Int) -> Unit,
 ) {
     val dragState = remember(listState) { PageDragState(listState) }
-    // 被拖项在当前 pages 顺序中的位置：数据重排生效后它等于 targetIndex，
-    // 避让据此在重组当帧就归零，不必等待逐帧实测。
+    // 被拖项在当前 pages 顺序中的位置：数据重排生效后它等于 targetIndex。
     val draggedIndex = pages.indexOfFirst { it.page.id == dragState.draggedId }.takeIf { it >= 0 }
     LaunchedEffect(dragState.draggedId) {
         while (dragState.draggedId != null) {
@@ -255,56 +259,118 @@ private fun PageThumbnailList(
             withFrameNanos { }
         }
     }
+    // 数据层顺序一有变化就通报拖拽状态机：被拖项出现在目标格位即重排已落地，此后
+    // 掠过的页面不再走避让渐变，直接以最终布局位为视觉基准静止到位（无回正动画）。
+    SideEffect { dragState.onPagesChanged(pages) }
+    // 原地长按（未拖动）松手弹出该页功能菜单；菜单状态提升到列表层，由容器手势设置。
+    var menuTargetId by remember { mutableStateOf<PageId?>(null) }
+    // 拖拽浮层的实测高度：用于把被拖项视觉的中心锚定在手指处。
+    var draggedGhostHeight by remember { mutableStateOf(0f) }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = 4.dp, bottom = 20.dp),
-    ) {
-        items(pages.size, key = { pages[it].page.id.value }) { index ->
-            val page = pages[index]
-            val isDragging = page.page.id == dragState.draggedId
-            val avoidanceY = dragState.avoidanceTranslation(index, draggedIndex)
-            val animatedAvoidanceY by animateFloatAsState(avoidanceY, label = "page avoidance")
-            Box(
-                Modifier
-                    .then(if (dragState.draggedId != null) Modifier else Modifier.animateItem())
-                    .zIndex(if (isDragging) 1f else 0f)
-                    .graphicsLayer {
-                        translationY = if (isDragging) dragState.dragVisualTranslationY(page.page.id) else animatedAvoidanceY
-                    },
-            ) {
-                PageThumbnailCell(
-                    page = page,
-                    pageNumber = index + 1,
-                    index = index,
-                    pageCount = pages.size,
-                    selected = page.page.id == currentPageId,
-                    onSelect = { onSelectPage(page.page.id) },
-                    onDelete = { onDeletePage(page.page.id) },
-                    onToggleBookmark = { onToggleBookmark(page.page.id) },
-                    onMove = { targetIndex -> onMovePage(page.page.id, targetIndex) },
-                    onLongPressDragStart = { touchYInItem -> dragState.start(page.page.id, touchYInItem) },
-                    onLongPressDrag = { amount -> dragState.drag(amount) },
-                    onLongPressDragEnd = { dragState.end(onMovePage) },
-                )
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                // 长按拖拽手势挂在列表容器上：容器组合不随列表滚动回收。边缘自动滚动
+                // 会把被拖项的布局槽推出视口（item 被回收），挂在单项上的手势会随之
+                // 取消导致拖拽中断；容器级手势不受影响，拖拽会话持续存活。
+                .pointerInput(onMovePage) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { touchOffset ->
+                            val info = listState.layoutInfo
+                            val hit = info.visibleItemsInfo.firstOrNull {
+                                it.index < info.totalItemsCount - 1 &&
+                                    touchOffset.y >= it.offset &&
+                                    touchOffset.y < it.offset + it.size
+                            } ?: return@detectDragGesturesAfterLongPress
+                            dragState.start(PageId(hit.key as Long), touchOffset.y - hit.offset)
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            dragState.drag(amount.y)
+                        },
+                        onDragEnd = {
+                            val finishedId = dragState.end(onMovePage)
+                            if (finishedId != null && !dragState.lastDragMoved) menuTargetId = finishedId
+                        },
+                        onDragCancel = { dragState.end(onMovePage) },
+                    )
+                },
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(top = 4.dp, bottom = 20.dp),
+        ) {
+            items(pages.size, key = { pages[it].page.id.value }) { index ->
+                val page = pages[index]
+                val isDragging = page.page.id == dragState.draggedId
+                val avoidanceY = dragState.avoidanceTranslation(index, draggedIndex)
+                val animatedAvoidanceY by animateFloatAsState(avoidanceY, label = "page avoidance")
+                Box(
+                    Modifier
+                        .then(if (dragState.draggedId != null) Modifier else Modifier.animateItem())
+                        .zIndex(if (isDragging) 1f else 0f)
+                        .graphicsLayer {
+                            translationY = if (dragState.dataArrived) 0f else animatedAvoidanceY
+                        },
+                ) {
+                    PageThumbnailCell(
+                        page = page,
+                        pageNumber = index + 1,
+                        index = index,
+                        pageCount = pages.size,
+                        selected = page.page.id == currentPageId,
+                        menuOpen = menuTargetId == page.page.id,
+                        onMenuDismiss = { menuTargetId = null },
+                        onSelect = { onSelectPage(page.page.id) },
+                        onDelete = { onDeletePage(page.page.id) },
+                        onToggleBookmark = { onToggleBookmark(page.page.id) },
+                        onMove = { targetIndex -> onMovePage(page.page.id, targetIndex) },
+                        hiddenForDragging = isDragging,
+                    )
+                }
+            }
+            item(key = ADD_PAGE_ITEM_KEY) {
+                AddPageCell(addPageSize, currentBackground, onAddPage)
             }
         }
-        item(key = ADD_PAGE_ITEM_KEY) {
-            AddPageCell(addPageSize, currentBackground, onAddPage)
+        // 拖拽浮层：被拖项的视觉由列表外层承载并锚定手指。布局槽被边缘滚动推出视口、
+        // item 被回收时，浮层不随列表回收，拖拽目标依旧完整可见；页码随预演目标格位
+        // 实时更新。
+        dragState.draggedId?.let { draggedId ->
+            val draggedPage = pages.firstOrNull { it.page.id == draggedId } ?: return@let
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .onSizeChanged { draggedGhostHeight = it.height.toFloat() }
+                    .graphicsLayer {
+                        translationY = dragState.dragFingerViewportY - draggedGhostHeight / 2f
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                PageThumbnailVisual(
+                    page = draggedPage,
+                    pageNumber = (dragState.previewTargetIndex + 1).coerceAtMost(pages.size),
+                    selected = draggedPage.page.id == currentPageId,
+                )
+            }
         }
     }
 }
 
-// 拖拽排序状态。拖拽期间被拖项保持拖拽态（zIndex 提升、animateItem 缺席、避让维持），
-// 松手后进入落位阶段并继续持有拖拽态：此时重排尚未写回，若立即清空，被拖项会先跳回
-// 原布局位，随后数据重排到达时 animateItem 重新挂上，把这段移动重放一遍，且重放期间
-// 已失去 zIndex 提升而以底层姿态掠过其他页面。落位阶段等待重排在布局中生效，其他项
-// 避让以动画归零、被拖项吸附到目标格中心，全部收敛后才解除拖拽态。
-// 绘制位移 = 手指位置 - 实测项中心，在绘制阶段实时计算（dragVisualTranslationY），
-// 列表滚动、重排换位、首可见项锚定补偿等一切布局扰动都在当帧绘制中被吸收，不跟手漂移；
-// 手指偏离被拖项中心超过半格时，预览顺序向偏离方向移动一格。
+// 拖拽排序状态。手势与视觉由列表容器承载（容器级长按手势 + 列表外层的拖拽浮层），
+// 被拖项的组合槽位在拖拽期间留空——边缘自动滚动把槽位推出视口、item 被回收时，
+// 手势与视觉均不受影响，拖拽会话持续存活。拖拽期间被拖项保持拖拽态（zIndex 提升、
+// animateItem 缺席、避让维持），松手后进入落位阶段并继续持有拖拽态：此时重排尚未
+// 写回，若立即清空，被拖项会先跳回原布局位，随后数据重排到达时 animateItem 重新
+// 挂上，把这段移动重放一遍，且重放期间已失去 zIndex 提升而以底层姿态掠过其他页面。
+// 落位阶段等待重排写回（被拖项出现在目标格位），被拖项吸附到目标格中心，收敛后才
+// 解除拖拽态。
+// 避让动画只作为拖动过程中的让位表现：重排落地后布局位与避让预演位一致，掠过的
+// 页面的绘制位移直接归零静止，不播放任何回正（归位）过渡动画。
+// 浮层位置 = 手指视口纵坐标 - 浮层实测高度的一半（dragFingerViewportY / 浮层
+// onSizeChanged 实测），列表滚动、重排换位、首可见项锚定补偿等一切布局扰动都不影响
+// 锚定，不跟手漂移；手指偏离被拖项中心超过半格时，预演顺序向偏离方向移动一格。
 private class PageDragState(private val listState: LazyListState) {
     var draggedId by mutableStateOf<PageId?>(null)
         private set
@@ -313,22 +379,57 @@ private class PageDragState(private val listState: LazyListState) {
     private var originIndex = -1
     private var userMoved = false
     private var settling = false
+
+    // 重排数据是否已落地（被拖项出现在目标格位）。落地前掠过的页面停留在避让预演位；
+    // 落地后布局位与预演位一致，绘制位移直接归零，不再有任何回正过渡。状态跨落位
+    // 收敛保持，直到下一次拖拽开始才复位。
+    var dataArrived by mutableStateOf(false)
+        private set
     private var settleFrameCount = 0
+
+    // 拖拽中手指的视口纵坐标：拖拽浮层据此把被拖项视觉锚定在手指处。
+    val dragFingerViewportY: Float
+        get() = fingerViewportY
+
+    // 拖拽会话的当前目标格位：浮层的页码随预演位置实时更新。
+    val previewTargetIndex: Int
+        get() = targetIndex
+
+    // 原地长按（未拖动）松手后要弹出功能菜单的页面：由容器级手势在拖拽结束时设置。
+    var menuTargetId by mutableStateOf<PageId?>(null)
+        private set
+
+    fun dismissMenu() {
+        menuTargetId = null
+    }
 
     fun start(pageId: PageId, touchYInItem: Float) {
         val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == pageId.value } ?: return
         draggedId = pageId
+        menuTargetId = null
         fingerViewportY = touchYInItem + self.offset
         userMoved = false
         settling = false
+        dataArrived = false
         settleFrameCount = 0
         targetIndex = self.index
         originIndex = self.index
     }
 
+    // 数据层顺序通报：进入落位阶段后，被拖项出现在目标格位即重排已写回。此后绘制层
+    // 的避让位移直接归零（布局位已与避让预演位一致），掠过的页面不再有回正过渡。
+    // 必须以 settling 为前提：拖动中数据顺序未变，被拖项本就位于 originIndex 处，
+    // 未换格时该条件天然成立，若无守卫会把避让动画整体跳过；movePage 对未换格是
+    // no-op（不发射数据），落位中数据顺序本就等于预演顺序，判定也天然成立。
+    fun onPagesChanged(pages: List<PageContent>) {
+        if (!dataArrived && settling && draggedId != null && pages.getOrNull(targetIndex)?.page?.id == draggedId) {
+            dataArrived = true
+        }
+    }
+
     // index 是当前 pages 顺序中的位置；draggedIndex 是被拖项在同一顺序中的位置。
-    // 数据重排生效后 draggedIndex == targetIndex，布局已在最终位置，避让立即归零，
-    // 由 animateFloatAsState 平滑过渡，与布局跳变叠加后视觉上连续。
+    // 避让动画只存在于拖动过程中；重排落地（draggedIndex == targetIndex）后绘制层
+    // 直接以布局位为基准归零，不再有任何回正过渡。
     fun avoidanceTranslation(index: Int, draggedIndex: Int?): Float {
         if (draggedId == null || draggedIndex == null || draggedIndex == targetIndex) return 0f
         if (index == originIndex) return 0f
@@ -345,13 +446,6 @@ private class PageDragState(private val listState: LazyListState) {
             targetIndex < originIndex && index in targetIndex until originIndex -> distance
             else -> 0f
         }
-    }
-
-    // 被拖项的绘制位移，供绘制阶段的 graphicsLayer 实时读取：手指或布局任一变化
-    // 都在当帧生效，重排把项布局换到新格时视觉位置不变（始终锚定手指松开处）。
-    fun dragVisualTranslationY(id: PageId): Float {
-        val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id.value } ?: return 0f
-        return fingerViewportY - (self.offset + self.size / 2f)
     }
 
     fun drag(amount: Float) {
@@ -381,20 +475,32 @@ private class PageDragState(private val listState: LazyListState) {
         advance()
     }
 
-    fun end(onCommit: (PageId, Int) -> Unit) {
-        val id = draggedId ?: return
+    // 返回结束拖拽的页面：调用方据此判定“原地长按（未拖动）松手弹出功能菜单”。
+    fun end(onCommit: (PageId, Int) -> Unit): PageId? {
+        val id = draggedId ?: return null
         advance()
         // 不清空拖拽态：提交后重排经 Room 异步写回，落位阶段继续持有拖拽态，
         // 被 frameStep 推进直到收敛后解除。
         settling = true
         onCommit(id, targetIndex)
+        return id
     }
+
+    // 落位开始时的拖动标记，供容器级手势区分“原地长按”与真实拖动。
+    val lastDragMoved: Boolean
+        get() = userMoved
 
     private fun settleStep() {
         val id = draggedId ?: return
         val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id.value }
-        if (self == null || settleFrameCount >= SETTLE_MAX_FRAMES) {
-            // 重排未到达（提交被丢弃）或项已不可见：解除拖拽态，避免状态悬挂。
+        if (self == null) {
+            // 布局槽暂不可见（边缘滚动把原槽位推出了视口）：数据重排会把它带到目标
+            // 格位（就在手指附近），等待下一帧实测即可；超时兜底解除，避免状态悬挂。
+            if (settleFrameCount >= SETTLE_MAX_FRAMES) clear() else settleFrameCount++
+            return
+        }
+        if (settleFrameCount >= SETTLE_MAX_FRAMES) {
+            // 重排迟迟未写回（提交被丢弃）：解除拖拽态，避免状态悬挂。
             clear()
             return
         }
@@ -418,10 +524,24 @@ private class PageDragState(private val listState: LazyListState) {
         settleFrameCount = 0
     }
 
+    // 换格判定：目标格位 = 手指中心线之上的页面项数量（被拖项自身不计）。
+    // 可见项逐个实测中心；视口上方的不可见页面项全部位于手指之上，按序位补计——
+    // 列表处于滚动状态时若只按可见项计数，拖动尾部页面会把目标格位错误地压缩到
+    // 视口内（页面看似被移出列表、上方页面补位），且永远无法插回列表末尾。
     private fun advance() {
         val info = listState.layoutInfo
-        targetIndex = info.visibleItemsInfo.count { it.key != draggedId?.value && fingerViewportY > it.offset + it.size / 2 }
-            .coerceIn(0, info.totalItemsCount - 2)
+        val draggedKey = draggedId?.value
+        // 末尾的添加页单元格不参与换格计数。
+        val pageItemLimit = info.totalItemsCount - 1
+        val visible = info.visibleItemsInfo
+        val visiblePassed = visible.count {
+            it.index < pageItemLimit && it.key != draggedKey && fingerViewportY > it.offset + it.size / 2
+        }
+        val firstVisiblePageIndex = visible.firstOrNull { it.index < pageItemLimit }?.index ?: pageItemLimit
+        var hiddenAbove = firstVisiblePageIndex
+        // 被拖项的布局槽固定在数据顺序的原位，滚动后可能位于视口上方，不计入手指标位。
+        if (originIndex in 0 until firstVisiblePageIndex) hiddenAbove -= 1
+        targetIndex = (visiblePassed + hiddenAbove).coerceIn(0, info.totalItemsCount - 2)
     }
 }
 
@@ -458,6 +578,8 @@ private fun BookmarkThumbnailList(
                 index = originalIndex,
                 pageCount = pages.size,
                 selected = page.page.id == currentPageId,
+                menuOpen = false,
+                onMenuDismiss = {},
                 onSelect = { onSelectPage(page.page.id) },
                 onDelete = { onDeletePage(page.page.id) },
                 onToggleBookmark = { onToggleBookmark(page.page.id) },
@@ -475,13 +597,60 @@ private fun PageThumbnailCell(
     index: Int,
     pageCount: Int,
     selected: Boolean,
+    menuOpen: Boolean,
+    onMenuDismiss: () -> Unit,
     onSelect: () -> Unit,
     onDelete: () -> Unit,
     onToggleBookmark: () -> Unit,
     onMove: (Int) -> Unit,
-    onLongPressDragStart: ((Float) -> Unit)? = null,
-    onLongPressDrag: ((Float) -> Unit)? = null,
-    onLongPressDragEnd: (() -> Unit)? = null,
+    hiddenForDragging: Boolean = false,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            // 被拖项的视觉由列表外层的拖拽浮层承载（不随布局槽滚动回收），槽位处留空。
+            .drawWithContent { if (!hiddenForDragging) drawContent() },
+        contentAlignment = Alignment.Center,
+    ) {
+        PageThumbnailVisual(page = page, pageNumber = pageNumber, selected = selected, onClick = onSelect)
+        DropdownMenu(expanded = menuOpen, onDismissRequest = onMenuDismiss) {
+            DropdownMenuItemText(
+                label = stringResource(
+                    if (page.page.bookmarked) R.string.editor_remove_bookmark else R.string.editor_add_bookmark,
+                ),
+                onClick = { onMenuDismiss(); onToggleBookmark() },
+            )
+            DropdownMenuItemText(
+                label = stringResource(R.string.editor_move_page_up),
+                enabled = index > 0,
+                onClick = { onMenuDismiss(); onMove(index - 1) },
+            )
+            DropdownMenuItemText(
+                label = stringResource(R.string.editor_move_page_down),
+                enabled = index < pageCount - 1,
+                onClick = { onMenuDismiss(); onMove(index + 1) },
+            )
+            HorizontalDivider()
+            DropdownMenuItemText(
+                label = stringResource(R.string.editor_delete_page),
+                onClick = { onMenuDismiss(); onDelete() },
+            )
+        }
+    }
+}
+
+// 页面缩略图的纯视觉呈现：底色/线格背景、笔迹渲染、书签角标与页码。页面列表与拖拽
+// 浮层共用，保证两个宿主里的目标外观完全一致。
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PageThumbnailVisual(
+    page: PageContent,
+    pageNumber: Int,
+    selected: Boolean,
+    onClick: (() -> Unit)? = null,
+    onToggleBookmark: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val renderer = remember { InkDocumentRenderer() }
     // 与主画布一致地渲染笔迹；渲染层按笔画 id 缓存，元素不变时 prepare 结果可复用。
@@ -491,125 +660,62 @@ private fun PageThumbnailCell(
     val transparentFillColor = MaterialTheme.colorScheme.surface.copy(alpha = THUMBNAIL_TRANSPARENT_FILL_ALPHA)
     val shape = RoundedCornerShape(10.dp)
     val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    var menuOpen by remember { mutableStateOf(false) }
-    val dragStart = onLongPressDragStart
-    val dragBy = onLongPressDrag
-    val dragEnd = onLongPressDragEnd
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp),
-        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .fillMaxWidth(THUMBNAIL_WIDTH_FRACTION)
+            .widthIn(max = THUMBNAIL_MAX_WIDTH)
+            .aspectRatio(page.page.size.width.toFloat() / page.page.size.height.toFloat())
+            .clip(shape)
+            .border(width = if (selected) 2.dp else 1.dp, color = borderColor, shape = shape)
+            .then(if (onClick != null) Modifier.combinedClickable(onClick = onClick) else Modifier),
     ) {
-        Box(
+        Canvas(Modifier.fillMaxSize()) {
+            val scale = size.width / page.page.size.width
+            drawRect(page.page.background.baseColor(transparentFillColor), topLeft = Offset.Zero, size = size)
+            when (val background = page.page.background) {
+                is PageBackground.Pattern -> drawPattern(background, Rect(0f, 0f, size.width, size.height), scale)
+                else -> Unit
+            }
+            clipRect(0f, 0f, size.width, size.height) {
+                renderer.draw(this, prepared, scale, 0f, 0f)
+            }
+        }
+        val bookmarkActionDescription = stringResource(
+            if (page.page.bookmarked) R.string.editor_remove_bookmark else R.string.editor_add_bookmark,
+        )
+        Icon(
+            if (page.page.bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+            contentDescription = if (onToggleBookmark != null) bookmarkActionDescription else null,
+            tint = if (page.page.bookmarked) BOOKMARK_TINT else MaterialTheme.colorScheme.primary,
             modifier = Modifier
-                .fillMaxWidth(THUMBNAIL_WIDTH_FRACTION)
-                .widthIn(max = THUMBNAIL_MAX_WIDTH)
-                .aspectRatio(page.page.size.width.toFloat() / page.page.size.height.toFloat())
-                .clip(shape)
-                .border(width = if (selected) 2.dp else 1.dp, color = borderColor, shape = shape)
+                .align(Alignment.TopEnd)
+                // 顶边与缩略图顶边对齐，只保留水平方向的可点余量；无底色遮罩。
+                .padding(start = 10.dp, bottom = 10.dp)
+                .size(26.dp)
                 .then(
-                    if (dragStart != null && dragBy != null && dragEnd != null) {
-                        Modifier.clickable(onClick = onSelect)
-                    } else {
-                        Modifier.combinedClickable(onClick = onSelect)
-                    },
-                )
-                .then(
-                    if (dragStart != null && dragBy != null && dragEnd != null) {
-                        // 长按进入拖拽排序：原地抬手弹出功能菜单，手指移动则直接重排。
-                        // 拖拽期间不得弹出菜单——focusable Popup 出现会给手势流发取消
-                        // 事件，拖拽会被系统中断并留下不跟手的漂移。
-                        Modifier.pointerInput(page.page.id) {
-                            var moved = false
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = { touchOffset ->
-                                    moved = false
-                                    dragStart(touchOffset.y)
-                                },
-                                onDrag = { change, amount ->
-                                    change.consume()
-                                    moved = true
-                                    if (menuOpen) menuOpen = false
-                                    dragBy(amount.y)
-                                },
-                                onDragEnd = {
-                                    dragEnd()
-                                    if (!moved) menuOpen = true
-                                },
-                                onDragCancel = dragEnd,
-                            )
-                        }
+                    if (onToggleBookmark != null) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onToggleBookmark,
+                        )
                     } else {
                         Modifier
                     },
-                ),
-        ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val scale = size.width / page.page.size.width
-                drawRect(page.page.background.baseColor(transparentFillColor), topLeft = Offset.Zero, size = size)
-                when (val background = page.page.background) {
-                    is PageBackground.Pattern -> drawPattern(background, Rect(0f, 0f, size.width, size.height), scale)
-                    else -> Unit
-                }
-                clipRect(0f, 0f, size.width, size.height) {
-                    renderer.draw(this, prepared, scale, 0f, 0f)
-                }
-            }
-            val bookmarkActionDescription = stringResource(
-                if (page.page.bookmarked) R.string.editor_remove_bookmark else R.string.editor_add_bookmark,
-            )
-            Icon(
-                if (page.page.bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                contentDescription = null,
-                tint = if (page.page.bookmarked) BOOKMARK_TINT else MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    // 顶边与缩略图顶边对齐，只保留水平方向的可点余量；无底色遮罩。
-                    .padding(start = 10.dp, bottom = 10.dp)
-                    .size(26.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onToggleBookmark,
-                    )
-                    .padding(3.dp)
-                    .semantics {
-                        contentDescription = bookmarkActionDescription
-                    },
-            )
-            Text(
-                text = "$pageNumber",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(6.dp),
-            )
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItemText(
-                    label = stringResource(
-                        if (page.page.bookmarked) R.string.editor_remove_bookmark else R.string.editor_add_bookmark,
-                    ),
-                    onClick = { menuOpen = false; onToggleBookmark() },
                 )
-                DropdownMenuItemText(
-                    label = stringResource(R.string.editor_move_page_up),
-                    enabled = index > 0,
-                    onClick = { menuOpen = false; onMove(index - 1) },
-                )
-                DropdownMenuItemText(
-                    label = stringResource(R.string.editor_move_page_down),
-                    enabled = index < pageCount - 1,
-                    onClick = { menuOpen = false; onMove(index + 1) },
-                )
-                HorizontalDivider()
-                DropdownMenuItemText(
-                    label = stringResource(R.string.editor_delete_page),
-                    onClick = { menuOpen = false; onDelete() },
-                )
-            }
-        }
+                .padding(3.dp)
+                .semantics {
+                    if (onToggleBookmark != null) contentDescription = bookmarkActionDescription
+                },
+        )
+        Text(
+            text = "$pageNumber",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(6.dp),
+        )
     }
 }
 
