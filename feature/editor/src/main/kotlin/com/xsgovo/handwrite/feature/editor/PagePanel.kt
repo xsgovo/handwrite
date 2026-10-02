@@ -388,6 +388,13 @@ private class PageDragState(private val listState: LazyListState) {
     private var fingerVelocityPxPerSec = 0f
     private var lastDragEventMillis = 0L
 
+    // 重排落地滚动修正：数据写回时 LazyList 按“首个可见项的 key”重锚定滚动位置，
+    // 锚定项位于被拖项的移动路径区间内时会被连带搬走，视口相对内容偏移一格，被拖
+    // 格位之前的页面（如第一页）被顶出视口。松手时记录锚定，落地时把它钉回原物理
+    // 槽位——落地方向的避让预演恰好与重排后布局逐项重合，视口保持原位即所见即所得。
+    private var pendingAnchorIndex = -1
+    private var pendingAnchorOffset = 0
+
     // 重排数据是否已落地（被拖项出现在目标格位）。落地前掠过的页面停留在避让预演位；
     // 落地后布局位与预演位一致，绘制位移直接归零，不再有任何回正过渡。状态跨落位
     // 收敛保持，直到下一次拖拽开始才复位。
@@ -435,6 +442,21 @@ private class PageDragState(private val listState: LazyListState) {
     fun onPagesChanged(pages: List<PageContent>) {
         if (!dataArrived && settling && draggedId != null && pages.getOrNull(targetIndex)?.page?.id == draggedId) {
             dataArrived = true
+            applyLandingAnchorCorrection()
+        }
+    }
+
+    // 重排写回的同一帧把视口锚定钉回原物理槽位：requestScrollToItem 会清除 key 重
+    // 锚定，下一次测量按记录的槽位与偏移呈现，视口不发生任何滚动。锚定项在移动路径
+    // 区间外时 key 重锚定本就正确，无需干预；未换格的 no-op 钉回的也是当前位置。
+    private fun applyLandingAnchorCorrection() {
+        val anchorIndex = pendingAnchorIndex
+        val anchorOffset = pendingAnchorOffset
+        pendingAnchorIndex = -1
+        pendingAnchorOffset = 0
+        if (anchorIndex < 0) return
+        if (anchorIndex in minOf(originIndex, targetIndex)..maxOf(originIndex, targetIndex)) {
+            listState.requestScrollToItem(anchorIndex, anchorOffset)
         }
     }
 
@@ -529,6 +551,9 @@ private class PageDragState(private val listState: LazyListState) {
     fun end(onCommit: (PageId, Int) -> Unit): PageId? {
         val id = draggedId ?: return null
         advance()
+        // 记录松手时的视口锚定（数据仍是旧顺序）：重排写回时用于把锚定钉回原槽位。
+        pendingAnchorIndex = listState.firstVisibleItemIndex
+        pendingAnchorOffset = listState.firstVisibleItemScrollOffset
         // 不清空拖拽态：提交后重排经 Room 异步写回，落位阶段继续持有拖拽态，
         // 被 frameStep 推进直到收敛后解除。
         settling = true
@@ -575,6 +600,8 @@ private class PageDragState(private val listState: LazyListState) {
         scrollSpeedPxPerSec = 0f
         fingerVelocityPxPerSec = 0f
         lastDragEventMillis = 0L
+        pendingAnchorIndex = -1
+        pendingAnchorOffset = 0
     }
 
     // 换格判定：目标格位 = 手指中心线之上的页面项数量（被拖项自身不计）。
