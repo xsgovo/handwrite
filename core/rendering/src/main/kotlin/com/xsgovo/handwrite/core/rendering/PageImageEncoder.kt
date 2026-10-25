@@ -42,7 +42,9 @@ fun ImageFormat.pageImageFileFormat(): PageImageFileFormat = when (this) {
     ImageFormat.AUTO, ImageFormat.WEBP -> PageImageFileFormat("image/webp", "webp")
 }
 
-private fun PageContent.outputSize(longEdge: Int): Pair<Int, Int> {
+// 以下导出枚举到编码参数的映射是屏上编码与后台导出（DocumentExportWorker）共用的唯一实现，
+// 修改取值必须保证两条路径一致，否则同一设置在分享与导出中产出不同分辨率或质量。
+fun PageContent.outputSize(longEdge: Int): Pair<Int, Int> {
     val size = page.size
     return if (size.width >= size.height) {
         longEdge to (longEdge * size.height.toDouble() / size.width).roundToInt().coerceAtLeast(1)
@@ -51,22 +53,22 @@ private fun PageContent.outputSize(longEdge: Int): Pair<Int, Int> {
     }
 }
 
-private fun ExportResolution.longEdge(): Int = when (this) {
+fun ExportResolution.longEdge(): Int = when (this) {
     ExportResolution.SMALL -> 1_280
     ExportResolution.STANDARD -> 2_048
     ExportResolution.HIGH -> 3_072
 }
 
-private fun CompressionQuality.percent(): Int = when (this) {
+fun CompressionQuality.percent(): Int = when (this) {
     CompressionQuality.LOW -> 65
     CompressionQuality.BALANCED -> 82
     CompressionQuality.HIGH -> 95
 }
 
-private fun ImageFormat.compressFormat(): Bitmap.CompressFormat = when (this) {
+fun ImageFormat.compressFormat(): Bitmap.CompressFormat = when (this) {
     ImageFormat.PNG -> Bitmap.CompressFormat.PNG
     ImageFormat.JPEG -> Bitmap.CompressFormat.JPEG
     ImageFormat.AUTO, ImageFormat.WEBP -> Bitmap.CompressFormat.WEBP_LOSSY
 }
 
-private fun ImageFormat.isLossy(): Boolean = this != ImageFormat.PNG
+fun ImageFormat.isLossy(): Boolean = this != ImageFormat.PNG

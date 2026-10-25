@@ -16,9 +16,13 @@ import com.xsgovo.handwrite.core.model.DocumentSnapshot
 import com.xsgovo.handwrite.core.model.DomainResult
 import com.xsgovo.handwrite.core.model.ExportResolution
 import com.xsgovo.handwrite.core.model.ImageFormat
-import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.rendering.PageImageEncoder
 import com.xsgovo.handwrite.core.rendering.PageRenderEngine
+import com.xsgovo.handwrite.core.rendering.compressFormat
+import com.xsgovo.handwrite.core.rendering.isLossy
+import com.xsgovo.handwrite.core.rendering.longEdge
+import com.xsgovo.handwrite.core.rendering.outputSize
+import com.xsgovo.handwrite.core.rendering.percent
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -142,35 +146,6 @@ private suspend fun writeHybridPdf(
         pdf.close()
     }
 }
-
-private fun PageContent.outputSize(longEdge: Int): Pair<Int, Int> {
-    val size = page.size
-    return if (size.width >= size.height) {
-        longEdge to (longEdge * size.height.toDouble() / size.width).roundToInt().coerceAtLeast(1)
-    } else {
-        (longEdge * size.width.toDouble() / size.height).roundToInt().coerceAtLeast(1) to longEdge
-    }
-}
-
-private fun ExportResolution.longEdge(): Int = when (this) {
-    ExportResolution.SMALL -> 1_280
-    ExportResolution.STANDARD -> 2_048
-    ExportResolution.HIGH -> 3_072
-}
-
-private fun CompressionQuality.percent(): Int = when (this) {
-    CompressionQuality.LOW -> 65
-    CompressionQuality.BALANCED -> 82
-    CompressionQuality.HIGH -> 95
-}
-
-private fun ImageFormat.compressFormat(): Bitmap.CompressFormat = when (this) {
-    ImageFormat.PNG -> Bitmap.CompressFormat.PNG
-    ImageFormat.JPEG -> Bitmap.CompressFormat.JPEG
-    ImageFormat.AUTO, ImageFormat.WEBP -> Bitmap.CompressFormat.WEBP_LOSSY
-}
-
-private fun ImageFormat.isLossy(): Boolean = this != ImageFormat.PNG
 
 private inline fun <reified T : Enum<T>> androidx.work.Data.enumValue(key: String): T? =
     getString(key)?.let { value -> enumValues<T>().firstOrNull { it.name == value } }
