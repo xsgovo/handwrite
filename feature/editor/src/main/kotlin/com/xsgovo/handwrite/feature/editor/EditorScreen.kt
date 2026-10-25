@@ -37,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import com.xsgovo.handwrite.core.document.ResourceInput
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.BackBehavior
+import com.xsgovo.handwrite.core.model.PDF_MIME_TYPE
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.rendering.rememberBackgroundAssetImage
 import java.io.FileNotFoundException
@@ -172,7 +173,7 @@ fun EditorRoute(
                     onZoomLock = viewModel::setZoomLocked,
                     onBackground = viewModel::setBackground,
                     onImportBackground = {
-                        backgroundPicker.launch(arrayOf("image/*", "application/pdf"))
+                        backgroundPicker.launch(arrayOf("image/*", PDF_MIME_TYPE))
                     },
                 )
             },

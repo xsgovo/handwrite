@@ -11,6 +11,7 @@ import com.xsgovo.handwrite.core.document.ResourceInput
 import com.xsgovo.handwrite.core.document.StoredResource
 import com.xsgovo.handwrite.core.model.DomainFailure
 import com.xsgovo.handwrite.core.model.DomainResult
+import com.xsgovo.handwrite.core.model.PDF_MIME_TYPE
 import com.xsgovo.handwrite.core.model.ResourceId
 import java.io.File
 import java.io.FileNotFoundException
@@ -146,5 +147,3 @@ private fun String.fileExtension(): String = when (lowercase()) {
     PDF_MIME_TYPE -> "pdf"
     else -> "image"
 }
-
-private const val PDF_MIME_TYPE = "application/pdf"

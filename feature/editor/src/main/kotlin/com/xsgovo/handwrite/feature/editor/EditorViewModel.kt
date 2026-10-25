@@ -31,6 +31,7 @@ import com.xsgovo.handwrite.core.model.PageContent
 import com.xsgovo.handwrite.core.model.PageElement
 import com.xsgovo.handwrite.core.model.PageId
 import com.xsgovo.handwrite.core.model.PageTemplate
+import com.xsgovo.handwrite.core.model.PDF_MIME_TYPE
 import com.xsgovo.handwrite.core.model.PressureSensitivity
 import com.xsgovo.handwrite.core.model.SideButtonAction
 import com.xsgovo.handwrite.core.model.StrokeElement
@@ -853,7 +854,6 @@ class EditorViewModel @Inject constructor(
 
     private companion object {
         const val ORDER_STEP = 1_024L
-        const val PDF_MIME_TYPE = "application/pdf"
         const val COLOR_SLOT_PERSIST_DELAY_MILLIS = 300L
         val NAME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH.mm.ss.SSS")
             .withZone(ZoneId.systemDefault())

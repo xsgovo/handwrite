@@ -40,6 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.xsgovo.handwrite.core.model.ImageFormat
+import com.xsgovo.handwrite.core.model.PDF_MIME_TYPE
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,7 +64,7 @@ fun ExportRoute(
     }
 
     val imageTarget = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/*"), ::acceptDestination)
-    val pdfTarget = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf"), ::acceptDestination)
+    val pdfTarget = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(PDF_MIME_TYPE), ::acceptDestination)
     val packageTarget = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip"), ::acceptDestination)
 
     LaunchedEffect(documentId) { viewModel.openDocument(documentId) }

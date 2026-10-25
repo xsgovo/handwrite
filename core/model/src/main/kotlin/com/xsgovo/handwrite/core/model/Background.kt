@@ -45,6 +45,9 @@ enum class BackgroundAssetKind {
     PDF,
 }
 
+// PDF 背景资源的 MIME 类型：资源白名单、导入 kind 判定与文件选择器共用同一取值。
+const val PDF_MIME_TYPE = "application/pdf"
+
 data class BackgroundTransform(
     val scalePermille: Int = 1_000,
     val translation: LogicalPoint = LogicalPoint(0, 0),
