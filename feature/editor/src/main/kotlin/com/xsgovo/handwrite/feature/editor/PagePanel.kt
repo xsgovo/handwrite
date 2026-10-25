@@ -1001,7 +1001,6 @@ private const val THUMBNAIL_WIDTH_FRACTION = 0.58f
 // 缩略图宽度上限：横屏下面板变宽，用固定上限防止缩略图随面板等比膨胀。
 private val THUMBNAIL_MAX_WIDTH = 180.dp
 private const val THUMBNAIL_TRANSPARENT_FILL_ALPHA = 0.45f
-private const val PENDING_ORDER_TIMEOUT_MILLIS = 700L
 // 拖拽自动滚动：手指进入视口上下各一成半高度的区域即持续滚动。
 private const val AUTO_SCROLL_EDGE_FRACTION = 0.15f
 // 基础滚动速度随超出边缘的深度线性提升：刚触边为视口高度的 0.45 倍/秒，深抵视口
