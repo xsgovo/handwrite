@@ -29,7 +29,7 @@ Library → Document → Page → PageElement
 - 书签是页面的持久属性，随页面存储；书签变更同样不进入命令撤销历史。
 - Document/Page/Element/Resource 使用稳定本地 `Long ID`。
 - 页面和元素使用 `orderKey` 排序，不以数组位置作为身份。
-- 原生导入必须重新生成全部本地 ID。
+- 原生导入必须重新生成全部本地 ID。（当前仅实现导出方向，原生导入尚未实现。）
 - PageElement 当前仅包含笔迹；背景独立于 PageElement。
 
 坐标：
