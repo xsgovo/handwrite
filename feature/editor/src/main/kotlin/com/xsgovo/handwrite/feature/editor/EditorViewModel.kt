@@ -81,6 +81,9 @@ enum class EraserMode {
     PIXEL,
 }
 
+// 编辑器的唯一状态容器：文档与页面数据（Room 回读）、当前页内容、工具与笔刷参数、
+// 设置回显字段（inputMode/sideButtonAction/backBehavior 等来自设置流）、撤销状态。
+// 回显字段中笔迹相关的几个（色槽/候选/笔宽）只在首次加载采用，见 init 内说明。
 data class EditorUiState(
     val documentId: DocumentId? = null,
     val surface: EditorSurface? = null,
@@ -142,6 +145,9 @@ class EditorViewModel @Inject constructor(
     val effects = effectsChannel.receiveAsFlow()
 
     private val history = CommandHistory(HistoryLimits(maxCommands = 100, maxEstimatedBytes = 64L * 1024 * 1024))
+
+    // 串行化所有产生 DocumentCommand 的提交类写入（笔迹/擦除/背景/撤销/重做/增删移页），
+    // 保证命令顺序与撤销栈一致；selectPage、togglePageBookmark 是幂等的单行更新，刻意不持锁。
     private val writeMutex = Mutex()
     private val nextElementId = AtomicLong(clock.nowMillis() shl 16)
     private var observationJob: Job? = null

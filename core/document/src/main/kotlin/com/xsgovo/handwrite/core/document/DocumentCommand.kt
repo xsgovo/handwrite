@@ -5,12 +5,15 @@ import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageElement
 import com.xsgovo.handwrite.core.model.PageId
 
+/** 可逆的文档修改命令；元素与背景的修改以命令表达，供撤销/重做重放。 */
 sealed interface DocumentCommand {
     val documentId: DocumentId
     val pageId: PageId
 
+    /** 返回撤销本命令所需的重放命令；ReplaceElements 的逆是 removed 与 added 互换。 */
     fun inverse(): DocumentCommand
 
+    /** 仅供历史容量裁剪时的粗略估算，不是精确字节数。 */
     fun estimatedBytes(): Long
 
     data class ReplaceElements(

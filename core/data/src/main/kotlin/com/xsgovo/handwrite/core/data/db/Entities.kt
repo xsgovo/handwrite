@@ -82,6 +82,8 @@ data class PageEntity(
     ],
 )
 data class PageElementEntity(
+    // 元素 ID 由编辑器上层生成并显式写入（见 PageElement.toEntity），autoGenerate 分支实际不生效；
+    // pages 与 library_items 的 ID 才走数据库自增。
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val pageId: Long,
     val orderKey: Long,

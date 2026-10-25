@@ -16,6 +16,10 @@ fun interface ResourceInput {
     fun open(): InputStream
 }
 
+/**
+ * 背景资源（图片/PDF）的导入与查找契约。实现为内容寻址：同字节内容即同资源（按哈希去重）；
+ * 导入后的引用计数由文档写入方（页面背景的增删）负责增减。
+ */
 interface BackgroundResourceRepository {
     suspend fun import(
         mimeType: String,

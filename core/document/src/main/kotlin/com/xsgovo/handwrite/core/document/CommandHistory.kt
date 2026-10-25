@@ -12,6 +12,10 @@ data class HistoryLimits(
     }
 }
 
+/**
+ * 进程内撤销/重做栈。采用预览-确认两步协议：commandToUndo/commandToRedo 只读栈并返回待重放命令，
+ * confirm* 在写库成功后才真正搬动栈，撤销失败时栈保持原状。
+ */
 class CommandHistory(
     private val limits: HistoryLimits,
 ) {
@@ -56,6 +60,7 @@ class CommandHistory(
         redo.clear()
     }
 
+    // 超出上限时优先淘汰最旧的 undo 命令，undo 空后才动 redo。
     private fun trimToLimits() {
         while (undo.size + redo.size > limits.maxCommands || estimatedBytes() > limits.maxEstimatedBytes) {
             when {
