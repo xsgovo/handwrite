@@ -17,8 +17,8 @@
 ## 环境要求
 
 - Android Studio
-- JDK 17
-- Android SDK 36
+- JDK 21（Gradle 工具链自动解析；Android 模块以 Java 17 编译）
+- Android SDK 37
 - Android 12（API 31）或更高版本的设备/模拟器
 
 ## 构建与运行
@@ -40,7 +40,7 @@ Debug APK 默认生成在 `app/build/outputs/apk/debug/` 目录下。也可以�
 ```text
 app/                 应用入口、导航和依赖组合
 core/model/           领域模型
-core/document/        文档命令、Repository 和可靠写入契约
+core/document/        文档命令与 Repository 契约
 core/data/            Room、DataStore 和文件资源持久化
 core/rendering/       笔迹、背景和资源渲染
 core/designsystem/    Compose UI 基础
