@@ -2,11 +2,6 @@ name: Publish Signed Release APK
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: "版本号，不要包含 v，例如 1.0.1"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -14,35 +9,60 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_TAG: v${{ inputs.version }}
 
     steps:
-      - name: Validate version
-        shell: bash
-        run: |
-          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version: $RELEASE_VERSION"
-            echo "Expected a version such as 1.0.1"
-            exit 1
-          fi
-
-      - name: Check existing tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release tag already exists: $RELEASE_TAG"
-            exit 1
-          fi
-
       - name: Checkout selected branch
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
+
+      # 版本号只有一个来源：app/build.gradle.kts。tag、资产名、release 标题都由它派生。
+      - name: Resolve version from Gradle
+        shell: bash
+        run: |
+          read_version() {
+            sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*$2.*/\1/p" app/build.gradle.kts | sort -u
+          }
+
+          VERSION=$(read_version versionName '"\([^"]*\)"')
+          CODE=$(read_version versionCode '\([0-9][0-9]*\)')
+
+          if [[ -z "$VERSION" || -z "$CODE" ]]; then
+            echo "app/build.gradle.kts 中未找到 versionName 或 versionCode。"
+            exit 1
+          fi
+
+          if [[ $(printf '%s\n' "$VERSION" | wc -l) -ne 1 || $(printf '%s\n' "$CODE" | wc -l) -ne 1 ]]; then
+            echo "versionName/versionCode 出现多次且取值不一致，无法确定发布版本。"
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "版本号格式不合法：$VERSION"
+            echo "期望形如 1.0.2"
+            exit 1
+          fi
+
+          {
+            echo "RELEASE_VERSION=$VERSION"
+            echo "RELEASE_VERSION_CODE=$CODE"
+            echo "RELEASE_TAG=v$VERSION"
+          } >> "$GITHUB_ENV"
+
+          echo "发布版本：$VERSION（versionCode $CODE），tag 为 v$VERSION"
+
+      # 发布说明随代码提交，缺文件时在构建前就失败，避免打出没有说明的包。
+      - name: Check release notes
+        shell: bash
+        run: |
+          NOTES="docs/releases/${RELEASE_VERSION}.md"
+          if [[ ! -s "$NOTES" ]]; then
+            echo "缺少发布说明：$NOTES"
+            echo "发布前先提交该文件，写法参照 docs/releases/1.0.2.md。"
+            exit 1
+          fi
+          echo "发布说明：$NOTES"
 
       - name: Restore release signing key
         env:
@@ -77,14 +97,95 @@ jobs:
       - name: Grant execute permission for Gradle wrapper
         run: chmod +x ./gradlew
 
-      - name: Build Signed Release APK
-        run: ./gradlew --no-daemon :app:assembleRelease
+      # verifyLocal 是项目统一验证入口：全部单元测试、Android lint、debug 与 release 打包。
+      - name: Verify project
+        run: ./gradlew --no-daemon verifyLocal
 
       - name: Prepare release asset
         shell: bash
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/handwrite-${RELEASE_TAG}.apk"
+
+      # 产物自检：确认走的是签名构建、清单版本与派生版本一致，并输出校验和。
+      - name: Verify release artifact
+        shell: bash
+        run: |
+          APK="dist/handwrite-${RELEASE_TAG}.apk"
+
+          if [[ ! -s "$APK" ]]; then
+            echo "发布产物缺失或为空：$APK"
+            exit 1
+          fi
+
+          if [[ ! -f app/build/outputs/apk/release/app-release.apk ]]; then
+            echo "未找到 app-release.apk。签名配置未生效时 AGP 会产出 app-release-unsigned.apk。"
+            exit 1
+          fi
+
+          MANIFEST=$(find app/build/intermediates -path "*merged_manifests/release*" -name AndroidManifest.xml -print -quit)
+          if [[ -z "$MANIFEST" ]]; then
+            echo "未找到 release 合并清单，无法核对版本。"
+            exit 1
+          fi
+
+          ACTUAL_VERSION=$(grep -m1 -o 'versionName="[^"]*"' "$MANIFEST" | sed 's/^versionName="//; s/"$//')
+          ACTUAL_CODE=$(grep -m1 -o 'versionCode="[^"]*"' "$MANIFEST" | sed 's/^versionCode="//; s/"$//')
+
+          if [[ "$ACTUAL_VERSION" != "$RELEASE_VERSION" || "$ACTUAL_CODE" != "$RELEASE_VERSION_CODE" ]]; then
+            echo "产物版本与源码不一致：产物为 $ACTUAL_VERSION（versionCode $ACTUAL_CODE），期望 $RELEASE_VERSION（versionCode $RELEASE_VERSION_CODE）。"
+            exit 1
+          fi
+
+          APKSIGNER=$(command -v apksigner || true)
+          if [[ -z "$APKSIGNER" && -n "${ANDROID_HOME:-}" ]]; then
+            APKSIGNER=$(find "$ANDROID_HOME" -name apksigner -type f -perm -u+x -print -quit)
+          fi
+          if [[ -n "$APKSIGNER" ]]; then
+            "$APKSIGNER" verify --print-certs "$APK"
+          else
+            echo "未找到 apksigner，跳过证书校验（产物名为 app-release.apk，已说明构建应用了签名配置）。"
+          fi
+
+          SHA256=$(sha256sum "$APK" | sed 's/[[:space:]].*$//')
+          echo "RELEASE_SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "RELEASE_APK_SIZE=$(du -h "$APK" | cut -f1)" >> "$GITHUB_ENV"
+          echo "产物校验通过：$APK（versionCode $ACTUAL_CODE）"
+          echo "SHA256: $SHA256"
+          {
+            echo "### Release artifact"
+            echo ""
+            echo "- file: \`$APK\`"
+            echo "- versionName: \`$ACTUAL_VERSION\`"
+            echo "- versionCode: \`$ACTUAL_CODE\`"
+            echo "- sha256: \`$SHA256\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 正文 = 提交在仓库里的发布说明 + 流水线追加的产物信息，两者不重复描述同一件事。
+      - name: Compose release notes
+        shell: bash
+        run: |
+          NOTES="dist/release-notes.md"
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+
+          cp "docs/releases/${RELEASE_VERSION}.md" "$NOTES"
+
+          {
+            echo ""
+            echo "## 发布产物"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 安装包 | \`handwrite-${RELEASE_TAG}.apk\`（${RELEASE_APK_SIZE}） |"
+            echo "| SHA256 | \`${RELEASE_SHA256}\` |"
+            echo "| 构建 | \`${GITHUB_SHA:0:7}\` · $(date -u +'%Y-%m-%d %H:%M UTC') |"
+            if [[ -n "$PREV_TAG" ]]; then
+              echo "| 完整对比 | [${PREV_TAG}...${RELEASE_TAG}](https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${RELEASE_TAG}) |"
+            fi
+          } >> "$NOTES"
+
+          echo "NOTES_FILE=$NOTES" >> "$GITHUB_ENV"
+          echo "release 正文：$NOTES（对比基线 ${PREV_TAG:-无}）"
 
       - name: Create and push release tag
         shell: bash
@@ -103,4 +204,4 @@ jobs:
             "dist/handwrite-${RELEASE_TAG}.apk" \
             --verify-tag \
             --title "随手写 ${RELEASE_TAG}" \
-            --generate-notes
+            --notes-file "$NOTES_FILE"
