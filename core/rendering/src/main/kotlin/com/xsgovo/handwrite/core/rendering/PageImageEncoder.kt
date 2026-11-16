@@ -17,6 +17,9 @@ data class PageImageFileFormat(
 class PageImageEncoder(
     private val renderer: PageRenderEngine,
 ) {
+    /** 释放内部渲染引擎持有的背景位图缓存；编码会话结束后必须调用。 */
+    fun release() = renderer.release()
+
     suspend fun write(
         content: PageContent,
         output: OutputStream,

@@ -55,11 +55,15 @@ class DocumentExportWorker(
         return try {
             applicationContext.contentResolver.openOutputStream(destination, "wt")?.use { output ->
                 val renderer = PageRenderEngine(dependencies.resources())
-                when (format) {
-                    DocumentExportFormat.PAGE_IMAGE -> writePageImage(snapshot, renderer, output, imageFormat, resolution, quality)
-                    DocumentExportFormat.LONG_IMAGE -> writeLongImage(snapshot, renderer, output, imageFormat, resolution, quality)
-                    DocumentExportFormat.HYBRID_PDF -> writeHybridPdf(snapshot, renderer, output)
-                    DocumentExportFormat.NATIVE_PACKAGE -> NativePackageWriter(dependencies.resources()).write(snapshot, output)
+                try {
+                    when (format) {
+                        DocumentExportFormat.PAGE_IMAGE -> writePageImage(snapshot, renderer, output, imageFormat, resolution, quality)
+                        DocumentExportFormat.LONG_IMAGE -> writeLongImage(snapshot, renderer, output, imageFormat, resolution, quality)
+                        DocumentExportFormat.HYBRID_PDF -> writeHybridPdf(snapshot, renderer, output)
+                        DocumentExportFormat.NATIVE_PACKAGE -> NativePackageWriter(dependencies.resources()).write(snapshot, output)
+                    }
+                } finally {
+                    renderer.release()
                 }
             } ?: return Result.failure()
             Result.success()
