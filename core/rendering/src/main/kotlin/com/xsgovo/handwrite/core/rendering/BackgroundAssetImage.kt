@@ -60,7 +60,9 @@ internal fun decodePdf(path: String, pageIndex: Int, maximumEdge: Int): Bitmap {
         PdfRenderer(descriptor).use { renderer ->
             if (pageIndex !in 0 until renderer.pageCount) throw IOException("PDF page is unavailable")
             renderer.openPage(pageIndex).use { page ->
-                val scale = (maximumEdge.toFloat() / maxOf(page.width, page.height)).coerceAtMost(1f)
+                // PDF 页面是矢量内容，可按任意分辨率光栅化而不损失信息，与位图 decodeImage
+                // 不同，这里刻意不设放大上限，高分辨率导出时背景依然清晰。
+                val scale = maximumEdge.toFloat() / maxOf(page.width, page.height)
                 val bitmap = Bitmap.createBitmap(
                     (page.width * scale).toInt().coerceAtLeast(1),
                     (page.height * scale).toInt().coerceAtLeast(1),
