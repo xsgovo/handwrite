@@ -31,6 +31,9 @@ class InkDocumentRenderer {
     private val renderer = CanvasStrokeRenderer.create()
     private val strokeCache = StableIdCache<ElementId, Stroke>()
 
+    // 绘制路径上复用的变换矩阵；本类的绘制调用都在主线程，无并发写风险。
+    private val scratchTransform = Matrix()
+
     fun prepare(strokes: List<StrokeElement>): List<Stroke> =
         strokeCache.update(strokes, StrokeElement::id, ::toInkStroke)
 
@@ -40,27 +43,7 @@ class InkDocumentRenderer {
         scale: Float,
         left: Float,
         top: Float,
-    ) {
-        val transform = Matrix().apply {
-            setValues(
-                floatArrayOf(
-                    scale, 0f, left,
-                    0f, scale, top,
-                    0f, 0f, 1f,
-                ),
-            )
-        }
-        scope.drawIntoCanvas { canvas ->
-            val nativeCanvas = canvas.nativeCanvas
-            val saveCount = nativeCanvas.save()
-            try {
-                nativeCanvas.concat(transform)
-                strokes.forEach { stroke -> renderer.draw(nativeCanvas, stroke, transform) }
-            } finally {
-                nativeCanvas.restoreToCount(saveCount)
-            }
-        }
-    }
+    ) = drawStrokes(scope, strokes, scale, left, top)
 
     fun drawInProgress(
         scope: DrawScope,
@@ -68,9 +51,17 @@ class InkDocumentRenderer {
         scale: Float,
         left: Float,
         top: Float,
+    ) = drawStrokes(scope, strokes, scale, left, top)
+
+    private fun drawStrokes(
+        scope: DrawScope,
+        strokes: List<Stroke>,
+        scale: Float,
+        left: Float,
+        top: Float,
     ) {
         if (strokes.isEmpty()) return
-        val transform = Matrix().apply {
+        val transform = scratchTransform.apply {
             setValues(
                 floatArrayOf(
                     scale, 0f, left,
@@ -83,6 +74,9 @@ class InkDocumentRenderer {
             val nativeCanvas = canvas.nativeCanvas
             val saveCount = nativeCanvas.save()
             try {
+                // Ink 的 strokeToScreenTransform 参数不会应用到 canvas（见 CanvasStrokeRenderer
+                // 的 API 注释），仅供抗锯齿与纹理质量计算；真正定位笔画的是这里的 concat。
+                // 两处传同一个矩阵是刻意的，不要删掉任何一处。
                 nativeCanvas.concat(transform)
                 strokes.forEach { stroke -> renderer.draw(nativeCanvas, stroke, transform) }
             } finally {
