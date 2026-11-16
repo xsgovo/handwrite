@@ -20,9 +20,8 @@ import kotlinx.coroutines.withContext
 
 class PageImageSharer @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    resources: BackgroundResourceRepository,
+    private val resources: BackgroundResourceRepository,
 ) {
-    private val encoder = PageImageEncoder(PageRenderEngine(resources))
 
     suspend fun share(request: EditorShareRequest, settings: AppSettings): Result<Unit> = try {
         val image = withContext(Dispatchers.IO) { createImage(request, settings) }
@@ -59,6 +58,7 @@ class PageImageSharer @Inject constructor(
 
         val format = settings.imageFormat.pageImageFileFormat()
         val file = File.createTempFile("note-", ".${format.fileExtension}", directory)
+        val encoder = PageImageEncoder(PageRenderEngine(resources))
         try {
             file.outputStream().buffered().use { output ->
                 encoder.write(
@@ -72,6 +72,8 @@ class PageImageSharer @Inject constructor(
         } catch (exception: Exception) {
             file.delete()
             throw exception
+        } finally {
+            encoder.release()
         }
         return ShareableImage(file, format.mimeType)
     }

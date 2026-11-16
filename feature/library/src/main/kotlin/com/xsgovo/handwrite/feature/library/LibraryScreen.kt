@@ -1,5 +1,6 @@
 package com.xsgovo.handwrite.feature.library
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,22 +11,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import com.xsgovo.handwrite.core.designsystem.icons.CuteFlatIconButton
+import com.xsgovo.handwrite.core.designsystem.icons.CuteIconBadge
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcon
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcons
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -33,6 +34,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -76,19 +78,35 @@ fun LibraryRoute(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.library_title)) },
-                actions = {
-                    IconButton(onClick = onSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.library_settings))
-                    }
-                },
-            )
+            Column {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.library_title)) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                    actions = {
+                        CuteFlatIconButton(
+                            onClick = onSettings,
+                            icon = HandwriteIcons.Settings,
+                            contentDescription = stringResource(R.string.library_settings),
+                        )
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onNewDocument,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                containerColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = MaterialTheme.colorScheme.surface,
+                elevation = FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    focusedElevation = 0.dp,
+                    hoveredElevation = 0.dp,
+                ),
+                icon = { HandwriteIcon(HandwriteIcons.Add, contentDescription = null, size = 20.dp) },
                 text = { Text(stringResource(R.string.library_new_document)) },
             )
         },
@@ -97,19 +115,15 @@ fun LibraryRoute(
         if (state.documents.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(96.dp)
-                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                    ) {
-                        Icon(
-                            Icons.Default.Description,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(40.dp),
-                        )
-                    }
+                    CuteIconBadge(
+                        imageVector = HandwriteIcons.NoteDocument,
+                        contentDescription = null,
+                        size = 96.dp,
+                        iconSize = 44.dp,
+                        shape = RoundedCornerShape(28.dp),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    )
                     Text(stringResource(R.string.library_empty_title), style = MaterialTheme.typography.titleMedium)
                     Text(
                         stringResource(R.string.library_empty_hint),
@@ -119,17 +133,22 @@ fun LibraryRoute(
                 }
             }
         } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+            Box(
                 modifier = Modifier.fillMaxSize().padding(paddingValues),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                items(state.documents, key = { it.id.value }) { document ->
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 96.dp),
+                    modifier = Modifier.widthIn(max = 640.dp).fillMaxSize(),
+                ) {
+                    items(state.documents, key = { it.id.value }) { document ->
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
                         ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
                         modifier = Modifier.fillMaxWidth().clickable { onOpenDocument(document.id.value) },
                     ) {
                         ListItem(
@@ -143,30 +162,26 @@ fun LibraryRoute(
                                 )
                             },
                             leadingContent = {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
-                                ) {
-                                    Icon(
-                                        Icons.Default.Description,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    )
-                                }
+                                CuteIconBadge(
+                                    imageVector = HandwriteIcons.NoteDocument,
+                                    contentDescription = null,
+                                    size = 44.dp,
+                                    iconSize = 22.dp,
+                                    shape = RoundedCornerShape(14.dp),
+                                )
                             },
                             trailingContent = {
-                                IconButton(
+                                CuteFlatIconButton(
                                     onClick = { deleteTarget = document },
                                     enabled = state.deletingId == null,
-                                ) {
-                                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.library_delete_document))
-                                }
+                                    icon = HandwriteIcons.Delete,
+                                    contentDescription = stringResource(R.string.library_delete_document),
+                                )
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         )
                     }
+                }
                 }
             }
         }
@@ -175,11 +190,15 @@ fun LibraryRoute(
     deleteTarget?.let { document ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
             title = { Text(stringResource(R.string.library_delete_dialog_title)) },
             text = { Text(stringResource(R.string.library_delete_dialog_message, document.name.value)) },
             confirmButton = {
                 TextButton(onClick = { deleteTarget = null; viewModel.delete(document.id) }) {
-                    Text(stringResource(R.string.library_action_delete))
+                    Text(
+                        stringResource(R.string.library_action_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.library_action_cancel)) } },

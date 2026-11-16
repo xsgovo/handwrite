@@ -12,6 +12,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.xsgovo.handwrite.core.designsystem.HandwriteTheme
+import com.xsgovo.handwrite.core.designsystem.HandwriteThemeMode
+import com.xsgovo.handwrite.core.model.ThemeMode
 import com.xsgovo.handwrite.feature.editor.EditorRoute
 import com.xsgovo.handwrite.feature.export.ExportRoute
 import com.xsgovo.handwrite.feature.library.LibraryRoute
@@ -36,6 +38,13 @@ private data object SettingsDestination
 @Serializable
 private data class ExportDestination(val documentId: Long)
 
+// 领域主题枚举到设计系统枚举的映射收口在 :app：designsystem 不依赖 core:model。
+private fun ThemeMode.toHandwriteThemeMode(): HandwriteThemeMode = when (this) {
+    ThemeMode.SYSTEM -> HandwriteThemeMode.SYSTEM
+    ThemeMode.LIGHT -> HandwriteThemeMode.LIGHT
+    ThemeMode.DARK -> HandwriteThemeMode.DARK
+}
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     @Inject
@@ -49,7 +58,7 @@ class MainActivity : ComponentActivity() {
             val settings by appViewModel.settings.collectAsState()
             val navController = rememberNavController()
 
-            HandwriteTheme(themeMode = settings.themeMode, dynamicColor = settings.dynamicColor) {
+            HandwriteTheme(themeMode = settings.themeMode.toHandwriteThemeMode(), dynamicColor = settings.dynamicColor) {
                 NavHost(
                     navController = navController,
                     startDestination = EditorDestination(sessionId = UUID.randomUUID().toString()),

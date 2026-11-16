@@ -14,83 +14,92 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.xsgovo.handwrite.core.model.ThemeMode
 
-// Material 3 Expressive palette: high-chroma spring-green primary, warm amber
-// tertiary, and quiet green-tinted neutrals so handwriting ink stays dominant.
+/**
+ * 主题模式。取值含义与 core:model 的 ThemeMode 一致，但刻意定义在本模块：
+ * 设计系统不依赖领域模型，领域枚举到本枚举的映射由 :app 完成。
+ */
+enum class HandwriteThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
+
+// 简洁中性的手写应用色彩体系：以纯净黑白灰为主基调，仅在关键交互处保留克制的强调色，
+// 避免传统 Material 3 大面积高饱和色块干扰手写内容。
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF006C51),
+    primary = Color(0xFF1B6E5B),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFF89F8CF),
-    onPrimaryContainer = Color(0xFF00382A),
-    secondary = Color(0xFF4D635B),
+    primaryContainer = Color(0xFFE6F2EE),
+    onPrimaryContainer = Color(0xFF0E473A),
+    secondary = Color(0xFF4B5563),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFCFE9DD),
-    onSecondaryContainer = Color(0xFF0A1F19),
-    tertiary = Color(0xFF9C4A00),
+    secondaryContainer = Color(0xFFECEEF2),
+    onSecondaryContainer = Color(0xFF14161A),
+    tertiary = Color(0xFF8A4B16),
     onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFFFDCC2),
-    onTertiaryContainer = Color(0xFF331B00),
-    error = Color(0xFFBA1A1A),
+    tertiaryContainer = Color(0xFFF6EBE0),
+    onTertiaryContainer = Color(0xFF3E2208),
+    error = Color(0xFFC62828),
     onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002),
-    background = Color(0xFFF5FAF6),
-    onBackground = Color(0xFF171D1A),
-    surface = Color(0xFFF5FAF6),
-    onSurface = Color(0xFF171D1A),
-    surfaceVariant = Color(0xFFDBE5DF),
-    onSurfaceVariant = Color(0xFF404944),
-    surfaceDim = Color(0xFFD5DBD6),
-    surfaceBright = Color(0xFFF5FAF6),
+    errorContainer = Color(0xFFFDEAEA),
+    onErrorContainer = Color(0xFF5F1111),
+    background = Color(0xFFF5F6F8),
+    onBackground = Color(0xFF14161A),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF14161A),
+    surfaceVariant = Color(0xFFECEEF2),
+    onSurfaceVariant = Color(0xFF5A606B),
+    surfaceDim = Color(0xFFE5E7EC),
+    surfaceBright = Color(0xFFFFFFFF),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFEFF4F0),
-    surfaceContainer = Color(0xFFE9EEEA),
-    surfaceContainerHigh = Color(0xFFE3E8E4),
-    surfaceContainerHighest = Color(0xFFDEE3DF),
-    outline = Color(0xFF707974),
-    outlineVariant = Color(0xFFC0C9C3),
-    inverseSurface = Color(0xFF2B322F),
-    inverseOnSurface = Color(0xFFEDF2EE),
-    inversePrimary = Color(0xFF63DBB1),
+    surfaceContainerLow = Color(0xFFFAFAFC),
+    surfaceContainer = Color(0xFFF1F2F5),
+    surfaceContainerHigh = Color(0xFFE8EAEE),
+    surfaceContainerHighest = Color(0xFFDFE2E7),
+    outline = Color(0xFF7B818C),
+    outlineVariant = Color(0xFFE1E4EA),
+    inverseSurface = Color(0xFF1E2024),
+    inverseOnSurface = Color(0xFFF4F5F7),
+    inversePrimary = Color(0xFF6CD4B8),
     scrim = Color(0xFF000000),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF63DBB1),
-    onPrimary = Color(0xFF003829),
-    primaryContainer = Color(0xFF00513D),
-    onPrimaryContainer = Color(0xFF89F8CF),
-    secondary = Color(0xFFB4CCC1),
-    onSecondary = Color(0xFF1F352E),
-    secondaryContainer = Color(0xFF354B44),
-    onSecondaryContainer = Color(0xFFCFE9DD),
-    tertiary = Color(0xFFFFB86F),
-    onTertiary = Color(0xFF512400),
-    tertiaryContainer = Color(0xFF723600),
-    onTertiaryContainer = Color(0xFFFFDCC2),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
+    primary = Color(0xFF6CD4B8),
+    onPrimary = Color(0xFF08342A),
+    primaryContainer = Color(0xFF193830),
+    onPrimaryContainer = Color(0xFFC6EFE3),
+    secondary = Color(0xFFA0A6B1),
+    onSecondary = Color(0xFF1C1E22),
+    secondaryContainer = Color(0xFF2B2C32),
+    onSecondaryContainer = Color(0xFFF2F3F5),
+    tertiary = Color(0xFFE6AC74),
+    onTertiary = Color(0xFF432406),
+    tertiaryContainer = Color(0xFF3A2817),
+    onTertiaryContainer = Color(0xFFF6DFC6),
+    error = Color(0xFFFF8A80),
+    onError = Color(0xFF5F0A0A),
+    errorContainer = Color(0xFF471515),
     onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF0E1512),
-    onBackground = Color(0xFFDEE3DF),
-    surface = Color(0xFF0E1512),
-    onSurface = Color(0xFFDEE3DF),
-    surfaceVariant = Color(0xFF404944),
-    onSurfaceVariant = Color(0xFFC0C9C3),
-    surfaceDim = Color(0xFF0E1512),
-    surfaceBright = Color(0xFF343B37),
-    surfaceContainerLowest = Color(0xFF090F0D),
-    surfaceContainerLow = Color(0xFF171D1A),
-    surfaceContainer = Color(0xFF1B211E),
-    surfaceContainerHigh = Color(0xFF252B28),
-    surfaceContainerHighest = Color(0xFF303633),
-    outline = Color(0xFF8A938D),
-    outlineVariant = Color(0xFF404944),
-    inverseSurface = Color(0xFFDEE3DF),
-    inverseOnSurface = Color(0xFF2B322F),
-    inversePrimary = Color(0xFF006C51),
+    background = Color(0xFF121214),
+    onBackground = Color(0xFFF2F3F5),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFF2F3F5),
+    surfaceVariant = Color(0xFF2A2A2E),
+    onSurfaceVariant = Color(0xFFA0A4AD),
+    surfaceDim = Color(0xFF0A0A0C),
+    surfaceBright = Color(0xFF2C2C30),
+    surfaceContainerLowest = Color(0xFF1A1A1D),
+    surfaceContainerLow = Color(0xFF18181B),
+    surfaceContainer = Color(0xFF222226),
+    surfaceContainerHigh = Color(0xFF2B2B30),
+    surfaceContainerHighest = Color(0xFF35353B),
+    outline = Color(0xFF6E737D),
+    outlineVariant = Color(0xFF2E2E34),
+    inverseSurface = Color(0xFFF2F3F5),
+    inverseOnSurface = Color(0xFF18181B),
+    inversePrimary = Color(0xFF1B6E5B),
     scrim = Color(0xFF000000),
 )
 
@@ -99,32 +108,46 @@ private val ExpressiveShapes = Shapes(
     small = RoundedCornerShape(10.dp),
     medium = RoundedCornerShape(14.dp),
     large = RoundedCornerShape(18.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
-// Colors for canvas-adjacent chrome that has no role in the Material scheme.
-// The desk sits behind the page and follows the scheme's neutral tones so it
-// stays consistent with the theme (including wallpaper dynamic color); pattern
-// lines and page fills are document content and remain theme-independent so
-// exports match the canvas.
+private val LightToolbarBackground = Color(0xFFFFFFFF)
+private val DarkToolbarBackground = Color(0xFF000000)
+private val LightCanvasDesk = Color(0xFFF1F2F5)
+private val DarkCanvasDesk = Color(0xFF1C1C1E)
+private val LightElevatedCardBackground = Color(0xFFFFFFFF)
+private val DarkElevatedCardBackground = Color(0xFF25252A)
+private val LightElevatedCardBorder = Color(0xFFDFE2E8)
+private val DarkElevatedCardBorder = Color(0xFF393A42)
+
+// 编辑器专用视觉色彩：工具栏始终保持纯白/纯黑，画布桌面保持灰白/灰黑，
+// 使书写纸面成为绝对视觉焦点，不被系统或主题色彩干扰。
 data class HandwriteColors(
     val canvasDesk: Color,
+    val toolbarBackground: Color,
+    val elevatedCardBackground: Color = LightElevatedCardBackground,
+    val elevatedCardBorder: Color = LightElevatedCardBorder,
 )
 
 val LocalHandwriteColors = staticCompositionLocalOf {
-    HandwriteColors(canvasDesk = LightColors.surfaceContainerHighest)
+    HandwriteColors(
+        canvasDesk = LightCanvasDesk,
+        toolbarBackground = LightToolbarBackground,
+        elevatedCardBackground = LightElevatedCardBackground,
+        elevatedCardBorder = LightElevatedCardBorder,
+    )
 }
 
 @Composable
 fun HandwriteTheme(
-    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    themeMode: HandwriteThemeMode = HandwriteThemeMode.SYSTEM,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
+        HandwriteThemeMode.SYSTEM -> isSystemInDarkTheme()
+        HandwriteThemeMode.LIGHT -> false
+        HandwriteThemeMode.DARK -> true
     }
     // minSdk 31，壁纸动态取色（Material You）在全部支持设备上可用。
     val context = LocalContext.current
@@ -133,9 +156,11 @@ fun HandwriteTheme(
         darkTheme -> DarkColors
         else -> LightColors
     }
-    // 桌面用主题中性色调（带灰度的主题色），与页面底色拉开层级又不喧宾夺主。
     val handwriteColors = HandwriteColors(
-        canvasDesk = if (darkTheme) colorScheme.surfaceContainerLowest else colorScheme.surfaceContainerHighest,
+        canvasDesk = if (darkTheme) DarkCanvasDesk else LightCanvasDesk,
+        toolbarBackground = if (darkTheme) DarkToolbarBackground else LightToolbarBackground,
+        elevatedCardBackground = if (darkTheme) DarkElevatedCardBackground else LightElevatedCardBackground,
+        elevatedCardBorder = if (darkTheme) DarkElevatedCardBorder else LightElevatedCardBorder,
     )
     MaterialTheme(
         colorScheme = colorScheme,

@@ -20,6 +20,25 @@ import kotlin.math.roundToInt
 class PageRenderEngine(
     private val resources: BackgroundResourceRepository,
 ) {
+    // 背景位图缓存：长图导出逐页渲染时，同一背景资源原本会被逐页重复解码（PDF 光栅化尤其昂贵）。
+    // 容量 2 的 LRU 覆盖“全文档统一背景”与“相邻页交替背景”两种主流场景，同时控制内存峰值。
+    // 资源层是内容寻址（同字节内容即同文件），键中的路径即可代表内容身份，无需额外失效策略。
+    // 引擎实例不再使用时必须调用 release() 回收缓存位图。
+    private val assetCache = object : LinkedHashMap<AssetCacheKey, Bitmap>(
+        ASSET_CACHE_CAPACITY, 0.75f, true,
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<AssetCacheKey, Bitmap>?): Boolean =
+            (size > ASSET_CACHE_CAPACITY).also { evict ->
+                if (evict) eldest?.value?.recycle()
+            }
+    }
+
+    /** 回收缓存的全部背景位图；渲染会话结束（导出完成、分享完成）后必须调用。 */
+    fun release() {
+        assetCache.values.forEach(Bitmap::recycle)
+        assetCache.clear()
+    }
+
     suspend fun renderPage(
         content: PageContent,
         width: Int,
@@ -51,19 +70,25 @@ class PageRenderEngine(
         if (background is PageBackground.Asset) {
             val resource = resources.find(background.resourceId)
             if (resource is DomainResult.Success) {
-                val bitmap = runCatching {
+                val maxEdge = maxOf(width, height)
+                val key = AssetCacheKey(
+                    path = resource.value.absolutePath,
+                    kind = background.kind,
+                    pdfPageIndex = background.pdfPageIndex,
+                    maxEdge = maxEdge,
+                )
+                val bitmap = assetCache[key] ?: runCatching {
                     when (background.kind) {
-                        BackgroundAssetKind.IMAGE -> decodeImage(resource.value.absolutePath, maxOf(width, height))
+                        BackgroundAssetKind.IMAGE -> decodeImage(resource.value.absolutePath, maxEdge)
                         BackgroundAssetKind.PDF -> decodePdf(
                             resource.value.absolutePath,
                             background.pdfPageIndex ?: 0,
-                            maxOf(width, height),
+                            maxEdge,
                         )
                     }
-                }.getOrNull()
+                }.getOrNull()?.also { assetCache[key] = it }
                 bitmap?.let {
                     drawAsset(canvas, it, width, height, page.size.width, page.size.height, background)
-                    it.recycle()
                 }
             }
         }
@@ -75,6 +100,15 @@ class PageRenderEngine(
         }
     }
 }
+
+private data class AssetCacheKey(
+    val path: String,
+    val kind: BackgroundAssetKind,
+    val pdfPageIndex: Int?,
+    val maxEdge: Int,
+)
+
+private const val ASSET_CACHE_CAPACITY = 2
 
 private fun PageBackground.baseColor(forceOpaque: Boolean): Int = when (this) {
     is PageBackground.Solid -> if (forceOpaque) argb or Color.BLACK else argb
