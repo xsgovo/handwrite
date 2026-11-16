@@ -44,6 +44,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.xsgovo.handwrite.core.designsystem.HandwriteTheme
+import com.xsgovo.handwrite.core.designsystem.HandwriteThemeMode
 import com.xsgovo.handwrite.core.designsystem.LocalHandwriteColors
 import com.xsgovo.handwrite.core.designsystem.icons.CuteValuePill
 import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcon
@@ -53,7 +54,6 @@ import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PagePattern
 import com.xsgovo.handwrite.core.model.PageTemplate
 import com.xsgovo.handwrite.core.model.PatternType
-import com.xsgovo.handwrite.core.model.ThemeMode
 
 // 待添加虚拟页的扁平单卡交互层：
 // 1. 顶部柔和凹陷托盘无遮挡展示唯一一份按文档比例缩放的新页面预览（不再叠放加号徽章或重复缩略图）；
@@ -345,7 +345,7 @@ private fun computePreviewSheetSize(
 @Preview(showBackground = true)
 @Composable
 private fun AddPagePlaceholderLightPreview() {
-    HandwriteTheme(themeMode = ThemeMode.LIGHT) {
+    HandwriteTheme(themeMode = HandwriteThemeMode.LIGHT) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -366,7 +366,7 @@ private fun AddPagePlaceholderLightPreview() {
 @Preview(showBackground = true)
 @Composable
 private fun AddPagePlaceholderDarkPreview() {
-    HandwriteTheme(themeMode = ThemeMode.DARK) {
+    HandwriteTheme(themeMode = HandwriteThemeMode.DARK) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier

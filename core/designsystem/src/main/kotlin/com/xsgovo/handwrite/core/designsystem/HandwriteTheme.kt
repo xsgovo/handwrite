@@ -14,7 +14,16 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.xsgovo.handwrite.core.model.ThemeMode
+
+/**
+ * 主题模式。取值含义与 core:model 的 ThemeMode 一致，但刻意定义在本模块：
+ * 设计系统不依赖领域模型，领域枚举到本枚举的映射由 :app 完成。
+ */
+enum class HandwriteThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
 
 // 简洁中性的手写应用色彩体系：以纯净黑白灰为主基调，仅在关键交互处保留克制的强调色，
 // 避免传统 Material 3 大面积高饱和色块干扰手写内容。
@@ -131,14 +140,14 @@ val LocalHandwriteColors = staticCompositionLocalOf {
 
 @Composable
 fun HandwriteTheme(
-    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    themeMode: HandwriteThemeMode = HandwriteThemeMode.SYSTEM,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
+        HandwriteThemeMode.SYSTEM -> isSystemInDarkTheme()
+        HandwriteThemeMode.LIGHT -> false
+        HandwriteThemeMode.DARK -> true
     }
     // minSdk 31，壁纸动态取色（Material You）在全部支持设备上可用。
     val context = LocalContext.current
