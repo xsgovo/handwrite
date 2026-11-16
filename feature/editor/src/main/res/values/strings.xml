@@ -7,10 +7,17 @@
     <string name="editor_tool_page_manager">页面管理</string>
     <string name="editor_tool_pen">画笔</string>
     <string name="editor_tool_eraser">橡皮擦</string>
-    <string name="editor_eraser_mode_stroke">笔画橡皮擦</string>
-    <string name="editor_eraser_mode_pixel">像素橡皮擦</string>
-    <string name="editor_eraser_size">橡皮大小 %1$d</string>
-    <string name="editor_brush_width">笔宽 %1$d</string>
+    <string name="editor_eraser_mode_stroke">笔画橡皮</string>
+    <string name="editor_eraser_mode_stroke_desc">整笔擦除</string>
+    <string name="editor_eraser_mode_pixel">像素橡皮</string>
+    <string name="editor_eraser_mode_pixel_desc">局部涂擦</string>
+    <string name="editor_eraser_size">橡皮大小</string>
+    <string name="editor_eraser_size_value">%1$d</string>
+    <string name="editor_eraser_size_pixel_hint">像素模式生效</string>
+    <string name="editor_eraser_size_preset_description">选择 %1$d 橡皮大小</string>
+    <string name="editor_brush_width">笔画粗细</string>
+    <string name="editor_brush_width_value">%1$d</string>
+    <string name="editor_brush_width_preset_description">选择 %1$d 档笔宽</string>
     <string name="editor_zoom_lock">锁定画布</string>
     <string name="editor_undo">撤销</string>
     <string name="editor_redo">重做</string>
@@ -52,8 +59,9 @@
     <string name="editor_add_new_page">添加新页面</string>
     <string name="editor_custom_background">自定义背景</string>
 
-    <!-- 页面面板 -->
+    <!-- 页面面板与页码指示 -->
     <string name="editor_panel_title_pages">页面</string>
+    <string name="editor_panel_close">关闭页面面板</string>
     <string name="editor_panel_tab_all_pages">所有页</string>
     <string name="editor_panel_tab_bookmarks">书签</string>
     <string name="editor_no_bookmarks">暂无书签</string>
@@ -64,6 +72,8 @@
     <string name="editor_delete_page">删除页面</string>
     <string name="editor_new_page">新页面</string>
     <string name="editor_base_color">底色</string>
+    <string name="editor_page_indicator_fraction">%1$d / %2$d</string>
+    <string name="editor_page_indicator_open_pages">打开页面管理，当前第 %1$d 页，共 %2$d 页</string>
 
     <!-- 提示消息 -->
     <string name="editor_share_image_failed">分享图片失败</string>

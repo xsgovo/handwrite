@@ -4,9 +4,13 @@
     <string name="export_button_ready">选择保存位置</string>
     <string name="export_button_exporting">正在导出</string>
     <string name="export_format_page_image">当前页面图片</string>
+    <string name="export_format_page_image_desc">仅导出当前正在查看的单页图像</string>
     <string name="export_format_long_image">全部页面长图</string>
+    <string name="export_format_long_image_desc">将所有页面纵向拼接为一张长图</string>
     <string name="export_format_hybrid_pdf">混合 PDF</string>
+    <string name="export_format_hybrid_pdf_desc">生成高清晰度、通用可打印的 PDF 文档</string>
     <string name="export_format_native_package">原生 ZIP 文档包</string>
+    <string name="export_format_native_package_desc">完整保留矢量笔迹与原始背景，便于备份</string>
     <string name="export_long_image_file_suffix">长图</string>
     <string name="export_completed">导出完成</string>
     <string name="export_failed">导出失败</string>

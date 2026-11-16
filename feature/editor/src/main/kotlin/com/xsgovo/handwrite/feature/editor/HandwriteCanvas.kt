@@ -9,6 +9,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -17,18 +18,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.xsgovo.handwrite.core.designsystem.icons.CuteFlatIconButton
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcon
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -137,6 +138,9 @@ fun HandwriteCanvas(
     pendingAddPageContent: @Composable () -> Unit,
     onSwipeNavigate: (Int) -> Unit,
     onTemporaryEraserChanged: (Boolean) -> Unit,
+    pageIndex: Int? = null,
+    pageCount: Int = 0,
+    onOpenPages: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -163,6 +167,7 @@ fun HandwriteCanvas(
     var zoomControlsVisible by remember(canvasSession) { mutableStateOf(false) }
     var zoomGestureActive by remember(canvasSession) { mutableStateOf(false) }
     var zoomControlInteraction by remember(canvasSession) { mutableStateOf(0) }
+    var pageIndicatorVisible by remember { mutableStateOf(false) }
 
     val transform = remember(canvasSize, pageSize, zoomPercent, pan) {
         CanvasPageTransform.create(canvasSize, pageSize, zoomPercent / 100f, pan)
@@ -174,7 +179,15 @@ fun HandwriteCanvas(
     // 页面拖拽位移（像素，向右为正）：平移到横向边界后继续拖动，页面整体跟手滑出；
     // 松手按阈值与方向决定切面，否则弹回。
     var pageDragPx by remember(canvasSession) { mutableFloatStateOf(0f) }
+    var lastDragSurface by remember(canvasSession) { mutableStateOf(surface) }
     var pageDragSettleJob by remember(canvasSession) { mutableStateOf<Job?>(null) }
+    if (lastDragSurface != surface) {
+        // surface 切换时同步在组合期归零拖拽位移，消除切面首帧的 1 帧闪烁或回跳。
+        lastDragSurface = surface
+        pageDragPx = 0f
+        pageDragSettleJob?.cancel()
+        pageDragSettleJob = null
+    }
     val inkingEnabledState by rememberUpdatedState(inkingEnabled)
     val pointerEventToLogicalTransform = remember(transform) {
         transform.pointerEventToLogicalTransform()
@@ -214,6 +227,15 @@ fun HandwriteCanvas(
         } else if (zoomControlsVisible) {
             delay(ZOOM_CONTROLS_HIDE_DELAY_MILLIS)
             zoomControlsVisible = false
+        }
+    }
+    LaunchedEffect(surface, pageIndex, pageCount) {
+        if (pageCount > 0 || surface is EditorSurface.PendingAdd) {
+            pageIndicatorVisible = true
+            delay(PAGE_INDICATOR_HIDE_DELAY_MILLIS)
+            pageIndicatorVisible = false
+        } else {
+            pageIndicatorVisible = false
         }
     }
 
@@ -355,6 +377,8 @@ fun HandwriteCanvas(
             var gestureMode: TwoFingerGestureMode? = null
             var gestureZoom = currentZoom
             var sideActionHandled = false
+            var navStartPos: Offset? = null
+            var navSlopPassed = false
             val erasePath = mutableListOf<LogicalPoint>()
             do {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -377,6 +401,8 @@ fun HandwriteCanvas(
                 }
 
                 if (pressed.size >= 2) {
+                    navStartPos = null
+                    navSlopPassed = false
                     event.changes.forEach { it.consume() }
                     // 画布锁定或待添加虚拟页：双指事件只吞掉，缩放与平移全部冻结。
                     if (currentZoomLocked || !inkingEnabledState) continue
@@ -437,10 +463,31 @@ fun HandwriteCanvas(
                                 change.consume()
                             }
                         // 导航指针只在接触期间平移：悬停事件（如鼠标划过）不得带动页面。
+                        // 在待添加虚拟页（!inkingEnabledState）上需保留子按钮点击：超过 touchSlop 才消费并拖拽，
+                        // 点击子按钮时让事件正常传递，在卡片上滑动同样能顺畅右滑返回上一页。
                         navigationPointer && contactActive -> {
-                            val delta = change.positionChange()
-                            change.consume()
-                            if (!currentZoomLocked) applyPanDeltaWithPageDrag(delta)
+                            if (inkingEnabledState) {
+                                val delta = change.positionChange()
+                                change.consume()
+                                if (!currentZoomLocked) applyPanDeltaWithPageDrag(delta)
+                            } else {
+                                val start = navStartPos
+                                if (start == null) {
+                                    navStartPos = change.position
+                                } else if (!navSlopPassed) {
+                                    val moved = hypot(change.position.x - start.x, change.position.y - start.y)
+                                    if (moved >= viewConfiguration.touchSlop) {
+                                        navSlopPassed = true
+                                        val delta = change.position - start
+                                        change.consume()
+                                        if (!currentZoomLocked) applyPanDeltaWithPageDrag(delta)
+                                    }
+                                } else {
+                                    val delta = change.positionChange()
+                                    change.consume()
+                                    if (!currentZoomLocked) applyPanDeltaWithPageDrag(delta)
+                                }
+                            }
                         }
                             erasing && contactActive && inkingEnabledState -> {
                                 change.consume()
@@ -494,8 +541,13 @@ fun HandwriteCanvas(
                                 (canvasSize.width + NEIGHBOR_PAGE_GAP_DP.dp.toPx()),
                             animationSpec = tween(PAGE_SWIPE_SETTLE_MILLIS),
                         ) { value, _ -> pageDragPx = value }
+                        val surfaceAtCommit = currentSurface
                         swipeNavigateCallback(direction)
-                        pageDragPx = 0f
+                        // 等待 surface 切换并在组合期归零；若目标未发生变化则兜底复位。
+                        delay(250L)
+                        if (currentSurface == surfaceAtCommit) {
+                            pageDragPx = 0f
+                        }
                     }
                 } else {
                     pageDragSettleJob = scope.launch {
@@ -627,12 +679,14 @@ fun HandwriteCanvas(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .clipToBounds()
             .background(LocalHandwriteColors.current.canvasDesk)
             .onSizeChanged { canvasSize = it },
     ) {
         Box(
             Modifier
                 .fillMaxSize()
+                .clipToBounds()
                 .then(gestureModifier)
                 .then(sideButtonWatcherModifier),
         ) {
@@ -643,50 +697,57 @@ fun HandwriteCanvas(
                 // 自右侧跟入。相邻页按切换后的最终布局渲染（自身页面尺寸、无平移），
                 // 松手落位与切面后画布的首帧逐像素一致。
                 // 待添加虚拟页不渲染纸面：拖拽中桌面底色直接露出，只有按钮层跟入。
-                val neighbor = when {
-                    drag > 0.5f -> prevNeighborState
-                    drag < -0.5f -> nextNeighborState
-                    else -> null
-                }
-                if (neighbor is EditorNeighbor.Page) {
-                    val content = neighbor.content
-                    val neighborOffset = drag - sign(drag) * slideStep
-                    val neighborTransform = CanvasPageTransform.create(
-                        canvasSize,
-                        content.page.size,
-                        currentZoom / 100f,
-                        Offset.Zero,
-                    )
-                    withTransform({ translate(neighborOffset, 0f) }) {
-                        drawPaperLayer(
-                            renderer = inkRenderer,
-                            rect = neighborTransform.pageRect,
-                            background = content.page.background,
-                            scale = neighborTransform.scale,
-                            transparentFillColor = transparentPageColor,
-                            assetImage = null,
-                            preparedStrokes = if (drag > 0.5f) prevPreparedStrokes else nextPreparedStrokes,
-                        )
+                clipRect(0f, 0f, size.width, size.height) {
+                    val neighbor = when {
+                        drag > 0.5f -> prevNeighborState
+                        drag < -0.5f -> nextNeighborState
+                        else -> null
                     }
-                }
-                // 待添加虚拟页没有纸面图层：桌面底色直接可见，只有按钮层提供操作入口。
-                if (surface !is EditorSurface.PendingAdd) {
-                    withTransform({ translate(drag, 0f) }) {
-                        drawPaperLayer(
-                            renderer = inkRenderer,
-                            rect = transform.pageRect,
-                            background = background,
-                            scale = transform.scale,
-                            transparentFillColor = transparentPageColor,
-                            assetImage = backgroundImage,
-                            preparedStrokes = preparedStrokes,
+                    if (neighbor is EditorNeighbor.Page) {
+                        val content = neighbor.content
+                        val neighborOffset = drag - sign(drag) * slideStep
+                        val neighborTransform = CanvasPageTransform.create(
+                            canvasSize,
+                            content.page.size,
+                            currentZoom / 100f,
+                            Offset.Zero,
                         )
+                        withTransform({ translate(neighborOffset, 0f) }) {
+                            drawPaperLayer(
+                                renderer = inkRenderer,
+                                rect = neighborTransform.pageRect,
+                                background = content.page.background,
+                                scale = neighborTransform.scale,
+                                transparentFillColor = transparentPageColor,
+                                assetImage = null,
+                                preparedStrokes = if (drag > 0.5f) prevPreparedStrokes else nextPreparedStrokes,
+                            )
+                        }
+                    }
+                    // 待添加虚拟页没有纸面图层：桌面底色直接可见，只有按钮层提供操作入口。
+                    if (surface !is EditorSurface.PendingAdd) {
+                        withTransform({ translate(drag, 0f) }) {
+                            drawPaperLayer(
+                                renderer = inkRenderer,
+                                rect = transform.pageRect,
+                                background = background,
+                                scale = transform.scale,
+                                transparentFillColor = transparentPageColor,
+                                assetImage = backgroundImage,
+                                preparedStrokes = preparedStrokes,
+                            )
+                        }
                     }
                 }
             }
             Canvas(Modifier.fillMaxSize()) {
                 val page = transform.pageRect
-                clipRect(page.left, page.top, page.right, page.bottom) {
+                clipRect(
+                    left = page.left.coerceAtLeast(0f),
+                    top = page.top.coerceAtLeast(0f),
+                    right = page.right.coerceAtMost(size.width),
+                    bottom = page.bottom.coerceAtMost(size.height),
+                ) {
                     inkRenderer.drawInProgress(
                         this,
                         pendingStrokes,
@@ -743,48 +804,22 @@ fun HandwriteCanvas(
                     }
                 },
             )
-        // 像素橡皮光标：圆盘直径即逻辑橡皮大小，随缩放同步，便于对准擦除轨迹。
+        // 像素橡皮光标：圆盘直径即逻辑橡皮大小，随缩放同步，采用柔和扁平圆环与反差外衬以便在任意纸色上清晰对准。
         val eraserCursorColor = MaterialTheme.colorScheme.primary
+        val eraserCursorHaloColor = MaterialTheme.colorScheme.surface
         Canvas(Modifier.fillMaxSize()) {
             pixelEraseCursor?.let { position ->
                 val radius = (eraserSize / 2f) * transform.scale
-                drawCircle(
-                    color = eraserCursorColor.copy(alpha = ERASER_CURSOR_FILL_ALPHA),
-                    radius = radius,
+                drawCutePixelEraserCircle(
                     center = position,
-                )
-                drawCircle(
-                    color = eraserCursorColor,
-                    radius = radius,
-                    center = position,
-                    style = DrawStroke(
-                        width = ERASER_CURSOR_BORDER_WIDTH_DP.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
-                    ),
+                    radiusPx = radius,
+                    accentColor = eraserCursorColor,
+                    haloColor = eraserCursorHaloColor,
                 )
             }
         }
-        }
-        ZoomControlsOverlay(
-            // 待添加虚拟页固定 100% 渲染：缩放控件在那里没有意义。
-            visible = zoomControlsVisible && !zoomLocked && surface !is EditorSurface.PendingAdd,
-            zoomPercent = zoomPercent,
-            onZoomOut = {
-                keepZoomControlsVisible()
-                zoomCallback((currentZoom - ZOOM_BUTTON_STEP).coerceAtLeast(MIN_ZOOM_PERCENT))
-            },
-            onZoomIn = {
-                keepZoomControlsVisible()
-                zoomCallback((currentZoom + ZOOM_BUTTON_STEP).coerceAtMost(MAX_ZOOM_PERCENT))
-            },
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
-        )
-
-        // 待添加虚拟页按钮层：无纸面，按钮即待添加页的全部内容，定在画布中心并随
-        // 翻页拖拽平移——从当前页滑入的拖拽阶段就从相邻位置跟入，停留时居中，返回
-        // 拖拽时随页面滑出。切面瞬间（拖拽位移归零）两个阶段的偏移公式在中心处衔接，
-        // 按钮不跳动。铺在手势层之上保证按钮可点；滑入阶段按钮未启用
-        // （见 AddPagePlaceholder），避免拖拽中的手指恰好停在按钮上时误触。
+        // 待添加虚拟页按钮层：放在手势容器内部，保证父容器 PointerEventPass.Initial 能拦截
+        // 从卡片区域发起的右滑手势，同时点击不越过 touchSlop 时子按钮仍可正常触发。
         if (pendingAddButtonsVisible) {
             Box(Modifier.fillMaxSize()) {
                 Box(
@@ -805,6 +840,35 @@ fun HandwriteCanvas(
                 }
             }
         }
+        }
+        ZoomControlsOverlay(
+            // 待添加虚拟页固定 100% 渲染：缩放控件在那里没有意义。
+            visible = zoomControlsVisible && !zoomLocked && surface !is EditorSurface.PendingAdd,
+            zoomPercent = zoomPercent,
+            onZoomOut = {
+                keepZoomControlsVisible()
+                zoomCallback((currentZoom - ZOOM_BUTTON_STEP).coerceAtLeast(MIN_ZOOM_PERCENT))
+            },
+            onZoomIn = {
+                keepZoomControlsVisible()
+                zoomCallback((currentZoom + ZOOM_BUTTON_STEP).coerceAtMost(MAX_ZOOM_PERCENT))
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 16.dp, end = 16.dp),
+        )
+
+        PageIndicatorPill(
+            visible = pageIndicatorVisible && (pageCount > 0 || surface is EditorSurface.PendingAdd),
+            isPendingAdd = surface is EditorSurface.PendingAdd,
+            pageIndex = pageIndex,
+            pageCount = pageCount,
+            onClick = onOpenPages,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 14.dp),
+        )
     }
 }
 
@@ -821,10 +885,6 @@ internal const val TRANSPARENT_PAGE_FILL_ALPHA = 0.45f
 internal const val MIN_ERASER_SIZE = 200
 internal const val MAX_ERASER_SIZE = 2_000
 internal const val DEFAULT_ERASER_SIZE = 600
-
-// 像素橡皮光标的填充不透明度与描边宽度：填充保证覆盖范围可感知，虚线边呼应选区类视觉。
-private const val ERASER_CURSOR_FILL_ALPHA = 0.12f
-private const val ERASER_CURSOR_BORDER_WIDTH_DP = 1.5f
 
 // 擦除路径的最小采样步长（逻辑单位）：路径按不小于该值的间距记录，限制路径规模。
 internal const val ERASER_PATH_MIN_STEP = 32
@@ -896,6 +956,7 @@ private fun DrawScope.drawPaperLayer(
 
 private const val ZOOM_BUTTON_STEP = 25
 private const val ZOOM_CONTROLS_HIDE_DELAY_MILLIS = 1_800L
+private const val PAGE_INDICATOR_HIDE_DELAY_MILLIS = 1_800L
 
 // 双指手势模式：判定锁定前平移与缩放都不生效，锁定后互斥到手势结束。
 internal enum class TwoFingerGestureMode { PAN, ZOOM }
@@ -936,27 +997,89 @@ private fun ZoomControlsOverlay(
         exit = fadeOut(),
     ) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.96f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
             shape = RoundedCornerShape(24.dp),
-            tonalElevation = 3.dp,
-            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.height(48.dp),
+                modifier = Modifier.height(48.dp).padding(horizontal = 4.dp),
             ) {
-                IconButton(onClick = onZoomOut, enabled = zoomPercent > MIN_ZOOM_PERCENT) {
-                    Icon(Icons.Default.Remove, contentDescription = stringResource(R.string.editor_zoom_out))
-                }
+                CuteFlatIconButton(
+                    onClick = onZoomOut,
+                    enabled = zoomPercent > MIN_ZOOM_PERCENT,
+                    icon = HandwriteIcons.Remove,
+                    contentDescription = stringResource(R.string.editor_zoom_out),
+                    iconSize = 20.dp,
+                )
                 Text(
                     text = "$zoomPercent%",
                     style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.width(64.dp),
                 )
-                IconButton(onClick = onZoomIn, enabled = zoomPercent < MAX_ZOOM_PERCENT) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.editor_zoom_in))
+                CuteFlatIconButton(
+                    onClick = onZoomIn,
+                    enabled = zoomPercent < MAX_ZOOM_PERCENT,
+                    icon = HandwriteIcons.Add,
+                    contentDescription = stringResource(R.string.editor_zoom_in),
+                    iconSize = 20.dp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PageIndicatorPill(
+    visible: Boolean,
+    isPendingAdd: Boolean,
+    pageIndex: Int?,
+    pageCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(),
+        exit = fadeOut(),
+    ) {
+        val label = when {
+            isPendingAdd -> stringResource(R.string.editor_new_page)
+            pageIndex != null && pageCount > 0 -> stringResource(R.string.editor_page_indicator_fraction, pageIndex + 1, pageCount)
+            else -> ""
+        }
+        if (label.isNotEmpty()) {
+            Surface(
+                onClick = onClick,
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.96f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                ) {
+                    HandwriteIcon(
+                        imageVector = HandwriteIcons.PageManager,
+                        contentDescription = if (!isPendingAdd && pageIndex != null) {
+                            stringResource(R.string.editor_page_indicator_open_pages, pageIndex + 1, pageCount)
+                        } else {
+                            label
+                        },
+                        size = 15.dp,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             }
         }
@@ -1244,7 +1367,7 @@ internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPattern(
     page: Rect,
     scale: Float,
 ) {
-    val color = Color(0x2F60746B)
+    val color = Color(0x2E5C6470)
     val step = PagePattern.LOGICAL_SPACING * scale
     var y = page.top + step
     while (y < page.bottom) {

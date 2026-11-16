@@ -1,22 +1,25 @@
 package com.xsgovo.handwrite.feature.editor
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -27,31 +30,30 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,18 +64,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import com.xsgovo.handwrite.core.designsystem.icons.CuteFlatIconButton
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcon
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcons
 import com.xsgovo.handwrite.core.model.LogicalSize
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PageContent
@@ -99,7 +107,8 @@ fun PagePanel(
     onMovePage: (PageId, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val sheetWidth = (maxWidth * PANEL_WIDTH_FRACTION).coerceIn(248.dp, 340.dp)
         AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
             Box(
                 Modifier
@@ -115,6 +124,7 @@ fun PagePanel(
             exit = slideOutHorizontally { it },
         ) {
             PagePanelSheet(
+                sheetWidth = sheetWidth,
                 pages = pages,
                 currentPageId = currentPageId,
                 addPageSize = addPageSize,
@@ -124,6 +134,7 @@ fun PagePanel(
                 onDeletePage = onDeletePage,
                 onToggleBookmark = onToggleBookmark,
                 onMovePage = onMovePage,
+                onDismiss = onDismiss,
             )
         }
     }
@@ -131,6 +142,7 @@ fun PagePanel(
 
 @Composable
 private fun PagePanelSheet(
+    sheetWidth: androidx.compose.ui.unit.Dp,
     pages: List<PageContent>,
     currentPageId: PageId?,
     addPageSize: LogicalSize,
@@ -140,6 +152,7 @@ private fun PagePanelSheet(
     onDeletePage: (PageId) -> Unit,
     onToggleBookmark: (PageId) -> Unit,
     onMovePage: (PageId, Int) -> Unit,
+    onDismiss: () -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_PAGES) }
     val listState = rememberLazyListState()
@@ -151,22 +164,36 @@ private fun PagePanelSheet(
         if (selectedTab == TAB_PAGES && index > 0) listState.scrollToItem(index)
     }
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shadowElevation = 8.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        shadowElevation = 0.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
         shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp),
         modifier = Modifier
             .fillMaxHeight()
-            .fillMaxWidth(PANEL_WIDTH_FRACTION)
-            // 面板从状态栏之下开始：顶部圆角不被通知栏压住，与底部圆角对称。
-            .statusBarsPadding(),
+            .width(sheetWidth)
+            // 面板从状态栏之下开始：顶部圆角不被通知栏压住，底部留出导航栏空间。
+            .statusBarsPadding()
+            .navigationBarsPadding(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            Text(
-                stringResource(R.string.editor_panel_title_pages),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 10.dp, top = 8.dp, bottom = 2.dp),
+            ) {
+                Text(
+                    stringResource(R.string.editor_panel_title_pages),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                CuteFlatIconButton(
+                    onClick = onDismiss,
+                    icon = HandwriteIcons.Close,
+                    contentDescription = stringResource(R.string.editor_panel_close),
+                )
+            }
             PanelTabs(selectedTab) { selectedTab = it }
             when (selectedTab) {
                 TAB_PAGES -> PageThumbnailList(
@@ -216,7 +243,7 @@ private fun PanelTab(label: String, selected: Boolean, modifier: Modifier, onCli
     Box(
         modifier = modifier
             .background(
-                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -229,7 +256,7 @@ private fun PanelTab(label: String, selected: Boolean, modifier: Modifier, onCli
             label,
             style = MaterialTheme.typography.titleSmall,
             color = if (selected) {
-                MaterialTheme.colorScheme.onSecondaryContainer
+                MaterialTheme.colorScheme.surface
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
@@ -237,7 +264,6 @@ private fun PanelTab(label: String, selected: Boolean, modifier: Modifier, onCli
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageThumbnailList(
     pages: List<PageContent>,
@@ -251,14 +277,27 @@ private fun PageThumbnailList(
     onToggleBookmark: (PageId) -> Unit,
     onMovePage: (PageId, Int) -> Unit,
 ) {
+    val haptics = LocalHapticFeedback.current
+    val dragSlopPx = with(LocalDensity.current) { DRAG_SLOP_DP.toPx() }
     val dragState = remember(listState) { PageDragState(listState) }
+    val rendererCache = remember {
+        object : LinkedHashMap<PageId, InkDocumentRenderer>(RENDERER_CACHE_CAPACITY, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<PageId, InkDocumentRenderer>?): Boolean =
+                size > RENDERER_CACHE_CAPACITY
+        }
+    }
+    val rendererFor = remember(rendererCache) {
+        { pageId: PageId -> rendererCache.getOrPut(pageId) { InkDocumentRenderer() } }
+    }
     // 被拖项在当前 pages 顺序中的位置：数据重排生效后它等于 targetIndex。
     val draggedIndex = pages.indexOfFirst { it.page.id == dragState.draggedId }.takeIf { it >= 0 }
     LaunchedEffect(dragState.draggedId) {
         var previousFrameMillis = withFrameNanos { it / 1_000_000L }
         while (dragState.draggedId != null) {
             val frameMillis = withFrameNanos { it / 1_000_000L }
-            dragState.frameStep(frameMillis - previousFrameMillis, frameMillis)
+            dragState.frameStep(frameMillis - previousFrameMillis, frameMillis) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
             previousFrameMillis = frameMillis
         }
     }
@@ -267,8 +306,6 @@ private fun PageThumbnailList(
     SideEffect { dragState.onPagesChanged(pages) }
     // 原地长按（未拖动）松手弹出该页功能菜单；菜单状态提升到列表层，由容器手势设置。
     var menuTargetId by remember { mutableStateOf<PageId?>(null) }
-    // 拖拽浮层的实测高度：用于把被拖项视觉的中心锚定在手指处。
-    var draggedGhostHeight by remember { mutableStateOf(0f) }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -278,24 +315,30 @@ private fun PageThumbnailList(
                 // 长按拖拽手势挂在列表容器上：容器组合不随列表滚动回收。边缘自动滚动
                 // 会把被拖项的布局槽推出视口（item 被回收），挂在单项上的手势会随之
                 // 取消导致拖拽中断；容器级手势不受影响，拖拽会话持续存活。
-                .pointerInput(onMovePage) {
+                .pointerInput(onMovePage, dragSlopPx) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { touchOffset ->
                             val info = listState.layoutInfo
                             val hit = info.visibleItemsInfo.firstOrNull {
+                                val itemTop = it.offset - info.viewportStartOffset
                                 it.index < info.totalItemsCount - 1 &&
-                                    touchOffset.y >= it.offset &&
-                                    touchOffset.y < it.offset + it.size
+                                    touchOffset.y >= itemTop &&
+                                    touchOffset.y < itemTop + it.size
                             } ?: return@detectDragGesturesAfterLongPress
-                            dragState.start(PageId(hit.key as Long), touchOffset.y - hit.offset)
+                            val hitTop = hit.offset - info.viewportStartOffset
+                            if (dragState.start(PageId(hit.key as Long), touchOffset.y - hitTop, dragSlopPx)) {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
                         },
                         onDrag = { change, amount ->
                             change.consume()
-                            dragState.drag(amount.y, change.uptimeMillis)
+                            dragState.drag(amount.y, change.uptimeMillis) {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
                         },
                         onDragEnd = {
-                            val finishedId = dragState.end(onMovePage)
-                            if (finishedId != null && !dragState.lastDragMoved) menuTargetId = finishedId
+                            val result = dragState.end(onMovePage)
+                            if (result != null && !result.moved) menuTargetId = result.pageId
                         },
                         onDragCancel = { dragState.end(onMovePage) },
                     )
@@ -307,7 +350,14 @@ private fun PageThumbnailList(
                 val page = pages[index]
                 val isDragging = page.page.id == dragState.draggedId
                 val avoidanceY = dragState.avoidanceTranslation(index, draggedIndex)
-                val animatedAvoidanceY by animateFloatAsState(avoidanceY, label = "page avoidance")
+                val animatedAvoidanceY by animateFloatAsState(
+                    targetValue = avoidanceY,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    label = "page avoidance",
+                )
                 Box(
                     Modifier
                         .then(if (dragState.draggedId != null) Modifier else Modifier.animateItem())
@@ -328,6 +378,7 @@ private fun PageThumbnailList(
                         onDelete = { onDeletePage(page.page.id) },
                         onToggleBookmark = { onToggleBookmark(page.page.id) },
                         onMove = { targetIndex -> onMovePage(page.page.id, targetIndex) },
+                        renderer = rendererFor(page.page.id),
                         hiddenForDragging = isDragging,
                     )
                 }
@@ -336,18 +387,26 @@ private fun PageThumbnailList(
                 AddPageCell(addPageSize, currentBackground, onAddPage)
             }
         }
-        // 拖拽浮层：被拖项的视觉由列表外层承载并锚定手指。布局槽被边缘滚动推出视口、
-        // item 被回收时，浮层不随列表回收，拖拽目标依旧完整可见；页码随预演目标格位
-        // 实时更新。
+        // 拖拽浮层：被拖项的视觉由列表外层承载并按抓取点精确锚定，首帧即与原卡片像素重合，
+        // 无中心跳变与测量闪烁；页码随预演目标格位实时更新，抬起时带轻盈缩放与柔和阴影。
         dragState.draggedId?.let { draggedId ->
             val draggedPage = pages.firstOrNull { it.page.id == draggedId } ?: return@let
+            val ghostScale by animateFloatAsState(
+                targetValue = if (dragState.isLifted) GHOST_LIFT_SCALE else 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+                label = "page ghost lift",
+            )
             Box(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp)
-                    .onSizeChanged { draggedGhostHeight = it.height.toFloat() }
                     .graphicsLayer {
-                        translationY = dragState.dragFingerViewportY - draggedGhostHeight / 2f
+                        translationY = dragState.ghostTopViewportY
+                        scaleX = ghostScale
+                        scaleY = ghostScale
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -355,33 +414,36 @@ private fun PageThumbnailList(
                     page = draggedPage,
                     pageNumber = (dragState.previewTargetIndex + 1).coerceAtMost(pages.size),
                     selected = draggedPage.page.id == currentPageId,
+                    isDraggingGhost = dragState.isLifted,
+                    renderer = rendererFor(draggedPage.page.id),
                 )
             }
         }
     }
 }
 
+private data class DragEndResult(val pageId: PageId, val moved: Boolean)
+
 // 拖拽排序状态。手势与视觉由列表容器承载（容器级长按手势 + 列表外层的拖拽浮层），
 // 被拖项的组合槽位在拖拽期间留空——边缘自动滚动把槽位推出视口、item 被回收时，
-// 手势与视觉均不受影响，拖拽会话持续存活。拖拽期间被拖项保持拖拽态（zIndex 提升、
-// animateItem 缺席、避让维持），松手后进入落位阶段并继续持有拖拽态：此时重排尚未
-// 写回，若立即清空，被拖项会先跳回原布局位，随后数据重排到达时 animateItem 重新
-// 挂上，把这段移动重放一遍，且重放期间已失去 zIndex 提升而以底层姿态掠过其他页面。
-// 落位阶段等待重排写回（被拖项出现在目标格位），被拖项吸附到目标格中心，收敛后才
-// 解除拖拽态。
-// 避让动画只作为拖动过程中的让位表现：重排落地后布局位与避让预演位一致，掠过的
-// 页面的绘制位移直接归零静止，不播放任何回正（归位）过渡动画。
-// 浮层位置 = 手指视口纵坐标 - 浮层实测高度的一半（dragFingerViewportY / 浮层
-// onSizeChanged 实测），列表滚动、重排换位、首可见项锚定补偿等一切布局扰动都不影响
-// 锚定，不跟手漂移；手指偏离被拖项中心超过半格时，预演顺序向偏离方向移动一格。
+// 手势与视觉均不受影响，拖拽会话持续存活。拖拽期间缓存单格步距 slotStepPx，避免在
+// item 组合期读取 layoutInfo 导致边缘滚动时全列表逐帧重组；同时记录抓取偏移
+// grabOffsetYInItem，首帧即贴合手指抓取处，彻底消除跳变。
 private class PageDragState(private val listState: LazyListState) {
     var draggedId by mutableStateOf<PageId?>(null)
         private set
-    private var fingerViewportY by mutableStateOf(0f)
+    var ghostTopViewportY by mutableFloatStateOf(0f)
+        private set
+    private var fingerViewportY = 0f
+    private var grabOffsetYInItem = 0f
+    private var draggedSlotHeightPx = 0f
+    private var slotStepPx = 0f
     private var targetIndex by mutableIntStateOf(-1)
     private var originIndex = -1
+    private var dragSlopPx = 0f
+    private var totalDragDistancePx = 0f
     private var userMoved = false
-    private var settling = false
+    private var settling by mutableStateOf(false)
 
     // 边缘自动滚动的当前速度与平滑后的手指速度：均带符号（px/秒），帧率无关。
     private var scrollSpeedPxPerSec = 0f
@@ -402,27 +464,26 @@ private class PageDragState(private val listState: LazyListState) {
         private set
     private var settleFrameCount = 0
 
-    // 拖拽中手指的视口纵坐标：拖拽浮层据此把被拖项视觉锚定在手指处。
-    val dragFingerViewportY: Float
-        get() = fingerViewportY
+    // 浮层处于用户拖拽抬起状态（落位动画期间回落为 false）。
+    val isLifted: Boolean
+        get() = draggedId != null && !settling
 
     // 拖拽会话的当前目标格位：浮层的页码随预演位置实时更新。
     val previewTargetIndex: Int
         get() = targetIndex
 
-    // 原地长按（未拖动）松手后要弹出功能菜单的页面：由容器级手势在拖拽结束时设置。
-    var menuTargetId by mutableStateOf<PageId?>(null)
-        private set
-
-    fun dismissMenu() {
-        menuTargetId = null
-    }
-
-    fun start(pageId: PageId, touchYInItem: Float) {
-        val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == pageId.value } ?: return
+    fun start(pageId: PageId, touchYInItem: Float, slopPx: Float): Boolean {
+        val info = listState.layoutInfo
+        val self = info.visibleItemsInfo.firstOrNull { it.key == pageId.value } ?: return false
+        val selfTopInBox = (self.offset - info.viewportStartOffset).toFloat()
         draggedId = pageId
-        menuTargetId = null
-        fingerViewportY = touchYInItem + self.offset
+        grabOffsetYInItem = touchYInItem.coerceIn(0f, self.size.toFloat())
+        draggedSlotHeightPx = self.size.toFloat()
+        slotStepPx = (self.size + info.mainAxisItemSpacing).toFloat()
+        ghostTopViewportY = selfTopInBox
+        fingerViewportY = selfTopInBox + grabOffsetYInItem
+        dragSlopPx = slopPx
+        totalDragDistancePx = 0f
         userMoved = false
         settling = false
         dataArrived = false
@@ -432,6 +493,7 @@ private class PageDragState(private val listState: LazyListState) {
         scrollSpeedPxPerSec = 0f
         fingerVelocityPxPerSec = 0f
         lastDragEventMillis = 0L
+        return true
     }
 
     // 数据层顺序通报：进入落位阶段后，被拖项出现在目标格位即重排已写回。此后绘制层
@@ -462,48 +524,44 @@ private class PageDragState(private val listState: LazyListState) {
 
     // index 是当前 pages 顺序中的位置；draggedIndex 是被拖项在同一顺序中的位置。
     // 避让动画只存在于拖动过程中；重排落地（draggedIndex == targetIndex）后绘制层
-    // 直接以布局位为基准归零，不再有任何回正过渡。
+    // 直接以布局位为基准归零，不再有任何回正过渡。不读取 layoutInfo，避免滚动时全列表重组。
     fun avoidanceTranslation(index: Int, draggedIndex: Int?): Float {
         if (draggedId == null || draggedIndex == null || draggedIndex == targetIndex) return 0f
         if (index == originIndex) return 0f
-        val distance = listState.layoutInfo.visibleItemsInfo
-            .zipWithNext()
-            .map { (first, second) -> second.offset - first.offset }
-            .filter { it > 0 }
-            .average()
-            .takeIf { it.isFinite() }
-            ?.toFloat()
-            ?: 0f
         return when {
-            targetIndex > originIndex && index in (originIndex + 1)..targetIndex -> -distance
-            targetIndex < originIndex && index in targetIndex until originIndex -> distance
+            targetIndex > originIndex && index in (originIndex + 1)..targetIndex -> -slotStepPx
+            targetIndex < originIndex && index in targetIndex until originIndex -> slotStepPx
             else -> 0f
         }
     }
 
-    fun drag(amount: Float, eventTimeMillis: Long) {
+    fun drag(amount: Float, eventTimeMillis: Long, onSlotChanged: () -> Unit) {
         if (settling) return
         fingerViewportY += amount
-        userMoved = true
+        ghostTopViewportY = fingerViewportY - grabOffsetYInItem
+        totalDragDistancePx += abs(amount)
+        if (!userMoved && totalDragDistancePx >= dragSlopPx) {
+            userMoved = true
+        }
         // 手指速度估计：按事件间隔折算成带符号的 px/秒并指数平滑。事件流中断后
         // 恢复时间隔封顶，避免速度被极端低估；首个事件自会话起点计，速度自然从零起步。
         val sampleMillis = (eventTimeMillis - lastDragEventMillis).coerceIn(1L, GESTURE_SPEED_SAMPLE_MAX_INTERVAL_MS)
         lastDragEventMillis = eventTimeMillis
         val instantVelocity = amount / sampleMillis * 1000f
         fingerVelocityPxPerSec += (instantVelocity - fingerVelocityPxPerSec) * (1f - exp(-sampleMillis / FINGER_SPEED_TAU_MS))
-        advance()
+        advance(onSlotChanged)
     }
 
     // 每帧推进：拖拽中做换格预览与边缘滚动；落位中等待重排生效并吸附。
     // frameDeltaMillis 为帧间时长（滚动速度按秒定义、按帧折算位移，帧率无关），
     // frameTimeMillis 为当前帧时间戳，与手势事件共用 uptime 时钟。
-    fun frameStep(frameDeltaMillis: Long, frameTimeMillis: Long) {
+    fun frameStep(rawDeltaMillis: Long, frameTimeMillis: Long, onSlotChanged: () -> Unit) {
         if (draggedId == null) return
+        val frameDeltaMillis = rawDeltaMillis.coerceIn(0L, MAX_FRAME_STEP_MILLIS)
         if (settling) {
-            settleStep()
+            settleStep(frameDeltaMillis)
             return
         }
-        advance()
         if (!userMoved) return
         // 手指停止拖动后手势速度逐帧回落，速度加成随之平滑消失，滚动收敛到深度基准速度。
         if (frameTimeMillis - lastDragEventMillis > FINGER_SPEED_IDLE_DELAY_MS && frameDeltaMillis > 0) {
@@ -513,8 +571,9 @@ private class PageDragState(private val listState: LazyListState) {
         val viewportHeight = (layout.viewportEndOffset - layout.viewportStartOffset).toFloat()
         if (viewportHeight <= 0f) return
         val edgeZone = viewportHeight * AUTO_SCROLL_EDGE_FRACTION
-        val topDepth = layout.viewportStartOffset + edgeZone - fingerViewportY
-        val bottomDepth = fingerViewportY - (layout.viewportEndOffset - edgeZone)
+        val ghostCenterY = ghostTopViewportY + draggedSlotHeightPx / 2f
+        val topDepth = edgeZone - ghostCenterY.coerceAtMost(fingerViewportY)
+        val bottomDepth = ghostCenterY.coerceAtLeast(fingerViewportY) - (viewportHeight - edgeZone)
         val (direction, depth) = when {
             topDepth > 0f -> -1f to topDepth
             bottomDepth > 0f -> 1f to bottomDepth
@@ -541,16 +600,21 @@ private class PageDragState(private val listState: LazyListState) {
             scrollSpeedPxPerSec += (target - scrollSpeedPxPerSec) * (1f - exp(-frameDeltaMillis / tauMillis))
             if (target == 0f && abs(scrollSpeedPxPerSec) < AUTO_SCROLL_STOP_PX_PER_SEC) scrollSpeedPxPerSec = 0f
             if (scrollSpeedPxPerSec != 0f) {
-                listState.dispatchRawDelta(scrollSpeedPxPerSec * frameDeltaMillis / 1000f)
-                advance()
+                val consumed = listState.dispatchRawDelta(scrollSpeedPxPerSec * frameDeltaMillis / 1000f)
+                if (consumed != 0f) advance(onSlotChanged)
             }
         }
     }
 
-    // 返回结束拖拽的页面：调用方据此判定“原地长按（未拖动）松手弹出功能菜单”。
-    fun end(onCommit: (PageId, Int) -> Unit): PageId? {
+    // 返回结束拖拽的页面与是否真实拖动：原地长按（未换格且未超过阈值）立即归位并由调用方弹出菜单。
+    fun end(onCommit: (PageId, Int) -> Unit): DragEndResult? {
         val id = draggedId ?: return null
-        advance()
+        advance {}
+        val moved = userMoved || targetIndex != originIndex
+        if (!moved) {
+            clear()
+            return DragEndResult(id, moved = false)
+        }
         // 记录松手时的视口锚定（数据仍是旧顺序）：重排写回时用于把锚定钉回原槽位。
         pendingAnchorIndex = listState.firstVisibleItemIndex
         pendingAnchorOffset = listState.firstVisibleItemScrollOffset
@@ -558,16 +622,13 @@ private class PageDragState(private val listState: LazyListState) {
         // 被 frameStep 推进直到收敛后解除。
         settling = true
         onCommit(id, targetIndex)
-        return id
+        return DragEndResult(id, moved = true)
     }
 
-    // 落位开始时的拖动标记，供容器级手势区分“原地长按”与真实拖动。
-    val lastDragMoved: Boolean
-        get() = userMoved
-
-    private fun settleStep() {
+    private fun settleStep(frameDeltaMillis: Long) {
         val id = draggedId ?: return
-        val self = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id.value }
+        val info = listState.layoutInfo
+        val self = info.visibleItemsInfo.firstOrNull { it.key == id.value }
         if (self == null) {
             // 布局槽暂不可见（边缘滚动把原槽位推出了视口）：数据重排会把它带到目标
             // 格位（就在手指附近），等待下一帧实测即可；超时兜底解除，避免状态悬挂。
@@ -582,18 +643,23 @@ private class PageDragState(private val listState: LazyListState) {
         settleFrameCount++
         if (self.index != targetIndex) return
         // 重排已生效：布局已在最终位置（避让归零由重组期的 draggedIndex == targetIndex
-        // 判定负责）。手指锚点向实测格中心指数趋近，收敛后解除拖拽态（残余位移低于
-        // 感知阈值）。targetIndex 保持不变，让本判定逐帧持续成立。
-        val center = self.offset + self.size / 2f
-        fingerViewportY += (center - fingerViewportY) * SETTLE_APPROACH_FACTOR
-        if (abs(center - fingerViewportY) < SETTLE_SNAP_PX) clear()
+        // 判定负责）。浮层顶部向实测格顶部按帧时间指数趋近，60Hz/120Hz 均保持一致丝滑手感。
+        val targetTop = (self.offset - info.viewportStartOffset).toFloat()
+        val dt = frameDeltaMillis.coerceIn(1L, MAX_FRAME_STEP_MILLIS)
+        ghostTopViewportY += (targetTop - ghostTopViewportY) * (1f - exp(-dt / SETTLE_TAU_MS))
+        if (abs(targetTop - ghostTopViewportY) < SETTLE_SNAP_PX) clear()
     }
 
     private fun clear() {
         draggedId = null
+        ghostTopViewportY = 0f
         fingerViewportY = 0f
+        grabOffsetYInItem = 0f
+        draggedSlotHeightPx = 0f
+        slotStepPx = 0f
         targetIndex = -1
         originIndex = -1
+        totalDragDistancePx = 0f
         userMoved = false
         settling = false
         settleFrameCount = 0
@@ -604,24 +670,32 @@ private class PageDragState(private val listState: LazyListState) {
         pendingAnchorOffset = 0
     }
 
-    // 换格判定：目标格位 = 手指中心线之上的页面项数量（被拖项自身不计）。
-    // 可见项逐个实测中心；视口上方的不可见页面项全部位于手指之上，按序位补计——
-    // 列表处于滚动状态时若只按可见项计数，拖动尾部页面会把目标格位错误地压缩到
-    // 视口内（页面看似被移出列表、上方页面补位），且永远无法插回列表末尾。
-    private fun advance() {
+    // 换格判定：以浮层中心与各可见项中点对比（带滞回边界，防止压线处来回抖动）。
+    // 视口上方的不可见页面项全部位于卡片之上，按序位补计。
+    private fun advance(onSlotChanged: () -> Unit) {
         val info = listState.layoutInfo
         val draggedKey = draggedId?.value
-        // 末尾的添加页单元格不参与换格计数。
         val pageItemLimit = info.totalItemsCount - 1
+        if (pageItemLimit <= 0) return
         val visible = info.visibleItemsInfo
+        val ghostCenterY = ghostTopViewportY + draggedSlotHeightPx / 2f
+        val hysteresis = slotStepPx * HYSTERESIS_FRACTION
         val visiblePassed = visible.count {
-            it.index < pageItemLimit && it.key != draggedKey && fingerViewportY > it.offset + it.size / 2
+            if (it.index >= pageItemLimit || it.key == draggedKey) return@count false
+            val midpoint = (it.offset - info.viewportStartOffset) + it.size / 2f
+            val slotWithoutDragged = if (it.index > originIndex) it.index - 1 else it.index
+            val threshold = if (slotWithoutDragged < targetIndex) midpoint - hysteresis else midpoint + hysteresis
+            ghostCenterY > threshold
         }
         val firstVisiblePageIndex = visible.firstOrNull { it.index < pageItemLimit }?.index ?: pageItemLimit
         var hiddenAbove = firstVisiblePageIndex
-        // 被拖项的布局槽固定在数据顺序的原位，滚动后可能位于视口上方，不计入手指标位。
         if (originIndex in 0 until firstVisiblePageIndex) hiddenAbove -= 1
-        targetIndex = (visiblePassed + hiddenAbove).coerceIn(0, info.totalItemsCount - 2)
+        val nextTarget = (visiblePassed + hiddenAbove).coerceIn(0, (info.totalItemsCount - 2).coerceAtLeast(0))
+        if (nextTarget != targetIndex) {
+            targetIndex = nextTarget
+            if (targetIndex != originIndex) userMoved = true
+            onSlotChanged()
+        }
     }
 }
 
@@ -669,7 +743,6 @@ private fun BookmarkThumbnailList(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageThumbnailCell(
     page: PageContent,
@@ -683,6 +756,7 @@ private fun PageThumbnailCell(
     onDelete: () -> Unit,
     onToggleBookmark: () -> Unit,
     onMove: (Int) -> Unit,
+    renderer: InkDocumentRenderer = remember { InkDocumentRenderer() },
     hiddenForDragging: Boolean = false,
 ) {
     Box(
@@ -693,7 +767,14 @@ private fun PageThumbnailCell(
             .drawWithContent { if (!hiddenForDragging) drawContent() },
         contentAlignment = Alignment.Center,
     ) {
-        PageThumbnailVisual(page = page, pageNumber = pageNumber, selected = selected, onClick = onSelect)
+        PageThumbnailVisual(
+            page = page,
+            pageNumber = pageNumber,
+            selected = selected,
+            onClick = onSelect,
+            onToggleBookmark = onToggleBookmark,
+            renderer = renderer,
+        )
         DropdownMenu(expanded = menuOpen, onDismissRequest = onMenuDismiss) {
             DropdownMenuItemText(
                 label = stringResource(
@@ -722,7 +803,6 @@ private fun PageThumbnailCell(
 
 // 页面缩略图的纯视觉呈现：底色/线格背景、笔迹渲染、书签角标与页码。页面列表与拖拽
 // 浮层共用，保证两个宿主里的目标外观完全一致。
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageThumbnailVisual(
     page: PageContent,
@@ -730,24 +810,29 @@ private fun PageThumbnailVisual(
     selected: Boolean,
     onClick: (() -> Unit)? = null,
     onToggleBookmark: (() -> Unit)? = null,
+    isDraggingGhost: Boolean = false,
+    renderer: InkDocumentRenderer = remember { InkDocumentRenderer() },
     modifier: Modifier = Modifier,
 ) {
-    val renderer = remember { InkDocumentRenderer() }
     // 与主画布一致地渲染笔迹；渲染层按笔画 id 缓存，元素不变时 prepare 结果可复用。
-    val prepared = remember(page.elements) {
+    val prepared = remember(renderer, page.elements) {
         runCatching { renderer.prepare(page.elements.filterIsInstance<StrokeElement>()) }.getOrDefault(emptyList())
     }
     val transparentFillColor = MaterialTheme.colorScheme.surface.copy(alpha = THUMBNAIL_TRANSPARENT_FILL_ALPHA)
     val shape = RoundedCornerShape(10.dp)
-    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+    val borderColor = when {
+        isDraggingGhost || selected -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
     Box(
         modifier = modifier
             .fillMaxWidth(THUMBNAIL_WIDTH_FRACTION)
             .widthIn(max = THUMBNAIL_MAX_WIDTH)
             .aspectRatio(page.page.size.width.toFloat() / page.page.size.height.toFloat())
+            .then(if (isDraggingGhost) Modifier.shadow(8.dp, shape, clip = false) else Modifier)
             .clip(shape)
-            .border(width = if (selected) 2.dp else 1.dp, color = borderColor, shape = shape)
-            .then(if (onClick != null) Modifier.combinedClickable(onClick = onClick) else Modifier),
+            .border(width = if (isDraggingGhost || selected) 2.dp else 1.dp, color = borderColor, shape = shape)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val scale = size.width / page.page.size.width
@@ -763,39 +848,52 @@ private fun PageThumbnailVisual(
         val bookmarkActionDescription = stringResource(
             if (page.page.bookmarked) R.string.editor_remove_bookmark else R.string.editor_add_bookmark,
         )
-        Icon(
-            if (page.page.bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-            contentDescription = if (onToggleBookmark != null) bookmarkActionDescription else null,
-            tint = if (page.page.bookmarked) BOOKMARK_TINT else MaterialTheme.colorScheme.primary,
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                // 顶边与缩略图顶边对齐，只保留水平方向的可点余量；无底色遮罩。
-                .padding(start = 10.dp, bottom = 10.dp)
-                .size(26.dp)
+                .padding(4.dp)
+                .minimumInteractiveComponentSize()
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.86f), CircleShape)
                 .then(
                     if (onToggleBookmark != null) {
-                        Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onToggleBookmark,
-                        )
+                        Modifier.clickable(onClick = onToggleBookmark)
                     } else {
                         Modifier
                     },
                 )
-                .padding(3.dp)
                 .semantics {
                     if (onToggleBookmark != null) contentDescription = bookmarkActionDescription
                 },
-        )
-        Text(
-            text = "$pageNumber",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        ) {
+            HandwriteIcon(
+                imageVector = if (page.page.bookmarked) HandwriteIcons.BookmarkFilled else HandwriteIcons.BookmarkOutline,
+                contentDescription = if (onToggleBookmark != null) bookmarkActionDescription else null,
+                tint = if (page.page.bookmarked) BOOKMARK_TINT else MaterialTheme.colorScheme.primary,
+                size = 18.dp,
+            )
+        }
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(6.dp),
-        )
+                .padding(6.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.90f))
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    RoundedCornerShape(8.dp),
+                )
+                .padding(horizontal = 7.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = "$pageNumber",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
     }
 }
 
@@ -834,8 +932,8 @@ private fun AddPageCell(
                     .fillMaxWidth()
                     .aspectRatio(pageSize.width.toFloat() / pageSize.height.toFloat())
                     .clip(shape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f), shape)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -843,18 +941,18 @@ private fun AddPageCell(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    Icons.Default.Add,
+                HandwriteIcon(
+                    imageVector = HandwriteIcons.Add,
                     contentDescription = stringResource(R.string.editor_add_page),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(34.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    size = 34.dp,
                 )
             }
             // 菜单锚定在文字自身，弹出位置紧贴“新页面”文字，而不是整个单元格。
             Box(Modifier.padding(top = 6.dp)) {
                 Text(
                     stringResource(R.string.editor_new_page),
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -986,9 +1084,10 @@ private fun AddPageSwatch(labelRes: Int, argb: Int, selected: Boolean, onClick: 
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {
-            Icon(
-                Icons.Default.Check,
+            HandwriteIcon(
+                imageVector = HandwriteIcons.Check,
                 contentDescription = null,
+                size = 18.dp,
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
@@ -996,23 +1095,28 @@ private fun AddPageSwatch(labelRes: Int, argb: Int, selected: Boolean, onClick: 
 }
 
 private const val SCRIM_ALPHA = 0.45f
-private const val PANEL_WIDTH_FRACTION = 0.4f
-private const val THUMBNAIL_WIDTH_FRACTION = 0.58f
+private const val PANEL_WIDTH_FRACTION = 0.78f
+private const val THUMBNAIL_WIDTH_FRACTION = 0.64f
 // 缩略图宽度上限：横屏下面板变宽，用固定上限防止缩略图随面板等比膨胀。
-private val THUMBNAIL_MAX_WIDTH = 180.dp
+private val THUMBNAIL_MAX_WIDTH = 200.dp
 private const val THUMBNAIL_TRANSPARENT_FILL_ALPHA = 0.45f
-// 拖拽自动滚动：手指进入视口上下各一成半高度的区域即持续滚动。
-private const val AUTO_SCROLL_EDGE_FRACTION = 0.15f
-// 基础滚动速度随超出边缘的深度线性提升：刚触边为视口高度的 0.45 倍/秒，深抵视口
-// 边界时升至 2.2 倍/秒（速度按秒定义、按帧间时长折算位移，帧率无关）。
-private const val AUTO_SCROLL_MIN_SPEED_FRACTION = 0.45f
-private const val AUTO_SCROLL_MAX_SPEED_FRACTION = 2.2f
+private val DRAG_SLOP_DP = 8.dp
+private const val GHOST_LIFT_SCALE = 1.04f
+private const val HYSTERESIS_FRACTION = 0.08f
+private const val RENDERER_CACHE_CAPACITY = 24
+private const val MAX_FRAME_STEP_MILLIS = 50L
+// 拖拽自动滚动：卡片或手指进入视口上下各一成八高度的区域即持续滚动。
+private const val AUTO_SCROLL_EDGE_FRACTION = 0.18f
+// 基础滚动速度随超出边缘的深度线性提升：刚触边为视口高度的 0.35 倍/秒，深抵视口
+// 边界时升至 2.4 倍/秒（速度按秒定义、按帧间时长折算位移，帧率无关）。
+private const val AUTO_SCROLL_MIN_SPEED_FRACTION = 0.35f
+private const val AUTO_SCROLL_MAX_SPEED_FRACTION = 2.4f
 // 手势加速：与滚动同向的手指速度达到视口高度 * 该系数 / 秒时，加成升满。
 private const val AUTO_SCROLL_GESTURE_REF_FRACTION = 1.5f
 private const val AUTO_SCROLL_MAX_BOOST = 2.5f
 // 滚动速度的指数平滑时间常数：加速取短保证响应及时，减速取长保证收势平稳（毫秒）。
-private const val AUTO_SCROLL_ACCEL_TAU_MS = 60f
-private const val AUTO_SCROLL_DECEL_TAU_MS = 160f
+private const val AUTO_SCROLL_ACCEL_TAU_MS = 55f
+private const val AUTO_SCROLL_DECEL_TAU_MS = 140f
 // 低于该速度即视为停止，滚动速度归零（px/秒）。
 private const val AUTO_SCROLL_STOP_PX_PER_SEC = 1f
 // 手指速度估计：指数平滑时间常数、事件间隔折算上限与停止拖动后的回落参数（毫秒）。
@@ -1020,9 +1124,9 @@ private const val FINGER_SPEED_TAU_MS = 60f
 private const val GESTURE_SPEED_SAMPLE_MAX_INTERVAL_MS = 100L
 private const val FINGER_SPEED_IDLE_DELAY_MS = 64L
 private const val FINGER_SPEED_IDLE_TAU_MS = 90f
-// 松手落位吸附：每帧把手位锚点向格中心指数趋近，低于半像素即视为落位完成。
-private const val SETTLE_APPROACH_FACTOR = 0.35f
-private const val SETTLE_SNAP_PX = 0.5f
+// 松手落位吸附：帧率无关指数时间常数（毫秒），低于半像素即视为落位完成。
+private const val SETTLE_TAU_MS = 38f
+private const val SETTLE_SNAP_PX = 0.6f
 // 落位等待帧数上限（约两秒）：重排提交被丢弃时兜底解除拖拽态，避免状态悬挂。
 private const val SETTLE_MAX_FRAMES = 120
 private const val TAB_PAGES = 0

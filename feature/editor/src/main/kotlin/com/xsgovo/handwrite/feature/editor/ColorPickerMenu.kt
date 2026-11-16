@@ -23,13 +23,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcon
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcons
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,11 +38,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -92,7 +92,9 @@ internal fun ColorPickerMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        modifier = Modifier.width(360.dp),
+        shape = RoundedCornerShape(22.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+        modifier = Modifier.widthIn(min = 312.dp, max = 340.dp),
     ) {
         ColorPickerContent(
             activeColor = activeColor,
@@ -115,7 +117,7 @@ private fun ColorPickerContent(
     onCandidateDelete: (Int) -> Unit,
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
+    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
         PickerTabs(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
         Spacer(Modifier.height(16.dp))
         if (selectedTab == 0) {
@@ -145,11 +147,14 @@ private fun ColorPickerContent(
 
 @Composable
 private fun PickerTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    val containerShape = RoundedCornerShape(16.dp)
+    val tabShape = RoundedCornerShape(12.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
+            .clip(containerShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), containerShape)
             .padding(4.dp),
     ) {
         listOf(R.string.editor_picker_tab_palette, R.string.editor_picker_tab_spectrum).forEachIndexed { index, labelRes ->
@@ -157,8 +162,8 @@ private fun PickerTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
+                    .clip(tabShape)
+                    .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
                     .clickable { onTabSelected(index) }
                     .padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
@@ -168,7 +173,7 @@ private fun PickerTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (selected) {
-                        MaterialTheme.colorScheme.onSurface
+                        MaterialTheme.colorScheme.onSecondaryContainer
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -273,9 +278,11 @@ private fun OpacityRow(activeColor: Int, onOpacityChanged: (Int) -> Unit) {
                     .align(Alignment.CenterStart)
                     .offset { IntOffset((percent / 100f * (trackSize.width - thumbPx)).roundToInt(), 0) }
                     .size(thumbSize)
-                    .shadow(2.dp, CircleShape)
                     .clip(CircleShape)
-                    .background(opaqueColor),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest, CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                    .padding(3.dp)
+                    .background(opaqueColor, CircleShape),
             )
         }
         Spacer(Modifier.width(10.dp))
@@ -325,8 +332,9 @@ private fun ValueRow(
             modifier = Modifier
                 .weight(1f)
                 .height(54.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
                 .padding(horizontal = 14.dp),
         ) {
             Text(
@@ -350,12 +358,14 @@ private fun ValueRow(
 // 半透明时垫棋盘格让透明度可被感知；不透明颜色完全覆盖棋盘格，观感不变。
 @Composable
 private fun ColorPreviewSwatch(color: Int) {
+    val shape = RoundedCornerShape(14.dp)
     Box(
         modifier = Modifier
             .size(width = 80.dp, height = 54.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(shape)
             .checkerboardBackdrop()
-            .background(Color(color)),
+            .background(Color(color))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f), shape),
     )
 }
 
@@ -480,15 +490,17 @@ private fun CandidateRow(
     var pendingDeleteIndex by remember { mutableStateOf<Int?>(null) }
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         maxItemsInEachRow = CANDIDATES_PER_ROW,
     ) {
         candidates.forEachIndexed { index, argb ->
             Box {
                 Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(36.dp)
+                        .minimumInteractiveComponentSize()
+                        .size(44.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                             onClick = {
@@ -497,18 +509,26 @@ private fun CandidateRow(
                             },
                             // 长按只弹出移除气泡，点击气泡里的移除才会删除。
                             onLongClick = { pendingDeleteIndex = index },
-                        )
-                        .padding(4.dp)
-                        .background(Color(argb), CircleShape),
-                )
+                        ),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(Color(argb), CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), CircleShape),
+                    )
+                }
                 if (pendingDeleteIndex == index) {
                     DropdownMenu(
                         expanded = true,
                         onDismissRequest = { pendingDeleteIndex = null },
+                        shape = RoundedCornerShape(18.dp),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
                     ) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.editor_remove_candidate)) },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                            leadingIcon = { HandwriteIcon(HandwriteIcons.Delete, contentDescription = null) },
                             onClick = {
                                 pendingDeleteIndex = null
                                 onDelete(argb)
@@ -530,33 +550,40 @@ private fun AddCandidateCircle(onClick: () -> Unit) {
     val dashColor = MaterialTheme.colorScheme.outline
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .minimumInteractiveComponentSize()
+            .size(44.dp)
             .clip(CircleShape)
-            .clickable(onClick = onClick)
-            .drawBehind {
-                val stroke = 1.5.dp.toPx()
-                drawCircle(
-                    color = dashColor,
-                    radius = size.minDimension / 2f - stroke / 2f,
-                    style = Stroke(
-                        width = stroke,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(stroke * 2.5f, stroke * 2.5f)),
-                    ),
-                )
-            },
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            Icons.Default.Add,
-            contentDescription = stringResource(R.string.editor_add_candidate_color),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .drawBehind {
+                    val stroke = 1.5.dp.toPx()
+                    drawCircle(
+                        color = dashColor,
+                        radius = size.minDimension / 2f - stroke / 2f,
+                        style = Stroke(
+                            width = stroke,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(stroke * 2.5f, stroke * 2.5f)),
+                        ),
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            HandwriteIcon(
+                imageVector = HandwriteIcons.Add,
+                contentDescription = stringResource(R.string.editor_add_candidate_color),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 16.dp,
+            )
+        }
     }
 }
 
-// 候选区单排容量：两排共 14 个（AppSettings.PICKER_CANDIDATE_COUNT）。
-private const val CANDIDATES_PER_ROW = 7
+// 候选区单排容量：保持 48dp 无障碍触控热区下的紧凑多排排列。
+private const val CANDIDATES_PER_ROW = 6
 
 @Preview(showBackground = true, widthDp = 420, heightDp = 820)
 @Composable

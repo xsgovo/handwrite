@@ -5,15 +5,18 @@ import android.content.ContextWrapper
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -23,19 +26,25 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import com.xsgovo.handwrite.core.document.ResourceInput
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.xsgovo.handwrite.core.designsystem.LocalHandwriteColors
+import com.xsgovo.handwrite.core.document.ResourceInput
 import com.xsgovo.handwrite.core.model.BackBehavior
 import com.xsgovo.handwrite.core.model.PDF_MIME_TYPE
 import com.xsgovo.handwrite.core.model.PageBackground
@@ -85,21 +94,23 @@ fun EditorRoute(
     val pendingAddPageContent: @Composable () -> Unit = {
         AddPagePlaceholder(
             pendingBackground = state.pendingAddBackground,
+            pageSize = state.pageSize,
             interactive = state.onPendingAddPage,
             onAddPage = { viewModel.addPage() },
             onChangeBackground = viewModel::setPendingAddBackground,
         )
     }
 
-    // 纸面底色延伸到状态栏并按明暗切换系统图标对比度；无底色时回到系统默认。
-    DisposableEffect(state.background) {
+    // 状态栏与纯白/纯黑顶部工具栏底色保持一致。
+    val toolbarContainerColor = LocalHandwriteColors.current.toolbarBackground
+    DisposableEffect(toolbarContainerColor) {
         val activity = context.findComponentActivity()
-        val scrim = state.background.statusBarColorArgbOrNull()
         if (activity != null) {
-            val style = when {
-                scrim == null -> SystemBarStyle.auto(Color.Transparent.toArgb(), Color.Transparent.toArgb())
-                Color(scrim).luminance() < 0.5f -> SystemBarStyle.dark(scrim)
-                else -> SystemBarStyle.light(scrim, scrim)
+            val barArgb = toolbarContainerColor.toArgb()
+            val style = if (toolbarContainerColor.luminance() < 0.5f) {
+                SystemBarStyle.dark(barArgb)
+            } else {
+                SystemBarStyle.light(barArgb, barArgb)
             }
             activity.enableEdgeToEdge(statusBarStyle = style)
         }
@@ -126,122 +137,143 @@ fun EditorRoute(
     BackHandler(enabled = pagesPanelOpen) { pagesPanelOpen = false }
     BackHandler(enabled = state.onPendingAddPage) { viewModel.exitPendingAddPage() }
 
-    // 面板悬浮于整个界面（含工具栏）之上，因此与 Scaffold 同级包在一个 Box 内。
-    Box(Modifier.fillMaxSize()) {
-        Scaffold(
-            topBar = {
-                EditorToolbar(
-                    state = state,
-                    temporaryEraserActive = temporaryEraserActive,
-                    onLibrary = onLibrary,
-                    onSettings = onSettings,
-                    onExport = { state.documentId?.value?.let(onExport) },
-                    onShare = {
-                        if (canStartShare(state.isSaving, isSharing)) {
-                            val request = state.toShareRequest()
-                            isSharing = true
-                            scope.launch {
-                                val shared = try {
-                                    onShare(request).isSuccess
-                                } catch (exception: CancellationException) {
-                                    throw exception
-                                } catch (exception: Exception) {
-                                    false
-                                }
-                                isSharing = false
-                                if (!shared) snackbar.showSnackbar(shareFailedMessage)
-                            }
+    val toolbarContent: @Composable () -> Unit = {
+        EditorToolbar(
+            state = state,
+            temporaryEraserActive = temporaryEraserActive,
+            onLibrary = onLibrary,
+            onSettings = onSettings,
+            onExport = { state.documentId?.value?.let(onExport) },
+            onShare = {
+                if (canStartShare(state.isSaving, isSharing)) {
+                    val request = state.toShareRequest()
+                    isSharing = true
+                    scope.launch {
+                        val shared = try {
+                            onShare(request).isSuccess
+                        } catch (exception: CancellationException) {
+                            throw exception
+                        } catch (exception: Exception) {
+                            false
                         }
-                    },
-                    isSharing = isSharing,
-                    onTool = viewModel::setTool,
-                    onEraserMode = viewModel::setEraserMode,
-                    onEraserSize = viewModel::setEraserSize,
-                    onColorSlot = viewModel::selectColorSlot,
-                    onColorChange = viewModel::setColorSlotValue,
-                    onOpacityChange = viewModel::setColorSlotOpacity,
-                    onCandidateAdd = viewModel::addPickerCandidate,
-                    onCandidateDelete = viewModel::removePickerCandidate,
-                    onWidthSlot = viewModel::selectWidthSlot,
-                    onWidth = viewModel::setWidthStep,
-                    onUndo = viewModel::undo,
-                    onRedo = viewModel::redo,
-                    onClear = { confirmClear = true },
-                    onOpenPages = { pagesPanelOpen = true },
-                    onAddPage = { viewModel.addPage() },
-                    onDeletePage = { confirmDeletePage = true },
-                    onZoomLock = viewModel::setZoomLocked,
-                    onBackground = viewModel::setBackground,
-                    onImportBackground = {
-                        backgroundPicker.launch(arrayOf("image/*", PDF_MIME_TYPE))
-                    },
-                )
+                        isSharing = false
+                        if (!shared) snackbar.showSnackbar(shareFailedMessage)
+                    }
+                }
             },
-            snackbarHost = { SnackbarHost(snackbar) },
-        ) { paddingValues ->
-            // 画布常驻：翻页手势的预览与提交都在画布内完成，切页只更换画布内容，不重建组合。
-            // InProgressStrokes 的低延迟湿墨 SurfaceView 若随画布组合销毁重建，每次切页都会
-            // 闪一下；页面面板选择发生在全屏覆盖层之下，直接呈现即可。
-            // 待添加虚拟页作为紧随最后一页的普通翻页目标参与 PREV/NEXT 切换。
-            val prevNeighbor = when (val index = state.pageIndex) {
-                null -> state.pages.lastOrNull()?.let { EditorNeighbor.Page(it) }
-                else -> if (index > 0) EditorNeighbor.Page(state.pages[index - 1]) else null
+            isSharing = isSharing,
+            onTool = viewModel::setTool,
+            onEraserMode = viewModel::setEraserMode,
+            onEraserSize = viewModel::setEraserSize,
+            onColorSlot = viewModel::selectColorSlot,
+            onColorChange = viewModel::setColorSlotValue,
+            onOpacityChange = viewModel::setColorSlotOpacity,
+            onCandidateAdd = viewModel::addPickerCandidate,
+            onCandidateDelete = viewModel::removePickerCandidate,
+            onWidthSlot = viewModel::selectWidthSlot,
+            onWidth = viewModel::setWidthStep,
+            onUndo = viewModel::undo,
+            onRedo = viewModel::redo,
+            onClear = { confirmClear = true },
+            onOpenPages = { pagesPanelOpen = true },
+            onAddPage = { viewModel.addPage() },
+            onDeletePage = { confirmDeletePage = true },
+            onZoomLock = viewModel::setZoomLocked,
+            onBackground = { bg ->
+                if (state.onPendingAddPage) {
+                    viewModel.setPendingAddBackground(bg)
+                } else {
+                    viewModel.setBackground(bg)
+                }
+            },
+            onImportBackground = {
+                backgroundPicker.launch(arrayOf("image/*", PDF_MIME_TYPE))
+            },
+        )
+    }
+
+    // 切换顶部/侧边停靠时复用同一个可移动画布组合，避免销毁重建低延迟湿墨 SurfaceView。
+    val movableCanvas = remember {
+        movableContentOf<EditorUiState> { currentState ->
+            val prevNeighbor = when (val index = currentState.pageIndex) {
+                null -> currentState.pages.lastOrNull()?.let { EditorNeighbor.Page(it) }
+                else -> if (index > 0) EditorNeighbor.Page(currentState.pages[index - 1]) else null
             }
-            val nextNeighbor = when (val index = state.pageIndex) {
-                // 停留在待添加虚拟页时没有下一面；停在最后一页时下一面即虚拟页。
+            val nextNeighbor = when (val index = currentState.pageIndex) {
                 null -> null
-                else -> if (index < state.pages.size - 1) {
-                    EditorNeighbor.Page(state.pages[index + 1])
+                else -> if (index < currentState.pages.size - 1) {
+                    EditorNeighbor.Page(currentState.pages[index + 1])
                 } else {
                     EditorNeighbor.PendingAdd
                 }
             }
-            Box(Modifier.fillMaxSize().padding(paddingValues)) {
-                HandwriteCanvas(
-                    surface = state.surface,
-                    canvasSession = state.canvasSession,
-                    inkingEnabled = !state.onPendingAddPage,
-                    pageSize = state.pageSize,
-                    background = state.background,
-                    backgroundImage = backgroundImage,
-                    strokes = state.strokes,
-                    tool = state.tool,
-                    eraserMode = state.eraserMode,
-                    eraserSize = state.eraserSize,
-                    inputMode = state.inputMode,
-                    zoomPercent = state.zoomPercent,
-                    zoomLocked = state.zoomLocked,
-                    activeColor = state.activeColor,
-                    activeWidth = state.activeWidth,
-                    activeBrushId = state.activeBrushId,
-                    pressureSensitivity = state.pressureSensitivity,
-                    sideButtonAction = state.sideButtonAction,
-                    onZoomChanged = viewModel::setZoom,
-                    onStrokesFinished = viewModel::commitStrokes,
-                    onEraseFinished = viewModel::eraseElements,
-                    onErasePixelsFinished = viewModel::eraseByPixels,
-                    onToggleEraser = viewModel::toggleEraser,
-                    onUndo = viewModel::undo,
-                    prevNeighbor = prevNeighbor,
-                    nextNeighbor = nextNeighbor,
-                    pendingAddPageContent = pendingAddPageContent,
-                    onSwipeNavigate = { direction ->
-                        val target = when (direction) {
-                            SWIPE_NAVIGATE_PREV -> prevNeighbor
-                            SWIPE_NAVIGATE_NEXT -> nextNeighbor
-                            else -> null
-                        }
-                        when (target) {
-                            is EditorNeighbor.Page -> viewModel.selectPage(target.content.page.id)
-                            EditorNeighbor.PendingAdd -> viewModel.selectPendingAddPage()
-                            null -> Unit
-                        }
-                    },
-                    onTemporaryEraserChanged = { temporaryEraserActive = it },
-                    modifier = Modifier.fillMaxSize(),
-                )
+            HandwriteCanvas(
+                surface = currentState.surface,
+                canvasSession = currentState.canvasSession,
+                inkingEnabled = !currentState.onPendingAddPage,
+                pageSize = currentState.pageSize,
+                background = currentState.background,
+                backgroundImage = backgroundImage,
+                strokes = currentState.strokes,
+                tool = currentState.tool,
+                eraserMode = currentState.eraserMode,
+                eraserSize = currentState.eraserSize,
+                inputMode = currentState.inputMode,
+                zoomPercent = currentState.zoomPercent,
+                zoomLocked = currentState.zoomLocked,
+                activeColor = currentState.activeColor,
+                activeWidth = currentState.activeWidth,
+                activeBrushId = currentState.activeBrushId,
+                pressureSensitivity = currentState.pressureSensitivity,
+                sideButtonAction = currentState.sideButtonAction,
+                onZoomChanged = viewModel::setZoom,
+                onStrokesFinished = viewModel::commitStrokes,
+                onEraseFinished = viewModel::eraseElements,
+                onErasePixelsFinished = viewModel::eraseByPixels,
+                onToggleEraser = viewModel::toggleEraser,
+                onUndo = viewModel::undo,
+                prevNeighbor = prevNeighbor,
+                nextNeighbor = nextNeighbor,
+                pendingAddPageContent = pendingAddPageContent,
+                onSwipeNavigate = { direction ->
+                    val target = when (direction) {
+                        SWIPE_NAVIGATE_PREV -> prevNeighbor
+                        SWIPE_NAVIGATE_NEXT -> nextNeighbor
+                        else -> null
+                    }
+                    when (target) {
+                        is EditorNeighbor.Page -> viewModel.selectPage(target.content.page.id)
+                        EditorNeighbor.PendingAdd -> viewModel.selectPendingAddPage()
+                        null -> Unit
+                    }
+                },
+                onTemporaryEraserChanged = { temporaryEraserActive = it },
+                pageIndex = currentState.pageIndex,
+                pageCount = currentState.pageCount,
+                onOpenPages = { pagesPanelOpen = true },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+
+    // 面板悬浮于整个界面（含工具栏）之上，因此与主容器同级包在一个 Box 内。
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxWidth().zIndex(1f)) {
+                toolbarContent()
+            }
+            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                movableCanvas(state)
             }
         }
+
+        SnackbarHost(
+            hostState = snackbar,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
+        )
 
         PagePanel(
             visible = pagesPanelOpen,
@@ -266,11 +298,15 @@ fun EditorRoute(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
             title = { Text(stringResource(R.string.editor_clear_page_dialog_title)) },
             text = { Text(stringResource(R.string.editor_clear_page_dialog_message)) },
             confirmButton = {
                 TextButton(onClick = { confirmClear = false; viewModel.clearPage() }) {
-                    Text(stringResource(R.string.editor_action_clear))
+                    Text(
+                        stringResource(R.string.editor_action_clear),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.editor_action_cancel)) } },
@@ -280,11 +316,15 @@ fun EditorRoute(
     if (confirmDeletePage) {
         AlertDialog(
             onDismissRequest = { confirmDeletePage = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
             title = { Text(stringResource(R.string.editor_delete_page_dialog_title)) },
             text = { Text(stringResource(R.string.editor_delete_page_dialog_message)) },
             confirmButton = {
                 TextButton(onClick = { confirmDeletePage = false; viewModel.deleteCurrentPage() }) {
-                    Text(stringResource(R.string.editor_action_delete))
+                    Text(
+                        stringResource(R.string.editor_action_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
             dismissButton = { TextButton(onClick = { confirmDeletePage = false }) { Text(stringResource(R.string.editor_action_cancel)) } },

@@ -9,48 +9,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.AutoFixNormal
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Circle
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.HighlightOff
-import androidx.compose.material.icons.filled.LibraryAdd
-import androidx.compose.material.icons.filled.LibraryBooks
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -62,11 +38,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.xsgovo.handwrite.core.designsystem.LocalHandwriteColors
+import com.xsgovo.handwrite.core.designsystem.icons.CuteBrushDotButton
+import com.xsgovo.handwrite.core.designsystem.icons.CuteFlatIconButton
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcon
+import com.xsgovo.handwrite.core.designsystem.icons.HandwriteIcons
 import com.xsgovo.handwrite.core.model.PageBackground
 import com.xsgovo.handwrite.core.model.PatternType
 import kotlinx.coroutines.delay
@@ -85,13 +68,6 @@ internal val backgroundSwatchChoices = listOf(
     R.string.editor_background_teal to PageBackground.TEAL,
     R.string.editor_background_black to PageBackground.BLACK,
 )
-
-// 状态栏衬色跟随纸面底色，让画布颜色延伸到系统栏；透明底/图片背景时用工具栏表面色。
-internal fun PageBackground.statusBarColorArgbOrNull(): Int? = when (this) {
-    is PageBackground.Solid -> argb
-    is PageBackground.Pattern -> baseArgb.takeIf { it != PageBackground.TRANSPARENT }
-    else -> null
-}
 
 // 颜色与样式相互独立：无样式时是纯色/透明底，叠加样式时底色成为 pattern 的底色。
 internal fun backgroundWithStyle(colorArgb: Int, style: PatternType?): PageBackground = when (style) {
@@ -131,264 +107,276 @@ fun EditorToolbar(
     onBackground: (PageBackground) -> Unit,
     onImportBackground: () -> Unit,
 ) {
-    val scrollState = rememberScrollState()
+    val primaryScrollState = rememberScrollState()
     var menuExpanded by remember { mutableStateOf(false) }
     var backgroundPanelOpen by remember { mutableStateOf(false) }
     var widthPanelExpanded by remember { mutableStateOf(false) }
     var widthPanelSlot by remember { mutableStateOf<Int?>(null) }
     var pendingWidthStep by remember { mutableStateOf(state.widthStep.toFloat()) }
     val pickerOpenState = remember { mutableStateOf(false) }
-    // 无底色（透明/图片背景）时状态栏区域沿用工具栏表面色。
-    val barColor = state.background.statusBarColorArgbOrNull()?.let(::Color)
-        ?: MaterialTheme.colorScheme.surfaceContainer
-    Surface(
-        color = barColor,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .background(MaterialTheme.colorScheme.surfaceContainer)
-                .height(64.dp)
-                .horizontalScroll(scrollState)
-                .padding(horizontal = 8.dp),
-        ) {
-            IconButton(onClick = onLibrary) {
-                Icon(Icons.Default.FolderOpen, contentDescription = stringResource(R.string.editor_tool_library))
-            }
-            // 分享与导出共用一个入口：当前页图片走系统分享，整份文档走导出流程。
-            var shareExportMenuExpanded by remember { mutableStateOf(false) }
-            Box {
-                IconButton(onClick = { shareExportMenuExpanded = true }) {
-                    Icon(Icons.Default.Share, contentDescription = stringResource(R.string.editor_tool_share_or_export))
-                }
-                DropdownMenu(
-                    expanded = shareExportMenuExpanded,
-                    onDismissRequest = { shareExportMenuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.editor_share_current_page_image)) },
-                        leadingIcon = {
-                            if (isSharing) {
-                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Default.Share, contentDescription = null)
-                            }
-                        },
-                        enabled = !isSharing,
-                        onClick = {
-                            shareExportMenuExpanded = false
-                            onShare()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.editor_export_document)) },
-                        leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
-                        enabled = state.documentId != null,
-                        onClick = {
-                            shareExportMenuExpanded = false
-                            onExport()
-                        },
-                    )
-                }
-            }
-            IconButton(onClick = onOpenPages) {
-                Icon(Icons.Default.LibraryBooks, contentDescription = stringResource(R.string.editor_tool_page_manager))
-            }
-            val selectedTool = if (temporaryEraserActive) EditorTool.ERASER else state.tool
-            ToolButton(EditorTool.PEN, selectedTool, onTool, Icons.Default.Edit, stringResource(R.string.editor_tool_pen))
-            // 橡皮擦图标跟随当前模式，与笔宽按钮显示当前档位的做法一致；
-            // 选中橡皮擦后再次点击弹出模式菜单，菜单内可调像素橡皮的大小。
-            var eraserMenuExpanded by remember { mutableStateOf(false) }
-            var pendingEraserSize by remember { mutableStateOf(state.eraserSize.toFloat()) }
-            LaunchedEffect(eraserMenuExpanded) {
-                if (eraserMenuExpanded) pendingEraserSize = state.eraserSize.toFloat()
-            }
-            val eraserIcon = if (state.eraserMode == EraserMode.PIXEL) {
-                Icons.Default.HighlightOff
-            } else {
-                Icons.Default.AutoFixNormal
-            }
-                Box {
-                    ToolButton(
-                        tool = EditorTool.ERASER,
-                        selectedTool = selectedTool,
-                        onTool = { if (selectedTool == EditorTool.ERASER) eraserMenuExpanded = true else onTool(EditorTool.ERASER) },
-                        icon = eraserIcon,
-                        description = stringResource(R.string.editor_tool_eraser),
-                    )
-                    DropdownMenu(
-                        expanded = eraserMenuExpanded,
-                        onDismissRequest = { eraserMenuExpanded = false },
-                    ) {
-                        CheckableMenuItem(stringResource(R.string.editor_eraser_mode_stroke), state.eraserMode == EraserMode.STROKE) {
-                            eraserMenuExpanded = false
-                            onTool(EditorTool.ERASER)
-                            onEraserMode(EraserMode.STROKE)
+    var shareExportMenuExpanded by remember { mutableStateOf(false) }
+    var eraserMenuExpanded by remember { mutableStateOf(false) }
+    var pendingEraserSize by remember { mutableStateOf(state.eraserSize.toFloat()) }
+    LaunchedEffect(eraserMenuExpanded) {
+        if (eraserMenuExpanded) pendingEraserSize = state.eraserSize.toFloat()
+    }
+
+    val selectedTool = if (temporaryEraserActive) EditorTool.ERASER else state.tool
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+
+    val primaryTools: @Composable () -> Unit = {
+        CuteFlatIconButton(
+            onClick = onLibrary,
+            icon = HandwriteIcons.FolderOpen,
+            contentDescription = stringResource(R.string.editor_tool_library),
+        )
+        Box {
+            CuteFlatIconButton(
+                onClick = { shareExportMenuExpanded = true },
+                icon = HandwriteIcons.Share,
+                contentDescription = stringResource(R.string.editor_tool_share_or_export),
+            )
+            DropdownMenu(
+                expanded = shareExportMenuExpanded,
+                onDismissRequest = { shareExportMenuExpanded = false },
+                shape = RoundedCornerShape(20.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.editor_share_current_page_image)) },
+                    leadingIcon = {
+                        if (isSharing) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            HandwriteIcon(HandwriteIcons.Share, contentDescription = null)
                         }
-                        CheckableMenuItem(stringResource(R.string.editor_eraser_mode_pixel), state.eraserMode == EraserMode.PIXEL) {
-                            eraserMenuExpanded = false
-                            onTool(EditorTool.ERASER)
-                            onEraserMode(EraserMode.PIXEL)
-                        }
-                        HorizontalDivider()
-                        Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                            Text(
-                                stringResource(R.string.editor_eraser_size, pendingEraserSize.roundToInt()),
-                                style = MaterialTheme.typography.titleSmall,
-                            )
-                        Slider(
-                            value = pendingEraserSize,
-                            onValueChange = { pendingEraserSize = it },
-                            onValueChangeFinished = { onEraserSize(pendingEraserSize.roundToInt()) },
-                            valueRange = MIN_ERASER_SIZE.toFloat()..MAX_ERASER_SIZE.toFloat(),
-                        )
-                    }
-                }
-            }
-            state.colorSlots.forEachIndexed { index, argb ->
-                ColorSlotButton(
-                    index = index,
-                    argb = argb,
-                    candidates = state.pickerCandidates,
-                    isActive = index == state.activeColorSlot,
-                    pickerOpen = pickerOpenState,
-                    onSelectSlot = onColorSlot,
-                    onColorChange = onColorChange,
-                    onOpacityChange = onOpacityChange,
-                    onCandidateAdd = onCandidateAdd,
-                    onCandidateDelete = onCandidateDelete,
+                    },
+                    enabled = !isSharing,
+                    onClick = {
+                        shareExportMenuExpanded = false
+                        onShare()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.editor_export_document)) },
+                    leadingIcon = { HandwriteIcon(HandwriteIcons.Download, contentDescription = null) },
+                    enabled = state.documentId != null,
+                    onClick = {
+                        shareExportMenuExpanded = false
+                        onExport()
+                    },
                 )
             }
-            state.widthSteps.forEachIndexed { index, step ->
-                Box {
-                    val panelIsOpen = widthPanelExpanded && widthPanelSlot == index
-                    val displayedStep = if (panelIsOpen) pendingWidthStep.roundToInt() else step
-                    BrushWidthPresetButton(
-                        step = displayedStep,
-                        selected = state.activeWidthSlot == index,
-                        onClick = {
-                            if (state.activeWidthSlot == index) {
-                                pendingWidthStep = state.widthSteps[index].toFloat()
-                                widthPanelSlot = index
-                                widthPanelExpanded = true
-                            } else {
-                                widthPanelSlot = null
-                                widthPanelExpanded = false
-                                onWidthSlot(index)
-                            }
-                        },
-                    )
-                    DropdownMenu(
-                        expanded = panelIsOpen,
-                        onDismissRequest = {
+        }
+        CuteFlatIconButton(
+            onClick = onOpenPages,
+            icon = HandwriteIcons.PageManager,
+            contentDescription = stringResource(R.string.editor_tool_page_manager),
+        )
+        ToolButton(
+            tool = EditorTool.PEN,
+            selectedTool = selectedTool,
+            onTool = onTool,
+            icon = HandwriteIcons.Pen,
+            description = stringResource(R.string.editor_tool_pen),
+        )
+        val eraserIcon = if (state.eraserMode == EraserMode.PIXEL) {
+            HandwriteIcons.EraserPixel
+        } else {
+            HandwriteIcons.EraserStroke
+        }
+        Box {
+            ToolButton(
+                tool = EditorTool.ERASER,
+                selectedTool = selectedTool,
+                onTool = { if (selectedTool == EditorTool.ERASER) eraserMenuExpanded = true else onTool(EditorTool.ERASER) },
+                icon = eraserIcon,
+                description = stringResource(R.string.editor_tool_eraser),
+                hasSubMenu = true,
+            )
+            EraserDropdownMenu(
+                expanded = eraserMenuExpanded,
+                eraserMode = state.eraserMode,
+                eraserSize = pendingEraserSize,
+                onSelectMode = { mode ->
+                    onTool(EditorTool.ERASER)
+                    onEraserMode(mode)
+                },
+                onPendingSizeChange = { pendingEraserSize = it },
+                onCommitSize = onEraserSize,
+                onDismiss = { eraserMenuExpanded = false },
+            )
+        }
+        state.colorSlots.forEachIndexed { index, argb ->
+            ColorSlotButton(
+                index = index,
+                argb = argb,
+                candidates = state.pickerCandidates,
+                isActive = index == state.activeColorSlot,
+                pickerOpen = pickerOpenState,
+                onSelectSlot = onColorSlot,
+                onColorChange = onColorChange,
+                onOpacityChange = onOpacityChange,
+                onCandidateAdd = onCandidateAdd,
+                onCandidateDelete = onCandidateDelete,
+            )
+        }
+        state.widthSteps.forEachIndexed { index, step ->
+            Box {
+                val panelIsOpen = widthPanelExpanded && widthPanelSlot == index
+                val displayedStep = if (panelIsOpen) pendingWidthStep.roundToInt() else step
+                BrushWidthPresetButton(
+                    step = displayedStep,
+                    selected = state.activeWidthSlot == index,
+                    onClick = {
+                        if (state.activeWidthSlot == index) {
+                            pendingWidthStep = state.widthSteps[index].toFloat()
+                            widthPanelSlot = index
+                            widthPanelExpanded = true
+                        } else {
                             widthPanelSlot = null
                             widthPanelExpanded = false
-                        },
-                    ) {
-                        Column(Modifier.width(280.dp).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                            Text(
-                                stringResource(R.string.editor_brush_width, pendingWidthStep.roundToInt()),
-                                style = MaterialTheme.typography.titleSmall,
-                            )
-                            Slider(
-                                value = pendingWidthStep,
-                                onValueChange = { pendingWidthStep = it },
-                                onValueChangeFinished = { onWidth(pendingWidthStep.roundToInt()) },
-                                valueRange = 1f..100f,
-                                steps = 98,
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("1", style = MaterialTheme.typography.labelSmall)
-                                Text("100", style = MaterialTheme.typography.labelSmall)
-                            }
+                            onWidthSlot(index)
                         }
-                    }
-                }
-            }
-            IconButton(
-                onClick = { onZoomLock(!state.zoomLocked) },
-                colors = if (state.zoomLocked) {
-                    IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                } else {
-                    IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-            ) {
-                Icon(
-                    if (state.zoomLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                    contentDescription = stringResource(R.string.editor_zoom_lock),
+                    },
+                )
+                BrushWidthDropdownMenu(
+                    expanded = panelIsOpen,
+                    widthStep = pendingWidthStep,
+                    activeColorArgb = state.activeColor,
+                    onPendingWidthChange = { pendingWidthStep = it },
+                    onCommitWidth = onWidth,
+                    onDismiss = {
+                        widthPanelSlot = null
+                        widthPanelExpanded = false
+                    },
                 )
             }
-            IconButton(onClick = onUndo, enabled = state.canUndo) {
-                Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.editor_undo))
-            }
-            IconButton(onClick = onRedo, enabled = state.canRedo) {
-                Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.editor_redo))
-            }
-            IconButton(onClick = onClear, enabled = state.elements.isNotEmpty()) {
-                Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.editor_clear_page))
-            }
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.editor_canvas_options))
+        }
+        CuteFlatIconButton(
+            onClick = { onZoomLock(!state.zoomLocked) },
+            selected = state.zoomLocked,
+            icon = if (state.zoomLocked) HandwriteIcons.Lock else HandwriteIcons.LockOpen,
+            contentDescription = stringResource(R.string.editor_zoom_lock),
+        )
+        CuteFlatIconButton(
+            onClick = onClear,
+            enabled = state.elements.isNotEmpty(),
+            icon = HandwriteIcons.ClearPage,
+            contentDescription = stringResource(R.string.editor_clear_page),
+        )
+    }
+
+    val pinnedActions: @Composable () -> Unit = {
+        CuteFlatIconButton(
+            onClick = onUndo,
+            enabled = state.canUndo,
+            icon = HandwriteIcons.Undo,
+            contentDescription = stringResource(R.string.editor_undo),
+        )
+        CuteFlatIconButton(
+            onClick = onRedo,
+            enabled = state.canRedo,
+            icon = HandwriteIcons.Redo,
+            contentDescription = stringResource(R.string.editor_redo),
+        )
+        Box {
+            CuteFlatIconButton(
+                onClick = { menuExpanded = true },
+                icon = HandwriteIcons.MoreVert,
+                contentDescription = stringResource(R.string.editor_canvas_options),
+            )
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = {
+                    menuExpanded = false
+                    backgroundPanelOpen = false
+                },
+                shape = RoundedCornerShape(22.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            ) {
+                if (!backgroundPanelOpen) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_background)) },
+                        leadingIcon = { HandwriteIcon(HandwriteIcons.Background, contentDescription = null) },
+                        onClick = { backgroundPanelOpen = true },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_import_background)) },
+                        leadingIcon = { HandwriteIcon(HandwriteIcons.AddImage, contentDescription = null) },
+                        onClick = { menuExpanded = false; onImportBackground() },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_add_page)) },
+                        leadingIcon = { HandwriteIcon(HandwriteIcons.AddPage, contentDescription = null) },
+                        onClick = { menuExpanded = false; onAddPage() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_delete_current_page)) },
+                        leadingIcon = { HandwriteIcon(HandwriteIcons.DeletePage, contentDescription = null) },
+                        onClick = { menuExpanded = false; onDeletePage() },
+                        enabled = state.pageCount > 1,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.editor_settings)) },
+                        leadingIcon = { HandwriteIcon(HandwriteIcons.Settings, contentDescription = null) },
+                        onClick = { menuExpanded = false; onSettings() },
+                    )
+                } else {
+                    BackgroundMenuPanel(
+                        background = if (state.onPendingAddPage) state.pendingAddBackground else state.background,
+                        onSelect = {
+                            menuExpanded = false
+                            backgroundPanelOpen = false
+                            onBackground(it)
+                        },
+                        onBack = { backgroundPanelOpen = false },
+                    )
                 }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = {
-                        menuExpanded = false
-                        backgroundPanelOpen = false
-                    },
+            }
+        }
+    }
+
+    Surface(
+        color = LocalHandwriteColors.current.toolbarBackground,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .displayCutoutPadding()
+                    .height(64.dp)
+                    .padding(horizontal = 6.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(primaryScrollState),
                 ) {
-                    if (!backgroundPanelOpen) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.editor_background)) },
-                            leadingIcon = { Icon(Icons.Default.Wallpaper, contentDescription = null) },
-                            onClick = { backgroundPanelOpen = true },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.editor_import_background)) },
-                            leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, contentDescription = null) },
-                            onClick = { menuExpanded = false; onImportBackground() },
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.editor_add_page)) },
-                            leadingIcon = { Icon(Icons.Default.LibraryAdd, contentDescription = null) },
-                            onClick = { menuExpanded = false; onAddPage() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.editor_delete_current_page)) },
-                            leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
-                            onClick = { menuExpanded = false; onDeletePage() },
-                            enabled = state.pageCount > 1,
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.editor_settings)) },
-                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                            onClick = { menuExpanded = false; onSettings() },
-                        )
-                    } else {
-                        BackgroundMenuPanel(
-                            background = state.background,
-                            onSelect = {
-                                menuExpanded = false
-                                onBackground(it)
-                            },
-                            onBack = { backgroundPanelOpen = false },
-                        )
-                    }
+                    primaryTools()
+                }
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .width(1.dp)
+                        .height(26.dp)
+                        .background(dividerColor),
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    pinnedActions()
                 }
             }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(dividerColor))
         }
     }
 }
@@ -445,23 +433,12 @@ private fun BrushWidthPresetButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    IconButton(
+    CuteBrushDotButton(
+        dotSize = brushWidthIconSizeDp(step).dp,
+        selected = selected,
+        contentDescription = stringResource(R.string.editor_brush_width_content_description, step),
         onClick = onClick,
-        colors = if (selected) {
-            IconButtonDefaults.iconButtonColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-        } else {
-            IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-        },
-    ) {
-        Icon(
-            imageVector = Icons.Default.Circle,
-            contentDescription = stringResource(R.string.editor_brush_width_content_description, step),
-            modifier = Modifier.size(brushWidthIconSizeDp(step).dp),
-        )
-    }
+    )
 }
 
 @Preview(showBackground = true)
@@ -481,45 +458,54 @@ private fun ToolButton(
     tool: EditorTool,
     selectedTool: EditorTool,
     onTool: (EditorTool) -> Unit,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     description: String,
+    hasSubMenu: Boolean = false,
 ) {
-    val selected = tool == selectedTool
-    IconButton(
+    CuteFlatIconButton(
         onClick = { onTool(tool) },
-        colors = if (selected) {
-            IconButtonDefaults.iconButtonColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-        } else {
-            IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-        },
-    ) {
-        Icon(icon, contentDescription = description)
-    }
+        icon = icon,
+        contentDescription = description,
+        selected = tool == selectedTool,
+        hasSubMenu = hasSubMenu,
+    )
 }
 
 @Composable
 private fun ColorSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
     Box(
+        contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(36.dp)
+            .minimumInteractiveComponentSize()
+            .size(44.dp)
             .clip(CircleShape)
             .then(
                 if (selected) {
-                    Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
+                    Modifier.background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
                 } else {
                     Modifier
                 },
             )
-            .clickable(onClick = onClick)
-            .padding(4.dp)
-            // 半透明槽位垫棋盘格让透明度可被感知；不透明颜色完全覆盖棋盘格，观感不变。
-            .clip(CircleShape)
-            .checkerboardBackdrop()
-            .background(color, CircleShape),
-    )
+            .clickable(role = Role.Button, onClick = onClick),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant
+                    },
+                    shape = CircleShape,
+                )
+                // 半透明槽位垫棋盘格让透明度可被感知；不透明颜色完全覆盖棋盘格，观感不变。
+                .checkerboardBackdrop()
+                .background(color, CircleShape),
+        )
+    }
 }
 
 // 背景二级菜单：顶部色板行选底色，下方样式项与底色自由组合。
@@ -539,9 +525,11 @@ internal fun BackgroundMenuPanel(
     // 不固定面板宽度：宽度由色板行内容决定，色块数量变化时不再被截断。
     Column(Modifier.padding(vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.editor_back_to_background_options))
-            }
+            CuteFlatIconButton(
+                onClick = onBack,
+                icon = HandwriteIcons.ArrowBack,
+                contentDescription = stringResource(R.string.editor_back_to_background_options),
+            )
             Text(stringResource(R.string.editor_background), style = MaterialTheme.typography.titleMedium)
         }
         Spacer(Modifier.height(6.dp))
@@ -578,7 +566,11 @@ private fun CheckableMenuItem(label: String, selected: Boolean, onClick: () -> U
         text = { Text(label) },
         trailingIcon = {
             if (selected) {
-                Icon(Icons.Default.Check, contentDescription = stringResource(R.string.editor_selected))
+                HandwriteIcon(
+                    HandwriteIcons.Check,
+                    contentDescription = stringResource(R.string.editor_selected),
+                    size = 18.dp,
+                )
             }
         },
         onClick = onClick,
@@ -610,9 +602,10 @@ private fun BackgroundSwatch(labelRes: Int, argb: Int, selected: Boolean, onClic
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {
-            Icon(
-                Icons.Default.Check,
+            HandwriteIcon(
+                HandwriteIcons.Check,
                 contentDescription = null,
+                size = 18.dp,
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
